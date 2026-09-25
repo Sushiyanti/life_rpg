@@ -1,0 +1,9 @@
+[package]
+name = "lr-application"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lr-domain.workspace = true
+thiserror.workspace = true

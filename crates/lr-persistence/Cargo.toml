@@ -1,0 +1,12 @@
+[package]
+name = "lr-persistence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+lr-domain.workspace = true
+lr-application.workspace = true
+rusqlite.workspace = true
+thiserror.workspace = true
+tempfile.workspace = true

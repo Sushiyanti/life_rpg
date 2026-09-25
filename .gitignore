@@ -1,0 +1,25 @@
+# dependencies
+node_modules/
+__pycache__/
+
+# rust
+target/
+crates/*/target/
+
+# node / vite
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# tauri
+src-tauri/gen/
+src-tauri/target/
+
+# local runtime data (developer sanity)
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.dev-data/
+coverage/
+*.log

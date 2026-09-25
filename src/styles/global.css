@@ -1,0 +1,85 @@
+/**
+ * Base/global styles. Uses only design tokens; no literal colors.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background:
+    radial-gradient(circle at 12% -10%, rgba(155, 107, 214, 0.14), transparent 42%),
+    radial-gradient(circle at 100% 0%, rgba(79, 195, 217, 0.1), transparent 38%),
+    var(--surface-inset);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Desktop app: no accidental text selection drag on chrome, but allow it in
+   content areas where the user might want to copy a path. */
+body {
+  user-select: none;
+}
+
+code,
+pre,
+.selectable {
+  user-select: text;
+}
+
+a {
+  color: var(--accent-cyan);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent-cyan);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+p {
+  margin: 0;
+}
+
+/* Thin HUD-style scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-neutral);
+  background-clip: content-box;
+}

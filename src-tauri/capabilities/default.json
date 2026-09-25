@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Phase 1 capability set: the main window may run our own commands and nothing else.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/lr-domain",
+  "crates/lr-application",
+  "crates/lr-persistence",
+  "crates/lr-contracts",
+  "src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Life RPG"]
+
+[workspace.dependencies]
+lr-domain = { path = "crates/lr-domain" }
+lr-application = { path = "crates/lr-application" }
+lr-persistence = { path = "crates/lr-persistence" }
+lr-contracts = { path = "crates/lr-contracts" }
+
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+tempfile = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

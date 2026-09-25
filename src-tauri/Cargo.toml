@@ -1,0 +1,30 @@
+[package]
+name = "life-rpg"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Life RPG — a local-first personal RPG engine"
+default-run = "life-rpg"
+
+[lib]
+# Tauri v2 pattern: the command surface lives in a library so it can be unit
+# tested and (later) reused by alternative shells without duplicating logic.
+name = "life_rpg_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+lr-domain.workspace = true
+lr-application.workspace = true
+lr-persistence.workspace = true
+lr-contracts.workspace = true
+
+tauri = { version = "2", features = [] }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
