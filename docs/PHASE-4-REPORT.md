@@ -86,3 +86,28 @@ Only missing paths needed by the UI were added, using existing services and stor
 - Documentation: `README.md`, `docs/ARCHITECTURE.md`, `docs/DOMAIN-DESIGN-CODEX.md`.
 
 **Phase boundary:** Phase 4 only. Phase 5 was not started.
+
+## Phase 4.1 corrective pass
+
+**Branch:** `phase-4.1-ui-fixes`, based on the published Phase 4 commit. This is a focused correction pass, not a redesign or a change to world semantics.
+
+- **Session context:** Removed the Quest page's context-free “Start a focus session” action. The active-session card now explains that a new Session must start from a Quest, Stage, Branch, or Skill; those existing contextual entry points continue to pass their explicit entity IDs. Database constraints were not weakened.
+- **Preference integrity:** Added a granular `set_presentation_visibility` application/store/Tauri operation. It changes only `is_visible`; SQLite preserves the existing sort order, pinned state, collapse state, variant, density, metadata, and creation timestamp. New preference rows use model defaults. Both hide and show transitions are covered.
+- **Quest description:** Added an optional description to `WorldService::create_quest`, its Tauri command, and `CoreClient.createQuest` options. The existing Quest insert/query and `QuestDto` already supported descriptions, so no schema migration was needed. The UI now submits its Context field.
+- **Presentation quality:** Added a concise, visually distinct empty state on the active Sessions card explaining how to start context-backed activity. No third-party component or library was added; existing React and project styles were reused. Global `:focus-visible` keyboard indication remains in place.
+- **Regression coverage:** Frontend tests assert no Quest-page context-free Session action, continued branch-scoped Session creation, and description forwarding. IPC tests pin both new payloads. SQLite/application tests verify visibility preserves all unrelated fields in both directions and that a created Quest description is returned on reload.
+
+This branch does not add a migration, permanent deletion, standalone Session semantics, or Phase 5 work. Later visual customization and a bespoke Session workflow remain deferred.
+
+### Phase 4.1 verification
+
+- `cargo fmt --all -- --check` — passed.
+- `cargo check --workspace` — passed.
+- `cargo test --workspace` — passed, **81 Rust tests** across the Tauri shell, application, contracts, domain, and persistence crates. This includes fresh-database and historical-upgrade migration tests, plus the new preference and Quest-description persistence regressions.
+- `npm run typecheck` — passed, including the compile-time assertion that an empty Session context is not accepted by `QuestSessionContext`.
+- `npm test` — passed, **43 frontend tests across 6 files**. The Phase 4 workspace suite now has 10 behavioral tests; the typed IPC suite has 11.
+- `npm run build:vite` — passed; production bundle built successfully.
+- Migration/startup — no migration was added. Normal `xvfb-run -a npm run dev` reached the Tauri executable and used the existing app-data database; read-only inspection found all eight migration-ledger entries through `0008_phase36_world_semantics`. Fresh and upgraded database paths remain covered by the workspace migration tests.
+- Search, hidden inclusion, lifecycle/recovery search, revision restore, and context-scoped Session creation continue to pass their existing regressions.
+- No third-party component library or design asset was added; the focused empty state uses existing React and project tokens/styles.
+- `git diff --check` — passed before publication.

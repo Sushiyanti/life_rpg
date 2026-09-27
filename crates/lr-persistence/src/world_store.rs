@@ -869,6 +869,30 @@ mod tests {
     }
 
     #[test]
+    fn quest_description_survives_creation_and_reload() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let description = "Prepare the soil before planting the seedlings.";
+
+        let created = service
+            .create_quest(
+                player.id.as_str(),
+                "main",
+                "Prepare the garden",
+                Some(description.into()),
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        let reloaded = store.get_quest(&created.id).unwrap().unwrap();
+
+        assert_eq!(reloaded.description.as_deref(), Some(description));
+    }
+
+    #[test]
     fn declarative_rules_chain_atomically_in_priority_order_and_persist_audit() {
         let store = std::sync::Arc::new(store());
         let service = WorldService::new(store.clone(), FrozenClock);
@@ -1078,6 +1102,7 @@ mod tests {
                 player.id.as_str(),
                 "main",
                 "Ship",
+                None,
                 None,
                 None,
                 None,

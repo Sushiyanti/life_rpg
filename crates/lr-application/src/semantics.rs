@@ -70,6 +70,15 @@ pub trait SemanticsStore: Send + Sync {
         target_id: &EntityId,
     ) -> Result<LifecycleState, StorageError>;
     fn set_presentation(&self, value: &PresentationPreference) -> Result<(), StorageError>;
+    fn set_presentation_visibility(
+        &self,
+        player_id: &EntityId,
+        entity_kind: &str,
+        entity_id: &EntityId,
+        context: &str,
+        is_visible: bool,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError>;
     fn list_presentation(
         &self,
         player_id: &EntityId,
@@ -199,6 +208,24 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
     }
     fn set_presentation(&self, v: &PresentationPreference) -> Result<(), StorageError> {
         (**self).set_presentation(v)
+    }
+    fn set_presentation_visibility(
+        &self,
+        player_id: &EntityId,
+        entity_kind: &str,
+        entity_id: &EntityId,
+        context: &str,
+        is_visible: bool,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        (**self).set_presentation_visibility(
+            player_id,
+            entity_kind,
+            entity_id,
+            context,
+            is_visible,
+            updated_at,
+        )
     }
     fn list_presentation(
         &self,

@@ -371,6 +371,20 @@ pub fn set_presentation_preference(
         .map_err(Into::into)
 }
 #[tauri::command]
+pub fn set_presentation_visibility(
+    state: State<'_, AppState>,
+    player_id: String,
+    entity_kind: String,
+    entity_id: String,
+    context: String,
+    is_visible: bool,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .set_presentation_visibility(&player_id, &entity_kind, &entity_id, &context, is_visible)
+        .map_err(Into::into)
+}
+#[tauri::command]
 pub fn list_presentation_preferences(
     state: State<'_, AppState>,
     player_id: String,

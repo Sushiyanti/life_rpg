@@ -68,6 +68,7 @@ export const COMMANDS = {
   searchWorld: 'search_world',
   listPresentationPreferences: 'list_presentation_preferences',
   setPresentationPreference: 'set_presentation_preference',
+  setPresentationVisibility: 'set_presentation_visibility',
   listEntityRevisions: 'list_entity_revisions',
   restoreEntityRevision: 'restore_entity_revision',
   getEntityLifecycle: 'get_entity_lifecycle',
@@ -92,6 +93,22 @@ export const COMMANDS = {
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
+
+type QuestSessionContextFields = {
+  questId?: string;
+  stageId?: string;
+  branchId?: string;
+  skillId?: string;
+  conceptId?: string;
+};
+
+/** A Session must be anchored to at least one world entity. */
+export type QuestSessionContext =
+  | ({questId: string} & Omit<QuestSessionContextFields, 'questId'>)
+  | ({stageId: string} & Omit<QuestSessionContextFields, 'stageId'>)
+  | ({branchId: string} & Omit<QuestSessionContextFields, 'branchId'>)
+  | ({skillId: string} & Omit<QuestSessionContextFields, 'skillId'>)
+  | ({conceptId: string} & Omit<QuestSessionContextFields, 'conceptId'>);
 
 /** Injectable transport so tests can drive the API without a webview. */
 export type InvokeTransport = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
@@ -140,8 +157,8 @@ export class CoreClient {
   async awardXp(playerId: string, amount: number, reason?: string, description?: string): Promise<AwardXpOutcome> {
     return this.invoke<AwardXpOutcome>(COMMANDS.awardXp, { playerId, amount, reason: reason ?? null, description: description ?? null });
   }
-  async createQuest(playerId:string,typeCode:string,title:string,options:{parentQuestId?:string;skillId?:string;difficulty?:number;xpReward?:number}={}):Promise<Quest>{
-    return this.invoke<Quest>(COMMANDS.createQuest,{playerId,typeCode,title,parentQuestId:options.parentQuestId??null,skillId:options.skillId??null,difficulty:options.difficulty??null,xpReward:options.xpReward??null});
+  async createQuest(playerId:string,typeCode:string,title:string,options:{description?:string;parentQuestId?:string;skillId?:string;difficulty?:number;xpReward?:number}={}):Promise<Quest>{
+    return this.invoke<Quest>(COMMANDS.createQuest,{playerId,typeCode,title,description:options.description??null,parentQuestId:options.parentQuestId??null,skillId:options.skillId??null,difficulty:options.difficulty??null,xpReward:options.xpReward??null});
   }
   async startQuest(questId:string):Promise<Quest>{return this.invoke<Quest>(COMMANDS.startQuest,{questId});}
   async completeQuest(questId:string):Promise<Quest>{return this.invoke<Quest>(COMMANDS.completeQuest,{questId});}
@@ -164,6 +181,7 @@ export class CoreClient {
   async searchWorld(query:SearchQuery):Promise<SearchHit[]>{return this.invoke<SearchHit[]>(COMMANDS.searchWorld,{query});}
   async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
   async setPresentationPreference(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'|'sortOrder'|'isPinned'|'isCollapsed'|'variant'|'density'>):Promise<PresentationPreference>{return this.invoke<PresentationPreference>(COMMANDS.setPresentationPreference,value);}
+  async setPresentationVisibility(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'>):Promise<void>{return this.invoke<void>(COMMANDS.setPresentationVisibility,value);}
   async listEntityRevisions(targetKind:string,targetId:string):Promise<EntityRevision[]>{return this.invoke<EntityRevision[]>(COMMANDS.listEntityRevisions,{targetKind,targetId});}
   async restoreEntityRevision(revisionId:string,reason?:string):Promise<EntityRevision>{return this.invoke<EntityRevision>(COMMANDS.restoreEntityRevision,{revisionId,reason:reason??null});}
   async getEntityLifecycle(targetKind:string,targetId:string):Promise<{state:'active'|'archived'|'trashed'}>{return this.invoke(COMMANDS.getEntityLifecycle,{targetKind,targetId});}
@@ -173,7 +191,7 @@ export class CoreClient {
   async listQuestBranches(stageId:string):Promise<QuestBranch[]>{return this.invoke(COMMANDS.listQuestBranches,{stageId});}
   async createQuestBranch(stageId:string,title:string,sortOrder:number):Promise<QuestBranch>{return this.invoke(COMMANDS.createQuestBranch,{stageId,title,sortOrder});}
   async listQuestSessions(playerId:string,questId?:string,stageId?:string):Promise<QuestSession[]>{return this.invoke(COMMANDS.listQuestSessions,{playerId,questId:questId??null,stageId:stageId??null});}
-  async startQuestSession(playerId:string,context:{questId?:string;stageId?:string;branchId?:string;skillId?:string;conceptId?:string}):Promise<QuestSession>{return this.invoke(COMMANDS.startQuestSession,{playerId,questId:context.questId??null,stageId:context.stageId??null,branchId:context.branchId??null,skillId:context.skillId??null,conceptId:context.conceptId??null,startedAt:null});}
+  async startQuestSession(playerId:string,context:QuestSessionContext):Promise<QuestSession>{return this.invoke(COMMANDS.startQuestSession,{playerId,questId:context.questId??null,stageId:context.stageId??null,branchId:context.branchId??null,skillId:context.skillId??null,conceptId:context.conceptId??null,startedAt:null});}
   async finishQuestSession(sessionId:string,status:'completed'|'interrupted',result?:string,notes?:string):Promise<QuestSession>{return this.invoke(COMMANDS.finishQuestSession,{sessionId,endedAt:null,status,result:result??null,notes:notes??null});}
   async listAttachedContent(targetKind:string,targetId:string):Promise<ContentAttachment[]>{return this.invoke(COMMANDS.listAttachedContent,{targetKind,targetId});}
   async attachContent(playerId:string,contentId:string,targetKind:string,targetId:string,role:string):Promise<ContentAttachment>{return this.invoke(COMMANDS.attachContent,{playerId,contentId,targetKind,targetId,role});}

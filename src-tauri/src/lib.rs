@@ -141,6 +141,7 @@ pub fn run() {
             commands::semantics::list_entity_revisions,
             commands::semantics::restore_entity_revision,
             commands::semantics::set_presentation_preference,
+            commands::semantics::set_presentation_visibility,
             commands::semantics::list_presentation_preferences,
             commands::semantics::suggest_concept_progress,
             commands::semantics::list_progress_suggestions,

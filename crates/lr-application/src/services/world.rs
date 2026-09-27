@@ -262,6 +262,7 @@ where
         player_id: &str,
         type_code: &str,
         title: &str,
+        description: Option<String>,
         parent_quest_id: Option<String>,
         skill_id: Option<String>,
         difficulty: Option<i32>,
@@ -276,6 +277,7 @@ where
             title,
             now,
         )?;
+        q.description = description.filter(|value| !value.trim().is_empty());
         q.set_parent(parent_quest_id.map(EntityId::new).transpose()?)?;
         q.skill_id = skill_id.map(EntityId::new).transpose()?;
         q.difficulty = difficulty;

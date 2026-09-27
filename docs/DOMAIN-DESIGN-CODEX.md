@@ -1,6 +1,6 @@
 # Life RPG — Domain Design Codex
 
-This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules, Phase 3.5's domain refinement, Phase 3.6's world semantics, and Phase 4's first-generation workspace and Explorer UI. Phase 4 adds presentation, not new world meaning; the [Phase 4 report](PHASE-4-REPORT.md) records its boundaries and limitations.
+This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules, Phase 3.5's domain refinement, Phase 3.6's world semantics, and Phase 4's first-generation workspace and Explorer UI. Phase 4 adds presentation, not new world meaning; the [Phase 4 report](PHASE-4-REPORT.md) records the UI boundary and the Phase 4.1 correctness hardening.
 
 ## Product philosophy
 
@@ -113,7 +113,7 @@ The intended flow remains **React + TypeScript → typed Tauri IPC → applicati
 
 ## Intentionally deferred
 
-- Phase 4 UI implementation: workspaces, workspace layout, Concept page, Search/Explorer, timeline, and visual polish. Phase 3.6 stores contextual preferences as backend data only; no screens consume them yet.
+- Additional UI customization beyond the first-generation Phase 4 workspace: unrestricted page authoring, a timeline, rich-text editing, and bespoke detail layouts for every entity kind. Contextual preferences are consumed by the implemented UI; Phase 4.1 hardening and its boundaries are recorded in the [Phase 4 report](PHASE-4-REPORT.md).
 - Universal entity/property/event frameworks, a full knowledge graph, event-sourcing rewrite, a separate search database, CMS, or no-code rule platform.
 - Tagging until a concrete organization use case justifies reusable tags.
 - Arbitrary live-state rules, scheduling/background processing, Concept-triggered Effect activation, Skill unlock formulas, and inference across Concept graphs. XP-to-level conversion is not a planned progression rule: XP and manually authored levels remain independent.

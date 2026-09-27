@@ -360,6 +360,33 @@ where
         self.store.set_presentation(&p)?;
         Ok(p)
     }
+    /// Change contextual visibility without replacing other saved presentation fields.
+    pub fn set_presentation_visibility(
+        &self,
+        player_id: &str,
+        entity_kind: &str,
+        entity_id: &str,
+        context: &str,
+        is_visible: bool,
+    ) -> Result<(), AppError> {
+        let now = self.now()?;
+        let preference = PresentationPreference::new(
+            EntityId::new(player_id)?,
+            entity_kind,
+            EntityId::new(entity_id)?,
+            context,
+            now.clone(),
+        )?;
+        self.store.set_presentation_visibility(
+            &preference.player_id,
+            &preference.entity_kind,
+            &preference.entity_id,
+            &preference.context,
+            is_visible,
+            &now,
+        )?;
+        Ok(())
+    }
     /// Delegate a track to automation only after an explicit Player choice.
     pub fn set_progress_control(
         &self,

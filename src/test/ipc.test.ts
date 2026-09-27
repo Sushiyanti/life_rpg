@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { COMMANDS, CoreClient, type InvokeTransport } from '../domain/ipc';
+import { COMMANDS, CoreClient, type InvokeTransport, type QuestSessionContext } from '../domain/ipc';
 import { toCommandError } from '../domain/health';
 import { failedReport, healthyReport } from './fixtures';
 
@@ -34,11 +34,29 @@ describe('COMMANDS', () => {
     expect(COMMANDS.searchWorld).toBe('search_world');
     expect(COMMANDS.listEntityRevisions).toBe('list_entity_revisions');
     expect(COMMANDS.setPresentationPreference).toBe('set_presentation_preference');
+    expect(COMMANDS.setPresentationVisibility).toBe('set_presentation_visibility');
     expect(COMMANDS.startQuestSession).toBe('start_quest_session');
   });
 });
 
 describe('CoreClient', () => {
+	 it('requires a valid world anchor in the Session context type', () => {
+	   const validContext: QuestSessionContext = {questId: 'quest-1'};
+	   expect(validContext.questId).toBe('quest-1');
+	   // @ts-expect-error A context-free Session is not representable at the UI boundary.
+	   const invalidContext: QuestSessionContext = {};
+	   expect(invalidContext).toEqual({});
+	 });
+
+	 it('passes a Quest description and a visibility-only preference update through the typed boundary', async () => {
+	   const transport = vi.fn(async () => ({})) as unknown as InvokeTransport;
+	   const client = new CoreClient(transport);
+	   await client.createQuest('player-1', 'main', 'Prepare the garden', {description: 'Prepare the soil.'});
+	   expect(transport).toHaveBeenLastCalledWith('create_quest', expect.objectContaining({description: 'Prepare the soil.'}));
+	   await client.setPresentationVisibility({playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
+	   expect(transport).toHaveBeenLastCalledWith('set_presentation_visibility', {playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
+	 });
+
   it('passes the command name through and returns the payload', async () => {
     const transport = vi.fn(async () => healthyReport()) as unknown as InvokeTransport;
     const client = new CoreClient(transport);

@@ -314,6 +314,8 @@ World Explorer is an application-query client for the existing FTS5 search use c
 
 Major feature routes cover Player, Quests with optional Stage/Branch and real Session activity, Skills and Skill Trees, Concepts and their typed relationships/progress tracks, Effects, Journal content, Search/Explorer, and History/Recovery. Simple Quests remain valid without hierarchy. Session start/finish calls are player-initiated; no background process or missing-day inference is introduced. The browser-only Vite preview has no Tauri bridge and intentionally displays a connection warning; the shipped target is the local desktop app.
 
+The Phase 4.1 corrective pass preserves this UI architecture while closing three integrity gaps: Session creation is offered only from an explicit Quest/Stage/Branch/Skill context; the visibility-specific application/store operation updates only `is_visible` and leaves order, pin, collapse, variant, and density untouched; and Quest descriptions travel through the typed CoreClient → Tauri → WorldService path into the existing Quest persistence fields. These are correctness fixes to the Phase 4 presentation boundary, not new world semantics or a redesign. The [Phase 4 report](PHASE-4-REPORT.md) records the regression coverage and focused empty-state refinement.
+
 The first-generation scope intentionally defers unrestricted workspace authoring, arbitrary custom panels, rich text/markdown editing, global graph traversal, complete per-kind bespoke detail pages, and permanent deletion. See [Phase 4 report](PHASE-4-REPORT.md) for the detailed UI inventory and verification.
 
 ## 10. Roadmap
@@ -326,7 +328,7 @@ The first-generation scope intentionally defers unrestricted workspace authoring
 | **3** | Typed, declarative event/condition/action engine, bounded chains, rule audit and atomic SQLite execution | **complete in `phase-3`** |
 | **3.5** | Typed Concepts, relationships, progress tracks/history, temporal clarity, and global search foundation | **complete in `phase-3.5`** |
 | **3.6** | Manual progression authority, Quest Stages/Branches, real Sessions, recoverable revisions/trash, contextual visibility, and suggestions | **complete in `phase-3.6`** |
-| **4** | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | **complete in `phase-4-ui`** |
+| **4** | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | **complete in `phase-4-ui`; correctness hardening in `phase-4.1-ui-fixes`** |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |
 

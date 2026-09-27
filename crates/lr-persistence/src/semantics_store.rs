@@ -321,6 +321,24 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
     fn set_presentation(&self, v: &PresentationPreference) -> Result<(), StorageError> {
         self.with_conn(|d|{d.execute("INSERT INTO presentation_preferences(player_id,entity_kind,entity_id,context,is_visible,sort_order,is_pinned,is_collapsed,variant,density,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)ON CONFLICT(player_id,entity_kind,entity_id,context)DO UPDATE SET is_visible=excluded.is_visible,sort_order=excluded.sort_order,is_pinned=excluded.is_pinned,is_collapsed=excluded.is_collapsed,variant=excluded.variant,density=excluded.density,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at",params![v.player_id.as_str(),v.entity_kind,v.entity_id.as_str(),v.context,v.is_visible as i64,v.sort_order,v.is_pinned as i64,v.is_collapsed.map(i64::from),v.variant,v.density,v.metadata_json,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
     }
+    fn set_presentation_visibility(
+        &self,
+        player_id: &EntityId,
+        entity_kind: &str,
+        entity_id: &EntityId,
+        context: &str,
+        is_visible: bool,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        self.with_conn(|db| {
+            db.execute(
+                "INSERT INTO presentation_preferences(player_id,entity_kind,entity_id,context,is_visible,sort_order,is_pinned,is_collapsed,variant,density,metadata_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,0,0,NULL,NULL,NULL,'{}',?6,?6) ON CONFLICT(player_id,entity_kind,entity_id,context) DO UPDATE SET is_visible=excluded.is_visible,updated_at=excluded.updated_at",
+                params![player_id.as_str(), entity_kind, entity_id.as_str(), context, is_visible as i64, updated_at.as_str()],
+            )
+            .map_err(op)?;
+            Ok(())
+        })
+    }
     fn list_presentation(
         &self,
         p: &EntityId,
@@ -389,6 +407,7 @@ mod tests {
                 player.id.as_str(),
                 "main",
                 "Write a field guide",
+                None,
                 None,
                 None,
                 None,
@@ -672,6 +691,64 @@ mod tests {
         );
     }
     #[test]
+    fn visibility_updates_preserve_all_other_presentation_preferences() {
+        let store = store();
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store, Frozen);
+        let player = world.create_player("Ada", None).unwrap();
+        let quest = world
+            .create_quest(
+                player.id.as_str(),
+                "main",
+                "Preserve preferences",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        semantics
+            .set_presentation(
+                player.id.as_str(),
+                "quest",
+                quest.id.as_str(),
+                "dashboard",
+                true,
+                7,
+                true,
+                Some(true),
+                Some("cards".into()),
+                Some("compact".into()),
+            )
+            .unwrap();
+
+        for is_visible in [false, true] {
+            semantics
+                .set_presentation_visibility(
+                    player.id.as_str(),
+                    "quest",
+                    quest.id.as_str(),
+                    "dashboard",
+                    is_visible,
+                )
+                .unwrap();
+            let preference = semantics
+                .presentation(player.id.as_str(), "dashboard")
+                .unwrap()
+                .into_iter()
+                .find(|item| item.entity_id == quest.id)
+                .unwrap();
+            assert_eq!(preference.is_visible, is_visible);
+            assert_eq!(preference.is_pinned, true);
+            assert_eq!(preference.sort_order, 7);
+            assert_eq!(preference.is_collapsed, Some(true));
+            assert_eq!(preference.variant.as_deref(), Some("cards"));
+            assert_eq!(preference.density.as_deref(), Some("compact"));
+        }
+    }
+
+    #[test]
     fn cross_world_stage_session_and_association_writes_fail_closed() {
         let store = store();
         let world = WorldService::new(store.clone(), Frozen);
@@ -680,7 +757,16 @@ mod tests {
         let ada = world.create_player("Ada", None).unwrap();
         let grace = world.create_player("Grace", None).unwrap();
         let quest = world
-            .create_quest(ada.id.as_str(), "main", "Quest", None, None, None, Some(0))
+            .create_quest(
+                ada.id.as_str(),
+                "main",
+                "Quest",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
             .unwrap();
         let stage = semantics
             .create_stage(ada.id.as_str(), quest.id.as_str(), "Stage", 0)

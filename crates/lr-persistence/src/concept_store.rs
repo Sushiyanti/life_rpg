@@ -362,6 +362,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
                 Some(0),
             )
             .unwrap();
