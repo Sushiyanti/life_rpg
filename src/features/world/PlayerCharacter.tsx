@@ -290,7 +290,7 @@ export function PlayerCharacter({
       </section>
 
       <section className="surface-card player-hub__card">
-        <div className="surface-card__heading"><div><p className="eyebrow">RECENT CONTENT</p><h3>Notes & guidance</h3></div><button className="text-link" onClick={() => onNavigate('journal')}>Chronicle →</button></div>
+        <div className="surface-card__heading"><div><p className="eyebrow">RECENT CONTENT</p><h3>Notes & guidance</h3></div><button className="text-link" onClick={() => onNavigate('journal')}>Content Guidebook →</button></div>
         {overview.narratives.filter(note => !hiddenRecords.has(`narrative_entry:${note.id}`)).length === 0 ? <div className="player-hub__empty"><strong>No visible content captured yet</strong><p>Keep a note in your own words; hidden entries remain in your world and nothing is generated for you.</p><button className="button button--small" onClick={onQuickCapture}>Capture a note</button></div>
           : <div className="player-hub__list">{overview.narratives.filter(note => !hiddenRecords.has(`narrative_entry:${note.id}`)).slice().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 3).map(note => <button className="player-hub__note" key={note.id} onClick={() => onOpenEntity('narrative_entry', note.id)}><span className="type-pill">{pretty(note.kind)}</span><strong>{note.title}</strong><small>{formatDate(note.createdAt)}</small><p>{note.content}</p></button>)}</div>}
       </section>

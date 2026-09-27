@@ -8,7 +8,7 @@ use crate::{
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
     Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
-    StatDefinition, Transaction, TypeRef,
+    StatDefinition, Transaction, TypeDefinition, TypeRef,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -203,6 +203,12 @@ where
     }
     pub fn list_rule_executions(&self, limit: u32) -> Result<Vec<RuleExecutionRecord>, AppError> {
         Ok(self.store.list_rule_executions(limit.min(1000))?)
+    }
+    pub fn list_type_definitions(
+        &self,
+        namespace: Option<&str>,
+    ) -> Result<Vec<TypeDefinition>, AppError> {
+        Ok(self.store.list_type_definitions(namespace)?)
     }
     pub fn award_xp(
         &self,

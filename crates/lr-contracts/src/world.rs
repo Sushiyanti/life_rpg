@@ -31,6 +31,33 @@ impl From<TypeDefinition> for EffectTypeDto {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TypeDefinitionDto {
+    pub code: String,
+    pub namespace: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub is_system: bool,
+    pub metadata_json: String,
+}
+impl From<TypeDefinition> for TypeDefinitionDto {
+    fn from(value: TypeDefinition) -> Self {
+        Self {
+            code: value.type_ref.code,
+            namespace: value.type_ref.namespace,
+            label: value.label,
+            description: value.description,
+            sort_order: value.sort_order,
+            is_active: value.is_active,
+            is_system: value.is_system,
+            metadata_json: value.metadata_json,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConceptDto {
     pub id: String,
     pub player_id: String,

@@ -108,6 +108,7 @@ pub fn run() {
             commands::world::set_player_stat,
             commands::world::list_player_stats,
             commands::world::list_rules,
+            commands::world::list_type_definitions,
             commands::world::create_rule,
             commands::world::set_rule_enabled,
             commands::world::list_rule_executions,

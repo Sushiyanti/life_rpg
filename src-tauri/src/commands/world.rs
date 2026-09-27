@@ -5,7 +5,7 @@ use lr_application::{NarrativeWrite, RuleDefinition, DEFAULT_LEDGER_LIMIT};
 use lr_contracts::world::{
     AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
     QuestDto, RuleDto, RuleExecutionDto, SkillDto, SkillSnapshotDto, SkillTreeDto,
-    StatDefinitionDto, TransactionDto, WorldOverviewDto,
+    StatDefinitionDto, TransactionDto, TypeDefinitionDto, WorldOverviewDto,
 };
 use lr_contracts::CommandErrorDto;
 use tauri::State;
@@ -53,6 +53,18 @@ pub fn list_rule_executions(
         .world
         .list_rule_executions(limit.unwrap_or(100))
         .map(|rows| rows.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub fn list_type_definitions(
+    state: State<'_, AppState>,
+    namespace: Option<String>,
+) -> Result<Vec<TypeDefinitionDto>, CommandErrorDto> {
+    state
+        .world
+        .list_type_definitions(namespace.as_deref())
+        .map(|items| items.into_iter().map(Into::into).collect())
         .map_err(Into::into)
 }
 

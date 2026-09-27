@@ -2,6 +2,7 @@
 
 **Baseline:** `phase-6.1.1-effect-lifecycle-final` (`d153dba240f2ceecf45607813f844f7725223a4c`)  
 **Implementation branch:** `phase-7-content-guidance`  
+**Finalization branch:** `phase-7-content-guidance-final`
 **Schema version:** **13** — `0013_phase7_content_guidance`
 
 ## Outcome
@@ -79,21 +80,23 @@ World Explorer retains contextual attachment panels for Player, Quest, Stage, Br
 
 ## Verification
 
-Completed after the final implementation update:
+Completed after the finalization update:
 
 ```bash
 cargo fmt --all -- --check        # passed
 cargo check --workspace           # passed
 cargo test --workspace            # passed: 102 Rust tests (plus doc tests)
 npm run typecheck                 # passed
-npm test                          # passed: 99 frontend tests across 16 files
+npm test                          # passed: 103 frontend tests across 16 files
 npm run build:vite                # passed
 npm run build                     # passed: Linux .deb and AppImage bundles
 ```
 
-A fresh-data native smoke test launched the final `target/release/life-rpg` under `xvfb-run` for 10 seconds. It remained running until the expected test timeout, created a new database, applied schema version `13` / `0013_phase7_content_guidance`, and created the `content_attachments` table. The production Tauri bundle also completed successfully, yielding the Linux `.deb` and AppImage.
+A fresh-data native smoke test launched the final `target/release/life-rpg` under `xvfb-run` for 10 seconds. It remained running until the expected test timeout, created a new database, applied schema version `13` / `0013_phase7_content_guidance`, exposed active `narrative_entry` definitions in the registry, and created the `content_attachments` table. The production Tauri bundle also completed successfully, yielding the Linux `.deb` and AppImage.
 
 The headless WebKit environment did not drive visible Guidebook controls end-to-end; this report does **not** claim GUI click automation for that path. The create/edit/attach/detach/reopen/search/recovery behavior is instead covered by the typed Rust persistence/service tests and the React Guidebook tests above.
+
+This correction required **no migration** and did not alter migration 13 or any existing Content semantics. The original `phase-7-content-guidance` branch remains untouched; this finalization branch contains only the registry-backed Guidebook correction and terminology cleanup. No Phase 8 work was started.
 
 ## Intentional limitations / preserved decisions
 
@@ -102,3 +105,9 @@ The headless WebKit environment did not drive visible Guidebook controls end-to-
 - Content attached to an Effect is explanatory/contextual only. Effect expiry, activation, deactivation, or editing never creates/removes content links.
 - `sort_order` is present for deterministic presentation but no page-builder/reordering UI was introduced.
 - Existing temporary `is_active` Content state remains distinct from archive/trash and contextual visibility; no permanent Content deletion is introduced.
+
+## Finalization — data-defined Content types
+
+The finalization pass removed the Guidebook's hard-coded frontend kind list because it contradicted the domain's extensible `TypeDefinition` registry. The existing registry is now exposed through the generic typed `list_type_definitions` application/IPC path, and the Guidebook treats active `narrative_entry` definitions—using their registry labels and `sort_order`—as the sole authoritative vocabulary for filters and new Content.
+
+Existing Content is not rewritten when registry data changes. If an existing entry uses an inactive or unknown kind, it remains readable and editable with its current kind preserved and clearly marked inactive; only active registered kinds are offered for new Content. The editor uses the minimal `note` code only as a documented draft fallback when the registry is empty or unavailable, never as a replacement vocabulary.

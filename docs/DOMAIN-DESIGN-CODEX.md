@@ -63,7 +63,7 @@ These answer different questions and must stay separate:
 - **Created/updated time** answer when a mutable record was first created and last changed. Immutable event records do not receive a meaningless `updated_at`; snapshots keep their established capture column name.
 - **Daily snapshots** answer “what state was observed on this date?” They are immutable, unique per entity/date, and capture an exact instant. A second normal capture for that date is rejected. Days without a snapshot are gaps in recorded data—not zero activity, a negative state, or evidence that nothing happened. No interpolation or fake snapshots are generated.
 - **Transactions** answer “what resource change was recorded?” They are append-only. XP operations update Player state and add the matching Transaction atomically; requested and applied deltas remain distinct.
-- **Narrative** answers “what story/journal content did the Player intentionally record?” It does not silently change progression.
+- **Narrative / Content** answers “what authored story, journal-style note, guidance, or reference did the Player intentionally record in the Content Guidebook?” It does not silently change progression. Journal-style Content remains distinct from Comments and Sessions.
 
 The model permits multiple timestamped events on one date. A daily snapshot and a chronological event stream are different records with different meanings.
 
@@ -81,7 +81,7 @@ Global search is an application-level query over a compact SQLite FTS5 projectio
 
 Search results remain references to typed domain entities. The query supports text, entity kind, Player, related Concept, content target kind, type code, status, active state evaluated at the query instant for Effects, timestamp range, sort, limit, and offset. Text is sanitized to quoted AND terms so FTS operators cannot escape the query; inputs and result limits are bounded. Relevance uses FTS5 when text is present. Concept-related filtering follows explicit Concept links/Effect targets, active Concept relationships, and active Content↔Concept relationships.
 
-Search covers Player, Concept, Quest, Quest Stage, Branch and Session, Skill Tree, Skill, Effect, Narrative Entry, Comment, Transaction, and Concept progress history. Contextual hidden-state filtering and archived/trashed inclusion are explicit query choices. Tags, source/category-specific filters, a timeline UI, ranking tuning, and broad arbitrary JSON search are intentionally deferred. Specialized pages (Concept, Quest Board, Skill Tree, Journal, Search/Explorer) are built by the frontend from meaningful domain/query results; the backend does not create a `Page` entity for each screen.
+Search covers Player, Concept, Quest, Quest Stage, Branch and Session, Skill Tree, Skill, Effect, Narrative Entry, Comment, Transaction, and Concept progress history. Contextual hidden-state filtering and archived/trashed inclusion are explicit query choices. Tags, source/category-specific filters, a timeline UI, ranking tuning, and broad arbitrary JSON search are intentionally deferred. Specialized pages (Concept, Quest Board, Skill Tree, Content Guidebook, Search/Explorer) are built by the frontend from meaningful domain/query results; the backend does not create a `Page` entity for each screen.
 
 ## Phase 3 — declarative rule engine, extended compatibly
 

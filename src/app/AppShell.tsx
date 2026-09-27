@@ -4,10 +4,10 @@ import './AppShell.css';
 
 export type AppRoute = 'dashboard'|'player'|'quests'|'skills'|'skillTrees'|'concepts'|'effects'|'journal'|'explorer'|'history'|'rules'|'status';
 const navigation: {section:string;items:{id:AppRoute;label:string;glyph:string}[]}[] = [
-  {section:'World',items:[{id:'player',label:'Player Hub',glyph:'◉'},{id:'dashboard',label:'Overview',glyph:'◈'},{id:'quests',label:'Quests',glyph:'◇'},{id:'skills',label:'Skills',glyph:'⌁'},{id:'skillTrees',label:'Skill trees',glyph:'⌘'},{id:'concepts',label:'Concepts',glyph:'◎'},{id:'effects',label:'Effects',glyph:'✦'},{id:'journal',label:'Journal',glyph:'▤'}]},
+  {section:'World',items:[{id:'player',label:'Player Hub',glyph:'◉'},{id:'dashboard',label:'Overview',glyph:'◈'},{id:'quests',label:'Quests',glyph:'◇'},{id:'skills',label:'Skills',glyph:'⌁'},{id:'skillTrees',label:'Skill trees',glyph:'⌘'},{id:'concepts',label:'Concepts',glyph:'◎'},{id:'effects',label:'Effects',glyph:'✦'},{id:'journal',label:'Content Guidebook',glyph:'▤'}]},
   {section:'Tools',items:[{id:'explorer',label:'World explorer',glyph:'⌕'},{id:'history',label:'History & recovery',glyph:'◷'},{id:'rules',label:'Rules & automation',glyph:'⟳'}]},
 ];
-const titles:Record<AppRoute,string>={dashboard:'Your world',player:'Player Hub',quests:'Quest log',skills:'Skills',skillTrees:'Skill trees',concepts:'Concepts',effects:'Effects',journal:'Chronicle',explorer:'World explorer',history:'History & recovery',rules:'Rules & automation',status:'System health'};
+const titles:Record<AppRoute,string>={dashboard:'Your world',player:'Player Hub',quests:'Quest log',skills:'Skills',skillTrees:'Skill trees',concepts:'Concepts',effects:'Effects',journal:'Content Guidebook',explorer:'World explorer',history:'History & recovery',rules:'Rules & automation',status:'System health'};
 
 export function AppShell({children,route,onNavigate,player,players,onPlayerChange,workspaces,workspace,onWorkspaceChange,onCreate,onQuickCapture,ready}:{children:ReactNode;route:AppRoute;onNavigate:(route:AppRoute)=>void;player:Player|null;players:{id:string;name:string}[];onPlayerChange:(id:string)=>void;workspaces:Workspace[];workspace:Workspace|null;onWorkspaceChange:(id:string)=>void;onCreate:()=>void;onQuickCapture:()=>void;ready:boolean}) {
   return <div className="app-shell">

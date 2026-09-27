@@ -25,7 +25,7 @@ import type {
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
   ProgressSuggestion, SearchHit, SearchQuery, EffectType, EffectHistoryEntry, SessionEffect,
   SessionEffectRole,
-  Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType,
+  Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType, TypeDefinition,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -64,6 +64,7 @@ export const COMMANDS = {
   listEffectHistory: 'list_effect_history', listSessionEffects: 'list_session_effects',
   linkEffectToSession: 'link_effect_to_session', unlinkEffectFromSession: 'unlink_effect_from_session',
   listRules: 'list_rules',
+  listTypeDefinitions: 'list_type_definitions',
   createRule: 'create_rule',
   setRuleEnabled: 'set_rule_enabled',
   listRuleExecutions: 'list_rule_executions',
@@ -170,6 +171,7 @@ export class CoreClient {
     return this.invoke<Player>(COMMANDS.createPlayer, { name, description: description ?? null });
   }
   async getPlayer(id: string): Promise<Player | null> { return this.invoke<Player | null>(COMMANDS.getPlayer, { id }); }
+  async listTypeDefinitions(namespace?: string): Promise<TypeDefinition[]> { return this.invoke<TypeDefinition[]>(COMMANDS.listTypeDefinitions, { namespace: namespace ?? null }); }
   async awardXp(playerId: string, amount: number, reason?: string, description?: string): Promise<AwardXpOutcome> {
     return this.invoke<AwardXpOutcome>(COMMANDS.awardXp, { playerId, amount, reason: reason ?? null, description: description ?? null });
   }

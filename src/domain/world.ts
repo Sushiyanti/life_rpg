@@ -11,6 +11,7 @@ export type Transaction={id:number|null;playerId:string;typeCode:string;resource
 export type PlayerSnapshot={id:number|null;playerId:string;snapshotDate:string;level:number;currentXp:number;stateJson:string;createdAt:string};
 export type SkillSnapshot={id:number|null;skillId:string;snapshotDate:string;level:number;currentXp:number;status:string;investedMinutes:number;stateJson:string;createdAt:string};
 export type StatDefinition={id:string;code:string;name:string;description:string|null;unit:string|null;minimum:number|null;maximum:number|null;isActive:boolean};
+export type TypeDefinition={code:string;namespace:string;label:string;description:string|null;sortOrder:number;isActive:boolean;isSystem:boolean;metadataJson:string};
 export type PlayerStat={playerId:string;statCode:string;currentValue:number;updatedAt:string};
 export type Comment={id:number|null;authorPlayerId:string|null;targetKind:string;targetId:string;body:string;createdAt:string};
 export type NarrativeEntry={id:string;playerId:string;kind:string;title:string;content:string;author:string|null;sourceKind:string|null;sourceId:string|null;isActive:boolean;metadataJson:string;createdAt:string;updatedAt:string};

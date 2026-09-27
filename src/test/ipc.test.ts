@@ -37,6 +37,7 @@ describe('COMMANDS', () => {
     expect(COMMANDS.setPresentationVisibility).toBe('set_presentation_visibility');
     expect(COMMANDS.startQuestSession).toBe('start_quest_session');
     expect(COMMANDS.createNarrative).toBe('create_narrative');
+    expect(COMMANDS.listTypeDefinitions).toBe('list_type_definitions');
     expect(COMMANDS.updateNarrative).toBe('update_narrative');
     expect(COMMANDS.listContentRelationships).toBe('list_content_relationships');
     expect(COMMANDS.removeContentAttachment).toBe('remove_content_attachment');
@@ -57,16 +58,25 @@ describe('CoreClient', () => {
 	   expect(invalidContext).toEqual({});
 	 });
 
-	 it('passes a Quest description and a visibility-only preference update through the typed boundary', async () => {
+  it('passes a Quest description and a visibility-only preference update through the typed boundary', async () => {
 	   const transport = vi.fn(async () => ({})) as unknown as InvokeTransport;
 	   const client = new CoreClient(transport);
 	   await client.createQuest('player-1', 'main', 'Prepare the garden', {description: 'Prepare the soil.'});
 	   expect(transport).toHaveBeenLastCalledWith('create_quest', expect.objectContaining({description: 'Prepare the soil.'}));
 	   await client.setPresentationVisibility({playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
 	   expect(transport).toHaveBeenLastCalledWith('set_presentation_visibility', {playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
-	 });
+  });
 
-  it('sends explicit content and relationship intents without exposing SQL', async () => {
+  it('loads the existing data-defined type registry through the typed boundary', async () => {
+    const transport = vi.fn(async () => []) as unknown as InvokeTransport;
+    const client = new CoreClient(transport);
+    await client.listTypeDefinitions();
+    expect(transport).toHaveBeenCalledWith('list_type_definitions', { namespace: null });
+    await client.listTypeDefinitions('narrative_entry');
+    expect(transport).toHaveBeenLastCalledWith('list_type_definitions', { namespace: 'narrative_entry' });
+  });
+
+	 it('sends explicit content and relationship intents without exposing SQL', async () => {
     const transport = vi.fn(async () => ({ id: 'content-1' })) as unknown as InvokeTransport;
     const client = new CoreClient(transport);
     await client.createNarrative('player-1', { kind: 'guide', title: 'Python path', content: 'Read first.', author: 'Ada', sourceKind: 'book', sourceId: 'isbn-1' });
