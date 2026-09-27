@@ -55,6 +55,12 @@ The Effects manager supports create, edit, manual deactivation, optional Session
 | `git diff --check` and targeted UI wording audit | Passed |
 | Native Tauri under Xvfb | Launched successfully. Created a temporary Player, Quest, active Session, and indefinite Effect through the UI with an explicit `applied` Session relationship. Confirmed `created` and `session_linked` snapshots in the local database, restarted the native app with the same isolated data directory, and verified the Effect/link/history remained visible and persisted. |
 
+## Phase 6.1.1 follow-up — final expiry correction
+
+This follow-up tightens the deactivation invariant without changing Phase 6.1's recorded implementation or verification results. An Effect at or past its recorded expiry is already inactive; domain-level deactivation rejects it, so no manual-off timestamp or history event is written. The Effects manager and Player Hub offer the manual action only while an Effect is derived `active`; future-expiring and indefinite Effects remain manageable, while scheduled Effects cannot be manually turned off before their start.
+
+Descriptive edits to expired Effects preserve the expiry and expired state. The Player may deliberately move the expiry into the future or clear it to `NULL`; the before/after `expiry_changed` event records that lifecycle edit, and the resulting lifecycle is derived from the updated facts without a synthetic reactivation event. Historical Session–Effect links remain visible and persistent after expiry. No schema change is required. See [Phase 6.1.1 report](PHASE-6.1.1-REPORT.md) for focused tests and final validation.
+
 ## Known limitations
 
 Synthetic Xvfb input did not reliably complete the WebKit native `datetime-local` picker or trigger the Effect-card manual-deactivation button during the interactive walkthrough. Thus finite-expiry creation and manual deactivation were **not** verified through native UI clicks in that walkthrough. They are covered by the Rust lifecycle/service/storage tests, including a file-backed close/reopen regression, and the frontend tests cover the optional-expiry controls and explicit manual-deactivation behavior.

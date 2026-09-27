@@ -115,6 +115,15 @@ impl Effect {
                 "effect cannot be deactivated before it starts".into(),
             ));
         }
+        if self
+            .expires_at
+            .as_ref()
+            .is_some_and(|expires_at| expires_at <= &now)
+        {
+            return Err(DomainError::Invariant(
+                "expired Effect cannot be manually deactivated".into(),
+            ));
+        }
         self.deactivated_at = Some(now.clone());
         self.updated_at = now;
         Ok(())
@@ -163,5 +172,17 @@ mod tests {
             EffectLifecycle::ManuallyDeactivated
         );
         assert!(e.deactivate(time("2026-09-26T14:00:00Z")).is_err());
+    }
+
+    #[test]
+    fn expired_effect_cannot_be_manually_deactivated_at_or_after_expiry() {
+        let mut e = effect();
+        e.expires_at = Some(time("2026-09-27T00:00:00Z"));
+
+        for now in ["2026-09-27T00:00:00Z", "2026-09-28T00:00:00Z"] {
+            assert_eq!(e.lifecycle_at(&time(now)), EffectLifecycle::Expired);
+            assert!(e.deactivate(time(now)).is_err());
+            assert_eq!(e.deactivated_at, None);
+        }
     }
 }

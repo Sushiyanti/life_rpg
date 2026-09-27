@@ -1763,6 +1763,11 @@ mod tests {
             started_at: None,
             expires_at: expires_at.map(str::to_owned),
         };
+        let past_effect = |name: &str, expires_at: &str| {
+            let mut value = write(name, Some(expires_at));
+            value.started_at = Some("2026-09-27T08:00:00Z".into());
+            value
+        };
 
         let indefinite = semantics
             .create_effect(
@@ -1773,7 +1778,117 @@ mod tests {
             .unwrap();
         assert_eq!(indefinite.expires_at, None);
         assert_eq!(
-            store.list_effects(&ada.id, None).unwrap()[0].deactivated_at,
+            indefinite.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Active
+        );
+
+        let expired = semantics
+            .create_effect(
+                ada.id.as_str(),
+                past_effect("Exam Focus", "2026-09-27T09:59:59Z"),
+                Some(session.id.as_str()),
+            )
+            .unwrap();
+        assert_eq!(
+            expired.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Expired
+        );
+        let expired_history_before_rejected_action = semantics
+            .effect_history(ada.id.as_str(), expired.id.as_str())
+            .unwrap();
+        assert!(semantics
+            .deactivate_effect(
+                ada.id.as_str(),
+                expired.id.as_str(),
+                Some(session.id.as_str()),
+            )
+            .is_err());
+        let expired_history_after_rejected_action = semantics
+            .effect_history(ada.id.as_str(), expired.id.as_str())
+            .unwrap();
+        assert_eq!(
+            expired_history_after_rejected_action, expired_history_before_rejected_action,
+            "a rejected manual-off action must not append history"
+        );
+        assert!(!expired_history_after_rejected_action
+            .iter()
+            .any(|event| event.kind.as_str() == "manually_deactivated"));
+        assert!(semantics
+            .session_effects(ada.id.as_str(), session.id.as_str(), false)
+            .unwrap()
+            .iter()
+            .any(|link| link.effect_id == expired.id));
+        let still_expired = store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == expired.id)
+            .unwrap();
+        assert_eq!(still_expired.deactivated_at, None);
+
+        let editable = semantics
+            .create_effect(
+                ada.id.as_str(),
+                past_effect("Editable expired Effect", "2026-09-27T09:00:00Z"),
+                None,
+            )
+            .unwrap();
+        let renamed = semantics
+            .update_effect(
+                ada.id.as_str(),
+                editable.id.as_str(),
+                write(
+                    "Edited description, same expiry",
+                    Some("2026-09-27T09:00:00Z"),
+                ),
+            )
+            .unwrap();
+        assert_eq!(
+            renamed.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Expired,
+            "descriptive edits do not revive an expired Effect"
+        );
+        let extended = semantics
+            .update_effect(
+                ada.id.as_str(),
+                editable.id.as_str(),
+                write("Expiry deliberately extended", Some("2026-10-01T18:00:00Z")),
+            )
+            .unwrap();
+        assert_eq!(
+            extended.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Active,
+            "an explicit future-expiry edit makes the derived state active again"
+        );
+        assert_eq!(extended.deactivated_at, None);
+        let edited_history = semantics
+            .effect_history(ada.id.as_str(), editable.id.as_str())
+            .unwrap();
+        assert!(edited_history
+            .iter()
+            .any(|event| event.kind.as_str() == "details_changed"));
+        let expiry_event = edited_history
+            .iter()
+            .find(|event| event.kind.as_str() == "expiry_changed")
+            .unwrap();
+        let previous_expiry: serde_json::Value =
+            serde_json::from_str(expiry_event.previous_state_json.as_deref().unwrap()).unwrap();
+        let current_expiry: serde_json::Value =
+            serde_json::from_str(expiry_event.current_state_json.as_str()).unwrap();
+        assert_eq!(previous_expiry["expiresAt"], "2026-09-27T09:00:00+00:00");
+        assert_eq!(current_expiry["expiresAt"], "2026-10-01T18:00:00+00:00");
+        assert!(!edited_history
+            .iter()
+            .any(|event| event.kind.as_str() == "reactivated"));
+
+        assert_eq!(
+            store
+                .list_effects(&ada.id, None)
+                .unwrap()
+                .into_iter()
+                .find(|effect| effect.id == indefinite.id)
+                .unwrap()
+                .deactivated_at,
             None,
             "reading or saving an indefinite Effect must not synthesize deactivation"
         );
@@ -1802,7 +1917,13 @@ mod tests {
         let linked_history = semantics
             .effect_history(ada.id.as_str(), indefinite.id.as_str())
             .unwrap();
-        let link_event = linked_history.last().unwrap();
+        let link_event = linked_history
+            .iter()
+            .find(|event| {
+                event.kind.as_str() == "session_linked"
+                    && event.current_state_json.contains(relevant.id.as_str())
+            })
+            .unwrap();
         assert_eq!(link_event.kind.as_str(), "session_linked");
         let link_snapshot: serde_json::Value =
             serde_json::from_str(link_event.current_state_json.as_str()).unwrap();
@@ -1823,7 +1944,7 @@ mod tests {
                 .session_effects(ada.id.as_str(), session.id.as_str(), false)
                 .unwrap()
                 .len(),
-            2,
+            3,
             "finishing a Session must preserve its explicit Effect relationships"
         );
         assert!(semantics
@@ -1857,10 +1978,15 @@ mod tests {
             1,
             "removing a relationship must not delete the Effect"
         );
-        let unlink_event = semantics
+        let unlink_history = semantics
             .effect_history(ada.id.as_str(), indefinite.id.as_str())
-            .unwrap()
-            .pop()
+            .unwrap();
+        let unlink_event = unlink_history
+            .iter()
+            .find(|event| {
+                event.kind.as_str() == "session_unlinked"
+                    && event.current_state_json.contains(relevant.id.as_str())
+            })
             .unwrap();
         assert_eq!(unlink_event.kind.as_str(), "session_unlinked");
         let previous: serde_json::Value =
@@ -1882,9 +2008,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
+            temporary.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Active
+        );
+        assert_eq!(
             temporary.expires_at.as_ref().unwrap().as_str(),
             "2026-10-01T18:00:00+00:00"
         );
+        let manually_ended_future = semantics
+            .deactivate_effect(ada.id.as_str(), temporary.id.as_str(), None)
+            .unwrap();
+        assert_eq!(
+            manually_ended_future.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::ManuallyDeactivated
+        );
+        assert!(semantics
+            .effect_history(ada.id.as_str(), temporary.id.as_str())
+            .unwrap()
+            .iter()
+            .any(|event| event.kind.as_str() == "manually_deactivated"));
         semantics
             .deactivate_effect(
                 ada.id.as_str(),
@@ -1898,14 +2040,15 @@ mod tests {
         assert!(final_history
             .iter()
             .any(|event| event.kind.as_str() == "manually_deactivated"));
-        let deactivation_link = final_history
+        let deactivation_event = final_history
             .iter()
-            .find(|event| {
-                event.kind.as_str() == "session_linked"
-                    && event.current_state_json.contains("\"role\":\"removed\"")
-            })
+            .find(|event| event.kind.as_str() == "manually_deactivated")
             .unwrap();
-        assert_eq!(deactivation_link.session_id.as_ref(), Some(&session.id));
+        assert_eq!(deactivation_event.session_id.as_ref(), Some(&session.id));
+        assert!(final_history.iter().any(|event| {
+            event.kind.as_str() == "session_linked"
+                && event.current_state_json.contains("\"role\":\"removed\"")
+        }));
         let persisted = store
             .list_effects(&ada.id, None)
             .unwrap()
@@ -1932,7 +2075,7 @@ mod tests {
         let reopened_links = reopened_semantics
             .session_effects(ada.id.as_str(), session.id.as_str(), false)
             .unwrap();
-        assert_eq!(reopened_links.len(), 2);
+        assert_eq!(reopened_links.len(), 3);
         assert!(reopened_links
             .iter()
             .any(|link| link.role == SessionEffectRole::Applied));
@@ -1949,5 +2092,54 @@ mod tests {
             event.kind.as_str() == "session_linked"
                 && event.current_state_json.contains("\"role\":\"removed\"")
         }));
+        assert_eq!(
+            reopened_effect.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::ManuallyDeactivated
+        );
+        let reopened_expired = reopened_store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == expired.id)
+            .unwrap();
+        assert_eq!(
+            reopened_expired.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Expired
+        );
+        assert!(reopened_semantics
+            .session_effects(ada.id.as_str(), session.id.as_str(), false)
+            .unwrap()
+            .iter()
+            .any(|link| link.effect_id == expired.id));
+        let reopened_editable = reopened_store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == editable.id)
+            .unwrap();
+        assert_eq!(
+            reopened_editable.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::Active
+        );
+        assert!(reopened_semantics
+            .effect_history(ada.id.as_str(), editable.id.as_str())
+            .unwrap()
+            .iter()
+            .any(|event| event.kind.as_str() == "expiry_changed"));
+        let reopened_future = reopened_store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == temporary.id)
+            .unwrap();
+        assert_eq!(
+            reopened_future.lifecycle_at(&Iso8601Timestamp::parse(T0).unwrap()),
+            EffectLifecycle::ManuallyDeactivated
+        );
+        assert!(reopened_semantics
+            .effect_history(ada.id.as_str(), temporary.id.as_str())
+            .unwrap()
+            .iter()
+            .any(|event| event.kind.as_str() == "manually_deactivated"));
     }
 }

@@ -130,6 +130,7 @@ describe('Phase 6 current state and contextual actions', () => {
     expect(document.querySelector('.effect-state--expired')).toHaveTextContent('expired');
     expect(document.querySelector('.effect-state--scheduled')).toHaveTextContent('scheduled');
     expect(document.querySelector('.effect-state--manually_deactivated')).toHaveTextContent('manually deactivated');
+    expect(screen.getAllByRole('button', { name: 'Deactivate' })).toHaveLength(1);
     expect(screen.getAllByText('No expiry recorded · indefinite/manual')).toHaveLength(3);
     expect(deactivateEffect).not.toHaveBeenCalled();
     expect(expired.deactivatedAt).toBeNull();
