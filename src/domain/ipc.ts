@@ -21,7 +21,9 @@ import { toCommandError } from '../domain/health';
 import type {
   AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Rule,
   RuleDefinition, RuleExecution, Skill, SkillSnapshot, SkillTree, StatDefinition, Transaction,
-  WorldOverview,
+  WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
+  QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
+  ProgressSuggestion, SearchHit, SearchQuery,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -40,6 +42,7 @@ export const COMMANDS = {
   investSkillTime: 'invest_skill_time',
   capturePlayerSnapshot: 'capture_player_snapshot',
   addComment: 'add_comment',
+  listComments: 'list_comments',
   writeNarrative: 'write_narrative',
   getWorldOverview: 'get_world_overview',
   listTransactions: 'list_transactions',
@@ -55,6 +58,37 @@ export const COMMANDS = {
   createRule: 'create_rule',
   setRuleEnabled: 'set_rule_enabled',
   listRuleExecutions: 'list_rule_executions',
+  listConcepts: 'list_concepts',
+  createConcept: 'create_concept',
+  listConceptProgress: 'list_concept_progress',
+  setConceptProgress: 'set_concept_progress',
+  listConceptRelationships: 'list_concept_relationships',
+  listConceptRelationshipTypes: 'list_concept_relationship_types',
+  relateConcepts: 'relate_concepts',
+  searchWorld: 'search_world',
+  listPresentationPreferences: 'list_presentation_preferences',
+  setPresentationPreference: 'set_presentation_preference',
+  listEntityRevisions: 'list_entity_revisions',
+  restoreEntityRevision: 'restore_entity_revision',
+  getEntityLifecycle: 'get_entity_lifecycle',
+  setEntityLifecycle: 'set_entity_lifecycle',
+  createQuestStage: 'create_quest_stage',
+  listQuestStages: 'list_quest_stages',
+  createQuestBranch: 'create_quest_branch',
+  listQuestBranches: 'list_quest_branches',
+  startQuestSession: 'start_quest_session',
+  finishQuestSession: 'finish_quest_session',
+  listQuestSessions: 'list_quest_sessions',
+  listAttachedContent: 'list_attached_content',
+  attachContent: 'attach_content',
+  listConceptAssociations: 'list_concept_associations',
+  associateConcept: 'associate_concept',
+  listProgressSuggestions: 'list_progress_suggestions',
+  acceptProgressSuggestion: 'accept_progress_suggestion',
+  rejectProgressSuggestion: 'reject_progress_suggestion',
+  setPlayerProgression: 'set_player_progression',
+  setSkillProgression: 'set_skill_progression',
+  setConceptProgressControl: 'set_concept_progress_control',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -116,9 +150,41 @@ export class CoreClient {
   async investSkillTime(skillId:string,minutes:number):Promise<Skill>{return this.invoke<Skill>(COMMANDS.investSkillTime,{skillId,minutes});}
   async capturePlayerSnapshot(playerId:string):Promise<PlayerSnapshot>{return this.invoke<PlayerSnapshot>(COMMANDS.capturePlayerSnapshot,{playerId});}
   async addComment(targetKind:string,targetId:string,body:string,authorPlayerId?:string):Promise<Comment>{return this.invoke<Comment>(COMMANDS.addComment,{authorPlayerId:authorPlayerId??null,targetKind,targetId,body});}
+  async listComments(targetKind:string,targetId:string):Promise<Comment[]>{return this.invoke<Comment[]>(COMMANDS.listComments,{targetKind,targetId});}
   async writeNarrative(playerId:string,kind:string,title:string,content:string):Promise<NarrativeEntry>{return this.invoke<NarrativeEntry>(COMMANDS.writeNarrative,{playerId,kind,title,content});}
   async getWorldOverview(playerId:string):Promise<WorldOverview>{return this.invoke<WorldOverview>(COMMANDS.getWorldOverview,{playerId});}
   async listTransactions(playerId:string,limit?:number):Promise<Transaction[]>{return this.invoke<Transaction[]>(COMMANDS.listTransactions,{playerId,limit:limit??null});}
+  async listConcepts(playerId:string):Promise<Concept[]>{return this.invoke<Concept[]>(COMMANDS.listConcepts,{playerId});}
+  async createConcept(playerId:string,typeCode:string,name:string,description?:string):Promise<Concept>{return this.invoke<Concept>(COMMANDS.createConcept,{playerId,typeCode,name,description:description??null});}
+  async listConceptProgress(conceptId:string):Promise<ConceptProgressTrack[]>{return this.invoke<ConceptProgressTrack[]>(COMMANDS.listConceptProgress,{conceptId});}
+  async setConceptProgress(conceptId:string,trackCode:string,value:number,level?:number):Promise<ConceptProgressTrack>{return this.invoke<ConceptProgressTrack>(COMMANDS.setConceptProgress,{conceptId,trackCode,value,level:level??null,occurredAt:null});}
+  async listConceptRelationships(conceptId:string):Promise<ConceptRelationship[]>{return this.invoke<ConceptRelationship[]>(COMMANDS.listConceptRelationships,{conceptId});}
+  async listConceptRelationshipTypes():Promise<string[]>{return this.invoke<string[]>(COMMANDS.listConceptRelationshipTypes);}
+  async relateConcepts(sourceConceptId:string,targetConceptId:string,relationshipCode:string):Promise<ConceptRelationship>{return this.invoke<ConceptRelationship>(COMMANDS.relateConcepts,{sourceConceptId,targetConceptId,relationshipCode});}
+  async searchWorld(query:SearchQuery):Promise<SearchHit[]>{return this.invoke<SearchHit[]>(COMMANDS.searchWorld,{query});}
+  async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
+  async setPresentationPreference(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'|'sortOrder'|'isPinned'|'isCollapsed'|'variant'|'density'>):Promise<PresentationPreference>{return this.invoke<PresentationPreference>(COMMANDS.setPresentationPreference,value);}
+  async listEntityRevisions(targetKind:string,targetId:string):Promise<EntityRevision[]>{return this.invoke<EntityRevision[]>(COMMANDS.listEntityRevisions,{targetKind,targetId});}
+  async restoreEntityRevision(revisionId:string,reason?:string):Promise<EntityRevision>{return this.invoke<EntityRevision>(COMMANDS.restoreEntityRevision,{revisionId,reason:reason??null});}
+  async getEntityLifecycle(targetKind:string,targetId:string):Promise<{state:'active'|'archived'|'trashed'}>{return this.invoke(COMMANDS.getEntityLifecycle,{targetKind,targetId});}
+  async setEntityLifecycle(targetKind:string,targetId:string,playerId:string,lifecycle:'active'|'archived'|'trashed',reason?:string):Promise<void>{return this.invoke(COMMANDS.setEntityLifecycle,{targetKind,targetId,playerId,lifecycle,reason:reason??null});}
+  async listQuestStages(questId:string):Promise<QuestStage[]>{return this.invoke(COMMANDS.listQuestStages,{questId});}
+  async createQuestStage(playerId:string,questId:string,title:string,sortOrder:number):Promise<QuestStage>{return this.invoke(COMMANDS.createQuestStage,{playerId,questId,title,sortOrder});}
+  async listQuestBranches(stageId:string):Promise<QuestBranch[]>{return this.invoke(COMMANDS.listQuestBranches,{stageId});}
+  async createQuestBranch(stageId:string,title:string,sortOrder:number):Promise<QuestBranch>{return this.invoke(COMMANDS.createQuestBranch,{stageId,title,sortOrder});}
+  async listQuestSessions(playerId:string,questId?:string,stageId?:string):Promise<QuestSession[]>{return this.invoke(COMMANDS.listQuestSessions,{playerId,questId:questId??null,stageId:stageId??null});}
+  async startQuestSession(playerId:string,context:{questId?:string;stageId?:string;branchId?:string;skillId?:string;conceptId?:string}):Promise<QuestSession>{return this.invoke(COMMANDS.startQuestSession,{playerId,questId:context.questId??null,stageId:context.stageId??null,branchId:context.branchId??null,skillId:context.skillId??null,conceptId:context.conceptId??null,startedAt:null});}
+  async finishQuestSession(sessionId:string,status:'completed'|'interrupted',result?:string,notes?:string):Promise<QuestSession>{return this.invoke(COMMANDS.finishQuestSession,{sessionId,endedAt:null,status,result:result??null,notes:notes??null});}
+  async listAttachedContent(targetKind:string,targetId:string):Promise<ContentAttachment[]>{return this.invoke(COMMANDS.listAttachedContent,{targetKind,targetId});}
+  async attachContent(playerId:string,contentId:string,targetKind:string,targetId:string,role:string):Promise<ContentAttachment>{return this.invoke(COMMANDS.attachContent,{playerId,contentId,targetKind,targetId,role});}
+  async listConceptAssociations(conceptId:string):Promise<ConceptAssociation[]>{return this.invoke(COMMANDS.listConceptAssociations,{conceptId,entityKind:null,entityId:null});}
+  async associateConcept(conceptId:string,entityKind:string,entityId:string,role:string):Promise<ConceptAssociation>{return this.invoke(COMMANDS.associateConcept,{conceptId,entityKind,entityId,role});}
+  async listProgressSuggestions(conceptId:string,includeResolved=false):Promise<ProgressSuggestion[]>{return this.invoke(COMMANDS.listProgressSuggestions,{conceptId,includeResolved});}
+  async acceptProgressSuggestion(playerId:string,suggestionId:string):Promise<ProgressSuggestion>{return this.invoke(COMMANDS.acceptProgressSuggestion,{playerId,suggestionId});}
+  async rejectProgressSuggestion(playerId:string,suggestionId:string):Promise<ProgressSuggestion>{return this.invoke(COMMANDS.rejectProgressSuggestion,{playerId,suggestionId});}
+  async setPlayerProgression(playerId:string,level:number,levelName?:string,progressionLabel?:string):Promise<Player>{return this.invoke(COMMANDS.setPlayerProgression,{playerId,level,levelName:levelName??null,progressionLabel:progressionLabel??null});}
+  async setSkillProgression(skillId:string,level:number,levelName?:string,progressionLabel?:string):Promise<Skill>{return this.invoke(COMMANDS.setSkillProgression,{skillId,level,levelName:levelName??null,progressionLabel:progressionLabel??null});}
+  async setConceptProgressControl(conceptId:string,trackCode:string,control:'manual'|'rule_controlled'):Promise<ConceptProgressTrack>{return this.invoke(COMMANDS.setConceptProgressControl,{conceptId,trackCode,control});}
   async captureSkillSnapshot(skillId:string):Promise<SkillSnapshot>{return this.invoke<SkillSnapshot>(COMMANDS.captureSkillSnapshot,{skillId});}
   async listPlayerSnapshots(playerId:string):Promise<PlayerSnapshot[]>{return this.invoke<PlayerSnapshot[]>(COMMANDS.listPlayerSnapshots,{playerId});}
   async listSkillSnapshots(skillId:string):Promise<SkillSnapshot[]>{return this.invoke<SkillSnapshot[]>(COMMANDS.listSkillSnapshots,{skillId});}

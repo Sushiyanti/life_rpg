@@ -6,12 +6,12 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 3.6 — World semantics (implementation / verification).** In
-> addition to typed Concepts, the model includes optional Quest Stages and
-> Branches, real timestamped Sessions, manually authored Player/Skill levels,
-> progress suggestions with explicit acceptance, recoverable revisions and
-> soft lifecycle states, and contextual visibility preferences. Phase 4 UI work
-> has not begun. See the [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+> **Status: Phase 4 — First-generation world UI (complete on `phase-4-ui`).**
+> The app now has a persistent world shell, configurable dashboard panels,
+> Player/Quest/Skill/Concept/Effect/Journal screens, typed Concept links,
+> contextual visibility, world search, and recoverable history views. Levels
+> remain manually authored; hidden records remain distinct from trashed records.
+> See the [Phase 4 report](docs/PHASE-4-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
 > [Architecture](docs/ARCHITECTURE.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
 > [Phase 3 report](docs/PHASE-3-REPORT.md), [Phase 3.5 report](docs/PHASE-3.5-REPORT.md),
 > and [Phase 3.6 report](docs/PHASE-3.6-REPORT.md).
@@ -170,7 +170,8 @@ life-rpg/
 │  │        ├─ 0004_phase2_domain.sql
 │  │        ├─ 0005_phase21_integrity.sql
 │  │        ├─ 0006_phase3_rules.sql
-│  │        └─ 0007_phase35_concepts.sql
+│  │        ├─ 0007_phase35_concepts.sql
+│  │        └─ 0008_phase36_world_semantics.sql
 │  │
 │  └─ lr-contracts/               # IPC BOUNDARY — DTOs shared with the frontend
 │     └─ src/world.rs             #   world and Rule DTOs; lib.rs pins wire contracts
@@ -191,9 +192,9 @@ life-rpg/
 │
 ├─ src/                           # FRONTEND (React + TS)
 │  ├─ main.tsx                    # entry: imports tokens.css then global.css
-│  ├─ App.tsx                     # composes status, world, and Rules surfaces
+│  ├─ App.tsx                     # coordinates route/world state and typed data
 │  ├─ app/
-│  │  ├─ AppShell.tsx             # outer chrome (title band + content slot)
+│  │  ├─ AppShell.tsx             # persistent navigation, world selector, actions
 │  │  └─ AppShell.css
 │  ├─ domain/
 │  │  ├─ health.ts                # hand-mirrored contract types + helpers
@@ -208,7 +209,10 @@ life-rpg/
 │  │  ├─ MigrationLedger.tsx
 │  │  └─ useHealthReport.ts       # use-case hook (loading/error/refresh)
 │  ├─ features/world/
-│  │  ├─ WorldPanel.tsx           # small persistent Player proof surface
+│  │  ├─ WorldWorkspace.tsx       # structured panels and major world screens
+│  │  ├─ WorldExplorer.tsx        # search, typed detail, lifecycle and history
+│  │  ├─ PlayerCharacter.tsx      # Player progression, stats and snapshots
+│  │  ├─ EffectsScreen.tsx        # Effect status and contextual visibility
 │  │  └─ RulePanel.tsx            # typed Rule authoring and audit view
 │  ├─ styles/
 │  │  ├─ tokens.css               # design tokens (the only place colors exist)
@@ -278,8 +282,8 @@ works for the frontend; changing Rust files triggers a core rebuild.
 Prefer a browser-only loop while working purely on styles?
 
 ```bash
-npm run dev:vite     # Vite only — the status screen will show a connection error,
-                     # because there is no core and no HTTP fallback. That is by design.
+npm run dev:vite     # Vite only — the shell renders, but world operations show the
+                     # expected connection warning because no Tauri core is attached.
 ```
 
 ---

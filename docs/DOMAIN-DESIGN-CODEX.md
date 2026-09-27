@@ -1,6 +1,6 @@
 # Life RPG — Domain Design Codex
 
-This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules, Phase 3.5's domain refinement, and Phase 3.6's world semantics. Phase 4 UI work has **not** begun.
+This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules, Phase 3.5's domain refinement, Phase 3.6's world semantics, and Phase 4's first-generation workspace and Explorer UI. Phase 4 adds presentation, not new world meaning; the [Phase 4 report](PHASE-4-REPORT.md) records its boundaries and limitations.
 
 ## Product philosophy
 
@@ -31,7 +31,7 @@ The database remains a typed relational world, not a universal object/property f
 | **Presentation Preference** | A contextual visibility/layout choice; not world truth or a domain lifecycle state. | Per-Player, per-entity and per-context visibility, ordering, pin/collapse and optional display hints. Hidden entities continue to exist and can be included in search; active/archived/trashed remains a separate lifecycle filter. |
 | **Daily Snapshot** | “This entity's state was captured on this calendar date.” It does not represent everything that happened all day. | Per-entity/date uniqueness, immutable JSON state with a schema version, and a precise capture timestamp (`created_at` on existing Player/Skill snapshots; `captured_at` on Concept snapshots). |
 | **Rule** | Persistent declarative data interpreted by trusted application code; never an executable script or callback. | Versioned closed event/condition/action vocabulary, deterministic priority ordering, bounded chains, append-only execution audit. |
-| **UI State / Workspace** | Interface-only selections/layout; not Player/world truth. | Contextual per-entity preferences exist as backend data; workspace composition and UI state remain Phase 4 work. |
+| **UI State / Workspace** | Interface-only selections/layout; not Player/world truth. | Contextual per-entity visibility is stored through Phase 3.6 preferences; route and declarative dashboard layout are UI-local persisted state. Neither changes domain truth. |
 
 ## Progress is not one universal number
 

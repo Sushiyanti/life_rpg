@@ -6,7 +6,7 @@ pub mod commands;
 pub mod state;
 pub use state::AppState;
 
-use lr_application::{Clock, HealthService, SemanticsService, WorldService};
+use lr_application::{Clock, ConceptService, HealthService, SemanticsService, WorldService};
 use lr_persistence::SqliteHealthStore;
 use std::{path::PathBuf, sync::Arc};
 use tauri::Manager;
@@ -35,7 +35,8 @@ pub fn bootstrap(app_data_dir: &std::path::Path, now: &str) -> AppState {
     AppState::new(
         HealthService::new(store.clone(), SystemClock),
         WorldService::new(store.clone(), SystemClock),
-        SemanticsService::new(store, SystemClock),
+        SemanticsService::new(store.clone(), SystemClock),
+        ConceptService::new(store, SystemClock),
     )
 }
 pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
@@ -43,7 +44,8 @@ pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
     let mut state = AppState::new(
         HealthService::new(store.clone(), SystemClock),
         WorldService::new(store.clone(), SystemClock),
-        SemanticsService::new(store, SystemClock),
+        SemanticsService::new(store.clone(), SystemClock),
+        ConceptService::new(store, SystemClock),
     );
     state.set_startup_warning(Some(reason.into()));
     state
@@ -111,9 +113,17 @@ pub fn run() {
             commands::world::list_rule_executions,
             commands::world::deactivate_effect,
             commands::world::add_comment,
+            commands::world::list_comments,
             commands::world::write_narrative,
             commands::world::get_world_overview,
             commands::world::list_transactions,
+            commands::concepts::create_concept,
+            commands::concepts::list_concepts,
+            commands::concepts::list_concept_progress,
+            commands::concepts::set_concept_progress,
+            commands::concepts::list_concept_relationships,
+            commands::concepts::list_concept_relationship_types,
+            commands::concepts::relate_concepts,
             commands::semantics::create_quest_stage,
             commands::semantics::list_quest_stages,
             commands::semantics::create_quest_branch,

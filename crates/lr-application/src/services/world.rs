@@ -594,6 +594,15 @@ where
         )?;
         Ok(self.store.add_comment(&value)?)
     }
+    pub fn list_comments(
+        &self,
+        target_kind: &str,
+        target_id: &str,
+    ) -> Result<Vec<Comment>, AppError> {
+        let kind = CommentTargetKind::parse(target_kind)?;
+        let id = EntityId::new(target_id)?;
+        Ok(self.store.list_comments(kind, &id)?)
+    }
     pub fn write_narrative(
         &self,
         player_id: &str,

@@ -6,7 +6,8 @@ decisions that will matter in later phases.
 
 For the product-specific vocabulary and current invariants, see the [Domain
 Design Codex](DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](PHASE-2.1-REPORT.md),
-the [Phase 3 report](PHASE-3-REPORT.md), [Phase 3.5 report](PHASE-3.5-REPORT.md), and [Phase 3.6 report](PHASE-3.6-REPORT.md).
+the [Phase 3 report](PHASE-3-REPORT.md), [Phase 3.5 report](PHASE-3.5-REPORT.md),
+[Phase 3.6 report](PHASE-3.6-REPORT.md), and [Phase 4 report](PHASE-4-REPORT.md).
 
 ---
 
@@ -23,7 +24,7 @@ allowed to answer it:
 | 4 | **Rules** | How does the world change? | `lr-application` — closed declarative event/condition/action interpreter |
 | 5 | **Application** | What commands/queries operate on the world? | `crates/lr-application` — ports + `HealthService` |
 | 6 | **Presentation** | How should a thing look? | `src/presentation/spec.ts` — controlled style schema |
-| 7 | **UI state / Workspace** | How does the user want the interface arranged? | *(Phase 4)* |
+| 7 | **UI state / Workspace** | How does the user want the interface arranged? | `src/App.tsx`, `src/features/world/WorldWorkspace.tsx` — route, panel, and contextual preferences |
 | — | **Persistence** | How is everything saved? | `crates/lr-persistence` — SQLite adapter |
 
 Two of these deserve emphasis.
@@ -261,7 +262,7 @@ The execution audit is debugging history, not a replacement for Transactions or 
 
 Conditions are nested at most 8 levels, each logical group has at most 16 children and the full tree at most 128 nodes; a Rule has at most 16 actions, a chain at most 32 actions and 64 evaluations, and maximum accepted chain depth is 8. The evaluator also rejects a repeated `(Rule ID, canonical event payload)` pair. A guard abort records its reason and leaves root/domain writes unapplied. These limits also bound malformed or accidental trigger cycles.
 
-There is no evaluator for arbitrary expressions, no script/action plug-in mechanism, no scheduler/daemon, and no distributed event bus. Conditions read only the typed event payload, not arbitrary live entity state. No skill XP/unlock, Effect activation, start/abandon/fail Quest action, or narrative action is exposed yet. Those omissions are deliberate; Phase 4 is not started by this milestone.
+There is no evaluator for arbitrary expressions, no script/action plug-in mechanism, no scheduler/daemon, and no distributed event bus. Conditions read only the typed event payload, not arbitrary live entity state. No skill XP/unlock, Effect activation, start/abandon/fail Quest action, or narrative action is exposed yet. Those omissions are deliberate; the Phase 4 UI consumes only supported operations and does not add gameplay rules.
 
 ---
 
@@ -281,9 +282,9 @@ Daily snapshots are immutable, unique per entity/date observations, not summarie
 
 ### Search is a typed query over a compact text projection
 
-`lr-application::SearchQuery` and `SearchHit` provide filtering/sorting/pagination without teaching the frontend SQL. SQLite FTS5 indexes only bounded identity/type/status/time/name/body text; triggers and migration backfill synchronize it. Full aggregate rows, metadata JSON, and rule payloads are not copied into a second database. Query filters include entity kind, Player, Concept association, type/status/active, time range, and bounded text. Effect active state is evaluated against the query instant; explicit Concept links, relationships, and targets drive related-Concept filtering. Tags, arbitrary JSON search, ranking tuning, and the search/timeline UI are deferred.
+`lr-application::SearchQuery` and `SearchHit` provide filtering/sorting/pagination without teaching the frontend SQL. SQLite FTS5 indexes only bounded identity/type/status/time/name/body text; triggers and migration backfill synchronize it. Full aggregate rows, metadata JSON, and rule payloads are not copied into a second database. Query filters include entity kind, Player, Concept association, type/status/active, time range, and bounded text. Effect active state is evaluated against the query instant; explicit Concept links, relationships, and targets drive related-Concept filtering. The first World Explorer UI is implemented in Phase 4; tags, arbitrary JSON search, ranking tuning, and a timeline remain deferred.
 
-`ConceptService::detail` composes current progress, Concept relationships, explicit related entity references, progress history, and snapshots into a backend read model. It is data for a future specialized page, not a persisted page entity or Phase 4 UI implementation.
+`ConceptService::detail` composes current progress, Concept relationships, explicit related entity references, progress history, and snapshots into a backend read model. It is data for specialized views, not a persisted page entity.
 
 ---
 
@@ -301,9 +302,21 @@ Stages and Branches are optional typed child records, not a universal requiremen
 
 SQLite before-image revision triggers capture mutable aggregate edits. Recovery uses a new mutation with its own revision, not an overwrite of history. Active/archived/trashed lifecycle is soft and reversible; trashed records remain stored. Contextual visibility is a per-player presentation preference and is never a domain state, deletion, or permission. Search applies it only when a caller requests a specific context, while lifecycle filters remain separate.
 
-Phase 3.6 exposes the use cases through typed contracts and thin Tauri adapters. It establishes data and behavior for later screens but intentionally adds no React components, workspace, or Phase 4 UI state.
+Phase 3.6 exposes the use cases through typed contracts and thin Tauri adapters. It establishes data and behavior used by the Phase 4 presentation layer below.
 
-## 9. Roadmap
+## 9. Phase 4 presentation and workspace
+
+The React shell is a presentation client, not a second domain. `AppShell` owns route navigation and active Player selection; `App.tsx` restores the selected route and world from local UI storage and coordinates typed `CoreClient` reads/writes. Feature screens use those DTOs and command methods only—React has no SQLite path and invokes Tauri only inside `src/domain/ipc.ts`.
+
+The dashboard is a structured, allow-listed set of panel definitions (source, title, context, filter, limit, order, visibility, pin, collapse, density and card/row variant). It does not evaluate persisted code or HTML. Workspace composition and selected route are UI-local state; entity visibility is persisted per Player and context through Phase 3.6 preferences. This distinction avoids pretending a dashboard panel is a world entity merely to reuse an entity-preference table. Presentation changes therefore do not modify canonical entity records.
+
+World Explorer is an application-query client for the existing FTS5 search use case. Kind/type, Concept relationship, active state, time range, sorting, bounded paging, and separate hidden/archive/trash inclusion remain explicit filters. Reusable detail surfaces display typed entity metadata, Concept relationships and associations, attached content, comments, lifecycle, and supported revisions. Restore is an explicit application command and adds history; there is no permanent purge UI.
+
+Major feature routes cover Player, Quests with optional Stage/Branch and real Session activity, Skills and Skill Trees, Concepts and their typed relationships/progress tracks, Effects, Journal content, Search/Explorer, and History/Recovery. Simple Quests remain valid without hierarchy. Session start/finish calls are player-initiated; no background process or missing-day inference is introduced. The browser-only Vite preview has no Tauri bridge and intentionally displays a connection warning; the shipped target is the local desktop app.
+
+The first-generation scope intentionally defers unrestricted workspace authoring, arbitrary custom panels, rich text/markdown editing, global graph traversal, complete per-kind bespoke detail pages, and permanent deletion. See [Phase 4 report](PHASE-4-REPORT.md) for the detailed UI inventory and verification.
+
+## 10. Roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -312,8 +325,8 @@ Phase 3.6 exposes the use cases through typed contracts and thin Tauri adapters.
 | **2.1** | Canonical daily state history, dynamic stats, XP policy, lifecycle and hierarchy hardening | **complete in `phase-2.1`** |
 | **3** | Typed, declarative event/condition/action engine, bounded chains, rule audit and atomic SQLite execution | **complete in `phase-3`** |
 | **3.5** | Typed Concepts, relationships, progress tracks/history, temporal clarity, and global search foundation | **complete in `phase-3.5`** |
-| **3.6** | Manual progression authority, Quest Stages/Branches, real Sessions, recoverable revisions/trash, contextual visibility, and suggestions | **implementation / verification in `phase-3.6`** |
-| 4 | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | planned |
+| **3.6** | Manual progression authority, Quest Stages/Branches, real Sessions, recoverable revisions/trash, contextual visibility, and suggestions | **complete in `phase-3.6`** |
+| **4** | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | **complete in `phase-4-ui`** |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |
 

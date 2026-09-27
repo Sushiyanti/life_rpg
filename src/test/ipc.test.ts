@@ -28,6 +28,13 @@ describe('COMMANDS', () => {
     expect(COMMANDS.createSkillTree).toBe('create_skill_tree');
     expect(COMMANDS.capturePlayerSnapshot).toBe('capture_player_snapshot');
     expect(COMMANDS.getWorldOverview).toBe('get_world_overview');
+    expect(COMMANDS.listConcepts).toBe('list_concepts');
+    expect(COMMANDS.listConceptRelationshipTypes).toBe('list_concept_relationship_types');
+    expect(COMMANDS.relateConcepts).toBe('relate_concepts');
+    expect(COMMANDS.searchWorld).toBe('search_world');
+    expect(COMMANDS.listEntityRevisions).toBe('list_entity_revisions');
+    expect(COMMANDS.setPresentationPreference).toBe('set_presentation_preference');
+    expect(COMMANDS.startQuestSession).toBe('start_quest_session');
   });
 });
 

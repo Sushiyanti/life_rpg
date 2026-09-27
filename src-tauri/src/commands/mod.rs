@@ -12,6 +12,7 @@
 //! Phase 1 there are three: a status read, a tiny liveness ping, and a location
 //! readout. That is intentionally small.
 
+pub mod concepts;
 pub mod semantics;
 pub mod status;
 pub mod world;

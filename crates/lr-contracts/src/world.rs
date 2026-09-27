@@ -4,10 +4,39 @@ use lr_application::{
     AwardXpOutcome, Rule as AppRule, RuleDefinition, RuleExecutionRecord, WorldOverview,
 };
 use lr_domain::{
-    Comment, Effect, NarrativeEntry, Player, PlayerStat, PlayerStateSnapshot, Quest, Skill,
-    SkillStateSnapshot, SkillTree, StatDefinition, Transaction,
+    Comment, Concept, ConceptRelationship, Effect, NarrativeEntry, Player, PlayerStat,
+    PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree, StatDefinition, Transaction,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptDto {
+    pub id: String,
+    pub player_id: String,
+    pub type_code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<Concept> for ConceptDto {
+    fn from(v: Concept) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            type_code: v.concept_type.code,
+            name: v.name,
+            description: v.description,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -443,6 +472,32 @@ impl From<PlayerStat> for PlayerStatDto {
             player_id: v.player_id.to_string(),
             stat_code: v.stat_code,
             current_value: v.current_value,
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptRelationshipDto {
+    pub id: String,
+    pub player_id: String,
+    pub source_concept_id: String,
+    pub target_concept_id: String,
+    pub relationship_code: String,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<ConceptRelationship> for ConceptRelationshipDto {
+    fn from(v: ConceptRelationship) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            source_concept_id: v.source_concept_id.to_string(),
+            target_concept_id: v.target_concept_id.to_string(),
+            relationship_code: v.relationship_type.code,
+            is_active: v.is_active,
+            created_at: v.created_at.to_string(),
             updated_at: v.updated_at.to_string(),
         }
     }

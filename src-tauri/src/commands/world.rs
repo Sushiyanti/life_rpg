@@ -235,6 +235,18 @@ pub fn add_comment(
         .map_err(Into::into)
 }
 #[tauri::command]
+pub fn list_comments(
+    state: State<'_, AppState>,
+    target_kind: String,
+    target_id: String,
+) -> Result<Vec<CommentDto>, CommandErrorDto> {
+    state
+        .world
+        .list_comments(&target_kind, &target_id)
+        .map(|values| values.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
 pub fn write_narrative(
     state: State<'_, AppState>,
     player_id: String,

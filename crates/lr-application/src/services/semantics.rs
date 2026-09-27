@@ -339,6 +339,8 @@ where
         sort_order: i32,
         is_pinned: bool,
         is_collapsed: Option<bool>,
+        variant: Option<String>,
+        density: Option<String>,
     ) -> Result<PresentationPreference, AppError> {
         let now = self.now()?;
         let mut p = PresentationPreference::new(
@@ -352,6 +354,8 @@ where
         p.sort_order = sort_order;
         p.is_pinned = is_pinned;
         p.is_collapsed = is_collapsed;
+        p.variant = variant;
+        p.density = density;
         p.updated_at = now;
         self.store.set_presentation(&p)?;
         Ok(p)

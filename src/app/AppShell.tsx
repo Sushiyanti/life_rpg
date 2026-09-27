@@ -1,35 +1,27 @@
-/**
- * `AppShell` — the outermost chrome: title bar band plus a content slot.
- *
- * It knows nothing about status or storage. Phase 5 will swap the static title
- * for a command/keyboard-shortcut bar and put workspace tabs here; the slot
- * contract (`children`) will not change.
- */
-
 import type { ReactNode } from 'react';
+import type { Player } from '../domain/world';
 import './AppShell.css';
 
-interface AppShellProps {
-  children: ReactNode;
-}
+export type AppRoute = 'dashboard'|'player'|'quests'|'skills'|'skillTrees'|'concepts'|'effects'|'journal'|'explorer'|'history'|'rules'|'status';
+const navigation: {section:string;items:{id:AppRoute;label:string;glyph:string}[]}[] = [
+  {section:'World',items:[{id:'dashboard',label:'Overview',glyph:'◈'},{id:'player',label:'Player',glyph:'◉'},{id:'quests',label:'Quests',glyph:'◇'},{id:'skills',label:'Skills',glyph:'⌁'},{id:'skillTrees',label:'Skill trees',glyph:'⌘'},{id:'concepts',label:'Concepts',glyph:'◎'},{id:'effects',label:'Effects',glyph:'✦'},{id:'journal',label:'Journal',glyph:'▤'}]},
+  {section:'Tools',items:[{id:'explorer',label:'World explorer',glyph:'⌕'},{id:'history',label:'History & recovery',glyph:'◷'},{id:'rules',label:'Rules & automation',glyph:'⟳'}]},
+];
+const titles:Record<AppRoute,string>={dashboard:'Your world',player:'Player',quests:'Quest log',skills:'Skills',skillTrees:'Skill trees',concepts:'Concepts',effects:'Effects',journal:'Chronicle',explorer:'World explorer',history:'History & recovery',rules:'Rules & automation',status:'System health'};
 
-export function AppShell({ children }: AppShellProps) {
-  return (
-    <div className="app-shell">
-      <header className="app-shell__bar">
-        <div className="app-shell__brand">
-          <span className="app-shell__sigil" aria-hidden="true">
-            ◆
-          </span>
-          <span className="app-shell__title">Life RPG</span>
-          <span className="app-shell__tag">local-first world engine</span>
-        </div>
-        <div className="app-shell__meta">
-          <span className="app-shell__phase">Phase 1 · foundation</span>
-        </div>
+export function AppShell({children,route,onNavigate,player,players,onPlayerChange,onCreate,ready}:{children:ReactNode;route:AppRoute;onNavigate:(route:AppRoute)=>void;player:Player|null;players:{id:string;name:string}[];onPlayerChange:(id:string)=>void;onCreate:()=>void;ready:boolean}) {
+  return <div className="app-shell">
+    <aside className="app-rail" aria-label="Main navigation">
+      <button className="app-brand" onClick={()=>onNavigate('dashboard')} aria-label="Life RPG home"><span className="app-brand__mark">L</span><span>Life RPG</span></button>
+      <div className="app-rail__scroll">{navigation.map(group=><section className="app-nav-group" key={group.section}><p>{group.section}</p>{group.items.map(item=><button key={item.id} className={`app-nav-item ${route===item.id?'is-active':''}`} onClick={()=>onNavigate(item.id)} aria-current={route===item.id?'page':undefined}><span aria-hidden="true">{item.glyph}</span>{item.label}</button>)}</section>)}</div>
+      <div className="app-rail__bottom"><button className={`app-nav-item ${route==='status'?'is-active':''}`} onClick={()=>onNavigate('status')}><span className={`health-dot ${ready?'is-ready':''}`} aria-hidden="true"/>System health</button><small>Offline-first · local world</small></div>
+    </aside>
+    <div className="app-main-column">
+      <header className="app-topbar"><div className="app-topbar__title"><span>WORLD / {titles[route].toUpperCase()}</span><h1>{titles[route]}</h1></div>
+        <div className="app-topbar__actions">{players.length>0&&<label className="world-switch"><span>Active world</span><select aria-label="Active player world" value={player?.id??''} onChange={e=>onPlayerChange(e.target.value)}>{players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}{player&&<div className="top-player"><span className="avatar">{player.name.slice(0,1).toUpperCase()}</span><div><strong>{player.name}</strong><small>Level {player.level}{player.levelName?` · ${player.levelName}`:''}</small></div></div>}<button className="button button--primary button--compact" onClick={onCreate} disabled={!player} aria-label="Create new item">＋ New</button></div>
       </header>
-
-      <main className="app-shell__content">{children}</main>
+      <main className="app-shell__content" key={route}>{children}</main>
+      <footer className="app-footer"><span>Life RPG <b>3.6 · world semantics</b></span><span>Progress is player-authored · history stays recoverable</span></footer>
     </div>
-  );
+  </div>;
 }

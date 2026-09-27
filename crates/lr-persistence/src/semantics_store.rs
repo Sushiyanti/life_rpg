@@ -522,6 +522,8 @@ mod tests {
                 4,
                 true,
                 Some(false),
+                None,
+                None,
             )
             .unwrap();
         query.context = Some("dashboard".into());
