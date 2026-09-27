@@ -34,8 +34,8 @@ pub struct Migration {
 
 /// The full, ordered migration history known to this build.
 ///
-/// Phase 1 shipped three foundation steps; Phase 2 appends the persistent domain
-/// as step four. Applied migration bodies are never edited.
+/// Phase 1 shipped three foundation steps; Phase 2 and Phase 2.1 append
+/// persistent world state and integrity improvements. Applied bodies never change.
 pub const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -56,6 +56,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 4,
         name: "0004_phase2_domain",
         sql: include_str!("migrations/0004_phase2_domain.sql"),
+    },
+    Migration {
+        version: 5,
+        name: "0005_phase21_integrity",
+        sql: include_str!("migrations/0005_phase21_integrity.sql"),
     },
 ];
 
@@ -207,7 +212,7 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3, 4]);
+        assert_eq!(applied, vec![1, 2, 3, 4, 5]);
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -215,7 +220,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 4);
+        assert_eq!(first.len(), 5);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -223,7 +228,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 4, "ledger must not accumulate duplicates");
+        assert_eq!(count, 5, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -233,7 +238,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 4);
+        assert_eq!(report.migrations.len(), 5);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -257,7 +262,11 @@ mod tests {
         .unwrap();
 
         let applied = run_migrations(&mut conn, T0).unwrap();
-        assert_eq!(applied, vec![2, 3, 4], "must apply only the missing steps");
+        assert_eq!(
+            applied,
+            vec![2, 3, 4, 5],
+            "must apply only the missing steps"
+        );
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
@@ -287,7 +296,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![4]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![4, 5]);
         assert!(schema_report(&conn).unwrap().is_current());
 
         let proof_rows: i64 = conn
@@ -310,6 +319,36 @@ mod tests {
             player_table, 1,
             "Phase 2 schema must be available after upgrade"
         );
+    }
+
+    #[test]
+    fn phase21_migration_reconciles_legacy_negative_xp_with_history() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+        for migration in &MIGRATIONS[..4] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES (?1,?2,?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES ('old-player','Old',1,-35,?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![5]);
+        let player: (i64, i32) = conn
+            .query_row(
+                "SELECT current_xp,level FROM players WHERE id='old-player'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(player, (0, 1));
+        let ledger:i64=conn.query_row("SELECT COALESCE(SUM(applied_amount),0) FROM transactions WHERE player_id='old-player' AND resource='xp'",[],|r|r.get(0)).unwrap();
+        assert_eq!(ledger, 0, "migration writes a matching correction event");
+        assert!(conn
+            .execute("UPDATE players SET current_xp=-1 WHERE id='old-player'", [])
+            .is_err());
     }
 
     #[test]

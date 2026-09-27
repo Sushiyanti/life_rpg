@@ -10,3 +10,4 @@ lr-application.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
+serde_json.workspace = true

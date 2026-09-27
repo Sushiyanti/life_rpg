@@ -44,10 +44,11 @@ impl Player {
         })
     }
     pub fn apply_xp(&mut self, amount: i64, now: Iso8601Timestamp) -> DomainResult<()> {
-        self.current_xp = self
+        let next_xp = self
             .current_xp
             .checked_add(amount)
             .ok_or_else(|| DomainError::Invariant("XP overflow".into()))?;
+        self.current_xp = next_xp.max(0);
         self.level = (self.current_xp.div_euclid(XP_PER_LEVEL) + 1).max(1) as i32;
         self.updated_at = now;
         Ok(())
@@ -56,5 +57,27 @@ impl Player {
         self.name = text("player name", name)?;
         self.updated_at = now;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn now() -> Iso8601Timestamp {
+        Iso8601Timestamp::parse("2026-09-27T00:00:00Z").unwrap()
+    }
+    #[test]
+    fn xp_penalties_floor_at_zero_and_awards_progress_normally() {
+        let mut player = Player::new(EntityId::new("p1").unwrap(), "Ada", now()).unwrap();
+        player.apply_xp(10, now()).unwrap();
+        assert_eq!(player.current_xp, 10);
+        player.apply_xp(-4, now()).unwrap();
+        assert_eq!(player.current_xp, 6);
+        player.apply_xp(-25, now()).unwrap();
+        assert_eq!(player.current_xp, 0);
+        player.apply_xp(-25, now()).unwrap();
+        assert_eq!(player.current_xp, 0);
+        player.apply_xp(1_000, now()).unwrap();
+        assert_eq!((player.current_xp, player.level), (1_000, 2));
     }
 }

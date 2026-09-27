@@ -4,6 +4,9 @@ This document records *why* the system is shaped the way it is. The README
 describes how to use it; this describes the reasoning, the boundaries, and the
 decisions that will matter in later phases.
 
+For the product-specific vocabulary and current invariants, see the [Domain
+Design Codex](DOMAIN-DESIGN-CODEX.md) and [Phase 2.1 report](PHASE-2.1-REPORT.md).
+
 ---
 
 ## 1. The seven responsibilities
@@ -239,21 +242,25 @@ blocking on a question. These were chosen during Phase 1:
 | Phase | Scope | Status |
 |---|---|---|
 | **1** | Foundation: workspace, shell, SQLite, migrations, layering, health screen, tests | **complete** |
-| 2 | Domain aggregates: Player, Quest, Skill, Skill Tree, Effect, Transaction, Comment, Narrative Entry; repositories; snapshots; type-definition repository | next |
-| 3 | Rules engine: condition → trigger → action; reusable penalties | planned |
+| **2** | Persistent world aggregates, type vocabulary, transactions and snapshots | **complete** |
+| **2.1** | Canonical daily state history, dynamic stats, XP policy, lifecycle and hierarchy hardening | **complete in `phase-2.1`** |
+| 3 | Rules engine: condition → trigger → action; reusable penalties | planned, not started |
 | 4 | Dynamic presentation: stored presentation records, UI-state persistence, workspace layout | planned |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |
 
-### Phase 2 preview — what the foundation already decided
+### Phase 2.1 integrity decisions
 
-- Aggregates reference `type_definitions` by `(namespace, code)`; adding a quest
-  type stays a data operation.
-- Repositories implement port traits in `lr-application`, the same shape as
-  `HealthStore`, and live in `lr-persistence::repositories`.
-- `EntityId` is the primary key type; `Iso8601Timestamp` is the time type.
-- Every mutation that writes more than one row goes through
-  `Connection::transaction`.
-- `player_state_snapshot` gets `UNIQUE (player_id, snapshot_date)` — the brief's
-  uniqueness rule — with corrections handled by an explicit correction
-  mechanism, not by overwriting history.
+- The `WorldStore` application port is implemented by `lr-persistence::world_store`;
+  SQLite remains absent from domain, application, contracts, and frontend layers.
+- Data-defined Player stats avoid one source-code field and migration per stat.
+  Core identity, values, bounds, and ownership remain structured columns.
+- Player and Skill snapshots preserve explicitly selected, versioned canonical
+  state and have a unique entity/date key. They are not aggregate serialization.
+- XP events preserve requested and actually applied deltas separately; a zero
+  floor is enforced in domain operations and SQLite. Related state/history writes
+  are one transaction.
+- Recursive SQLite triggers enforce owner/tree consistency and cycle prevention;
+  FKs alone only prove that a referenced row exists.
+- Quest lifecycle deliberately remains the Phase 2 set; pause/failure semantics
+  await an intentional gameplay/rules design instead of accumulating unused states.

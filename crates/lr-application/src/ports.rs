@@ -2,8 +2,9 @@
 
 use crate::error::StorageError;
 use lr_domain::{
-    Comment, CommentTargetKind, Effect, EntityId, NarrativeEntry, Player, PlayerStateSnapshot,
-    Quest, Skill, SkillStateSnapshot, SkillTree, Transaction, TypeDefinition,
+    Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
+    Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
+    StatDefinition, Transaction, TypeDefinition,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -80,6 +81,26 @@ pub trait WorldStore: Send + Sync {
     fn create_player(&self, player: &Player) -> Result<(), StorageError>;
     fn get_player(&self, id: &EntityId) -> Result<Option<Player>, StorageError>;
     fn update_player(&self, player: &Player) -> Result<(), StorageError>;
+    fn create_stat_definition(&self, _: &StatDefinition) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "stat definitions are not supported by this store".into(),
+        ))
+    }
+    fn list_stat_definitions(&self) -> Result<Vec<StatDefinition>, StorageError> {
+        Err(StorageError::Operation(
+            "stat definitions are not supported by this store".into(),
+        ))
+    }
+    fn set_player_stat(&self, _: &PlayerStat) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "player stats are not supported by this store".into(),
+        ))
+    }
+    fn list_player_stats(&self, _: &EntityId) -> Result<Vec<PlayerStat>, StorageError> {
+        Err(StorageError::Operation(
+            "player stats are not supported by this store".into(),
+        ))
+    }
 
     fn insert_quest(&self, quest: &Quest) -> Result<(), StorageError>;
     fn get_quest(&self, id: &EntityId) -> Result<Option<Quest>, StorageError>;
@@ -100,6 +121,15 @@ pub trait WorldStore: Send + Sync {
         player_id: &EntityId,
         active_at: Option<&str>,
     ) -> Result<Vec<Effect>, StorageError>;
+    fn deactivate_effect(
+        &self,
+        _: &EntityId,
+        _: &Iso8601Timestamp,
+    ) -> Result<Effect, StorageError> {
+        Err(StorageError::Operation(
+            "effect deactivation is not supported by this store".into(),
+        ))
+    }
 
     fn append_transaction(&self, tx: &Transaction) -> Result<Transaction, StorageError>;
     fn list_transactions(
@@ -110,11 +140,36 @@ pub trait WorldStore: Send + Sync {
     fn transaction_total(&self, player_id: &EntityId, resource: &str) -> Result<i64, StorageError>;
 
     fn insert_player_snapshot(&self, snapshot: &PlayerStateSnapshot) -> Result<(), StorageError>;
+    fn capture_player_snapshot(
+        &self,
+        _player_id: &EntityId,
+        _snapshot_date: &DateValue,
+        _created_at: &Iso8601Timestamp,
+    ) -> Result<PlayerStateSnapshot, StorageError> {
+        Err(StorageError::Operation(
+            "player snapshots are not supported by this store".into(),
+        ))
+    }
     fn list_player_snapshots(
         &self,
         player_id: &EntityId,
     ) -> Result<Vec<PlayerStateSnapshot>, StorageError>;
     fn insert_skill_snapshot(&self, snapshot: &SkillStateSnapshot) -> Result<(), StorageError>;
+    fn capture_skill_snapshot(
+        &self,
+        _skill_id: &EntityId,
+        _snapshot_date: &DateValue,
+        _created_at: &Iso8601Timestamp,
+    ) -> Result<SkillStateSnapshot, StorageError> {
+        Err(StorageError::Operation(
+            "skill snapshots are not supported by this store".into(),
+        ))
+    }
+    fn list_skill_snapshots(&self, _: &EntityId) -> Result<Vec<SkillStateSnapshot>, StorageError> {
+        Err(StorageError::Operation(
+            "skill snapshots are not supported by this store".into(),
+        ))
+    }
 
     fn add_comment(&self, comment: &Comment) -> Result<Comment, StorageError>;
     fn list_comments(
@@ -180,6 +235,18 @@ impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
     fn update_player(&self, p: &Player) -> Result<(), StorageError> {
         (**self).update_player(p)
     }
+    fn create_stat_definition(&self, d: &StatDefinition) -> Result<(), StorageError> {
+        (**self).create_stat_definition(d)
+    }
+    fn list_stat_definitions(&self) -> Result<Vec<StatDefinition>, StorageError> {
+        (**self).list_stat_definitions()
+    }
+    fn set_player_stat(&self, s: &PlayerStat) -> Result<(), StorageError> {
+        (**self).set_player_stat(s)
+    }
+    fn list_player_stats(&self, id: &EntityId) -> Result<Vec<PlayerStat>, StorageError> {
+        (**self).list_player_stats(id)
+    }
     fn insert_quest(&self, q: &Quest) -> Result<(), StorageError> {
         (**self).insert_quest(q)
     }
@@ -219,6 +286,13 @@ impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
     fn list_effects(&self, id: &EntityId, a: Option<&str>) -> Result<Vec<Effect>, StorageError> {
         (**self).list_effects(id, a)
     }
+    fn deactivate_effect(
+        &self,
+        id: &EntityId,
+        at: &Iso8601Timestamp,
+    ) -> Result<Effect, StorageError> {
+        (**self).deactivate_effect(id, at)
+    }
     fn append_transaction(&self, t: &Transaction) -> Result<Transaction, StorageError> {
         (**self).append_transaction(t)
     }
@@ -231,6 +305,14 @@ impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
     fn insert_player_snapshot(&self, s: &PlayerStateSnapshot) -> Result<(), StorageError> {
         (**self).insert_player_snapshot(s)
     }
+    fn capture_player_snapshot(
+        &self,
+        id: &EntityId,
+        date: &DateValue,
+        at: &Iso8601Timestamp,
+    ) -> Result<PlayerStateSnapshot, StorageError> {
+        (**self).capture_player_snapshot(id, date, at)
+    }
     fn list_player_snapshots(
         &self,
         id: &EntityId,
@@ -239,6 +321,17 @@ impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
     }
     fn insert_skill_snapshot(&self, s: &SkillStateSnapshot) -> Result<(), StorageError> {
         (**self).insert_skill_snapshot(s)
+    }
+    fn capture_skill_snapshot(
+        &self,
+        id: &EntityId,
+        date: &DateValue,
+        at: &Iso8601Timestamp,
+    ) -> Result<SkillStateSnapshot, StorageError> {
+        (**self).capture_skill_snapshot(id, date, at)
+    }
+    fn list_skill_snapshots(&self, id: &EntityId) -> Result<Vec<SkillStateSnapshot>, StorageError> {
+        (**self).list_skill_snapshots(id)
     }
     fn add_comment(&self, c: &Comment) -> Result<Comment, StorageError> {
         (**self).add_comment(c)

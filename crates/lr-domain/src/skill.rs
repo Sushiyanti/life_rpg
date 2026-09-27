@@ -102,6 +102,13 @@ pub struct Skill {
     pub updated_at: Iso8601Timestamp,
 }
 impl Skill {
+    pub fn set_parent(&mut self, parent: Option<EntityId>) -> DomainResult<()> {
+        if parent.as_ref() == Some(&self.id) {
+            return Err(DomainError::Invariant("skill cannot parent itself".into()));
+        }
+        self.parent_skill_id = parent;
+        Ok(())
+    }
     pub fn new(
         id: EntityId,
         skill_tree_id: EntityId,

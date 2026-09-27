@@ -62,6 +62,13 @@ pub struct Quest {
     pub updated_at: Iso8601Timestamp,
 }
 impl Quest {
+    pub fn set_parent(&mut self, parent: Option<EntityId>) -> DomainResult<()> {
+        if parent.as_ref() == Some(&self.id) {
+            return Err(DomainError::Invariant("quest cannot parent itself".into()));
+        }
+        self.parent_quest_id = parent;
+        Ok(())
+    }
     pub fn new(
         id: EntityId,
         player_id: EntityId,

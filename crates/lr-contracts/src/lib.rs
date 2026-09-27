@@ -356,6 +356,37 @@ mod tests {
     }
 
     #[test]
+    fn phase21_history_and_xp_fields_serialize_camel_case() {
+        use lr_domain::{DateValue, EntityId, Iso8601Timestamp, PlayerStateSnapshot, Transaction};
+        let player = EntityId::new("p1").unwrap();
+        let at = Iso8601Timestamp::parse("2026-09-25T00:00:00Z").unwrap();
+        let snapshot = PlayerStateSnapshot::new(
+            player.clone(),
+            DateValue::parse("2026-09-25").unwrap(),
+            1,
+            0,
+            at.clone(),
+        )
+        .unwrap()
+        .with_state_json(r#"{"schemaVersion":1,"stats":[],"activeEffects":[]}"#.into());
+        let json = serde_json::to_value(world::PlayerSnapshotDto::from(snapshot)).unwrap();
+        for key in [
+            "playerId",
+            "snapshotDate",
+            "currentXp",
+            "stateJson",
+            "createdAt",
+        ] {
+            assert!(json.get(key).is_some(), "missing key {key}");
+        }
+        let penalty = Transaction::xp_adjustment(player, -20, 0, at).unwrap();
+        let tx = serde_json::to_value(world::TransactionDto::from(penalty)).unwrap();
+        assert_eq!(tx["amount"], -20);
+        assert_eq!(tx["appliedAmount"], 0);
+        assert!(tx.get("applied_amount").is_none());
+    }
+
+    #[test]
     fn app_error_maps_to_a_stable_code() {
         let err = lr_application::AppError::Storage(lr_application::StorageError::Unreachable(
             "gone".into(),

@@ -1869,6 +1869,7 @@ dependencies = [
  "lr-application",
  "lr-domain",
  "rusqlite",
+ "serde_json",
  "tempfile",
  "thiserror 1.0.69",
 ]

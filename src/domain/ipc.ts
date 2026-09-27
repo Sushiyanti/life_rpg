@@ -19,8 +19,8 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { CommandError, HealthReport } from '../domain/health';
 import { toCommandError } from '../domain/health';
 import type {
-  AwardXpOutcome, Comment, NarrativeEntry, Player, PlayerSnapshot, Quest, Skill,
-  SkillTree, Transaction, WorldOverview,
+  AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Skill,
+  SkillSnapshot, SkillTree, StatDefinition, Transaction, WorldOverview,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -42,6 +42,14 @@ export const COMMANDS = {
   writeNarrative: 'write_narrative',
   getWorldOverview: 'get_world_overview',
   listTransactions: 'list_transactions',
+  captureSkillSnapshot: 'capture_skill_snapshot',
+  listPlayerSnapshots: 'list_player_snapshots',
+  listSkillSnapshots: 'list_skill_snapshots',
+  defineStat: 'define_stat',
+  listStatDefinitions: 'list_stat_definitions',
+  setPlayerStat: 'set_player_stat',
+  listPlayerStats: 'list_player_stats',
+  deactivateEffect: 'deactivate_effect',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -106,6 +114,14 @@ export class CoreClient {
   async writeNarrative(playerId:string,kind:string,title:string,content:string):Promise<NarrativeEntry>{return this.invoke<NarrativeEntry>(COMMANDS.writeNarrative,{playerId,kind,title,content});}
   async getWorldOverview(playerId:string):Promise<WorldOverview>{return this.invoke<WorldOverview>(COMMANDS.getWorldOverview,{playerId});}
   async listTransactions(playerId:string,limit?:number):Promise<Transaction[]>{return this.invoke<Transaction[]>(COMMANDS.listTransactions,{playerId,limit:limit??null});}
+  async captureSkillSnapshot(skillId:string):Promise<SkillSnapshot>{return this.invoke<SkillSnapshot>(COMMANDS.captureSkillSnapshot,{skillId});}
+  async listPlayerSnapshots(playerId:string):Promise<PlayerSnapshot[]>{return this.invoke<PlayerSnapshot[]>(COMMANDS.listPlayerSnapshots,{playerId});}
+  async listSkillSnapshots(skillId:string):Promise<SkillSnapshot[]>{return this.invoke<SkillSnapshot[]>(COMMANDS.listSkillSnapshots,{skillId});}
+  async defineStat(code:string,name:string,options:{description?:string;unit?:string;minimum?:number;maximum?:number}={}):Promise<StatDefinition>{return this.invoke<StatDefinition>(COMMANDS.defineStat,{code,name,description:options.description??null,unit:options.unit??null,minimum:options.minimum??null,maximum:options.maximum??null});}
+  async listStatDefinitions():Promise<StatDefinition[]>{return this.invoke<StatDefinition[]>(COMMANDS.listStatDefinitions);}
+  async setPlayerStat(playerId:string,statCode:string,value:number):Promise<PlayerStat>{return this.invoke<PlayerStat>(COMMANDS.setPlayerStat,{playerId,statCode,value});}
+  async listPlayerStats(playerId:string):Promise<PlayerStat[]>{return this.invoke<PlayerStat[]>(COMMANDS.listPlayerStats,{playerId});}
+  async deactivateEffect(effectId:string):Promise<Effect>{return this.invoke<Effect>(COMMANDS.deactivateEffect,{effectId});}
 
   private async invoke<T>(command: CommandName, args?: Record<string, unknown>): Promise<T> {
     try {

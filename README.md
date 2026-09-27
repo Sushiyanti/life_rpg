@@ -6,11 +6,12 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 2 — Persistent core domain.** The application now persists
-> Player state, hierarchical Quests and Skills, Skill Trees, Effects, immutable
-> daily snapshots, an append-only Transaction ledger, Comments, and Narrative
-> Entries. It remains local-first: React communicates with the Rust core through
-> typed Tauri IPC, and SQLite remains private to the persistence layer.
+> **Status: Phase 2.1 — Persistent core domain, history, and integrity.** Player
+> and Skill daily snapshots preserve canonical state; player stats are data-defined;
+> XP policy, Effect lifecycle, and ownership/hierarchy constraints are explicit.
+> The application remains local-first: typed Tauri IPC connects React to the Rust
+> core, while SQLite stays private to the persistence layer. See the [Domain Design
+> Codex](docs/DOMAIN-DESIGN-CODEX.md) and [Phase 2.1 report](docs/PHASE-2.1-REPORT.md).
 
 ---
 

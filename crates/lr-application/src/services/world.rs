@@ -4,7 +4,8 @@
 use crate::{AppError, Clock, WorldStore};
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
-    Player, PlayerStateSnapshot, Quest, Skill, SkillTree, Transaction, TypeRef,
+    Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
+    StatDefinition, Transaction, TypeRef,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -88,12 +89,12 @@ where
     ) -> Result<AwardXpOutcome, AppError> {
         let now = self.now()?;
         let mut player = self.required_player(player_id)?;
+        let prior_xp = player.current_xp;
         player.apply_xp(amount, now.clone())?;
-        let mut tx = Transaction::new(
+        let mut tx = Transaction::xp_adjustment(
             player.id.clone(),
-            TypeRef::transaction("xp")?,
-            "xp",
             amount,
+            player.current_xp - prior_xp,
             now,
         )?;
         tx.reason = reason;
@@ -123,7 +124,7 @@ where
             title,
             now,
         )?;
-        q.parent_quest_id = parent_quest_id.map(EntityId::new).transpose()?;
+        q.set_parent(parent_quest_id.map(EntityId::new).transpose()?)?;
         q.skill_id = skill_id.map(EntityId::new).transpose()?;
         q.difficulty = difficulty;
         q.xp_reward = xp_reward.unwrap_or(0);
@@ -158,12 +159,12 @@ where
             self.store.complete_quest(&q, None, None)?;
         } else {
             let mut p = self.required_player(q.player_id.as_str())?;
+            let prior_xp = p.current_xp;
             p.apply_xp(q.xp_reward, now.clone())?;
-            let mut reward = Transaction::new(
+            let mut reward = Transaction::xp_adjustment(
                 p.id.clone(),
-                TypeRef::transaction("xp")?,
-                "xp",
                 q.xp_reward,
+                p.current_xp - prior_xp,
                 now,
             )?;
             reward.reason = Some("quest_reward".into());
@@ -204,7 +205,7 @@ where
             name,
             self.now()?,
         )?;
-        value.parent_skill_id = parent_skill_id.map(EntityId::new).transpose()?;
+        value.set_parent(parent_skill_id.map(EntityId::new).transpose()?)?;
         self.store.insert_skill(&value)?;
         Ok(value)
     }
@@ -260,17 +261,98 @@ where
         &self,
         player_id: &str,
     ) -> Result<PlayerStateSnapshot, AppError> {
-        let p = self.required_player(player_id)?;
         let now = self.now()?;
-        let value = PlayerStateSnapshot::new(
-            p.id.clone(),
-            DateValue::parse(now.as_str().get(..10).unwrap_or(""))?,
-            p.level,
-            p.current_xp,
+        let id = EntityId::new(player_id)?;
+        self.store
+            .capture_player_snapshot(
+                &id,
+                &DateValue::parse(now.as_str().split('T').next().unwrap_or(""))?,
+                &now,
+            )
+            .map_err(Into::into)
+    }
+    pub fn capture_skill_snapshot(&self, skill_id: &str) -> Result<SkillStateSnapshot, AppError> {
+        let now = self.now()?;
+        let id = EntityId::new(skill_id)?;
+        self.store
+            .capture_skill_snapshot(
+                &id,
+                &DateValue::parse(now.as_str().split('T').next().unwrap_or(""))?,
+                &now,
+            )
+            .map_err(Into::into)
+    }
+    pub fn list_player_snapshots(
+        &self,
+        player_id: &str,
+    ) -> Result<Vec<PlayerStateSnapshot>, AppError> {
+        let player = self.required_player(player_id)?;
+        Ok(self.store.list_player_snapshots(&player.id)?)
+    }
+    pub fn list_skill_snapshots(
+        &self,
+        skill_id: &str,
+    ) -> Result<Vec<SkillStateSnapshot>, AppError> {
+        let id = EntityId::new(skill_id)?;
+        Ok(self.store.list_skill_snapshots(&id)?)
+    }
+    pub fn list_player_stats(&self, player_id: &str) -> Result<Vec<PlayerStat>, AppError> {
+        let player = self.required_player(player_id)?;
+        Ok(self.store.list_player_stats(&player.id)?)
+    }
+    pub fn list_stat_definitions(&self) -> Result<Vec<StatDefinition>, AppError> {
+        Ok(self.store.list_stat_definitions()?)
+    }
+    pub fn define_stat(
+        &self,
+        code: &str,
+        name: &str,
+        description: Option<String>,
+        unit: Option<String>,
+        minimum: Option<f64>,
+        maximum: Option<f64>,
+    ) -> Result<StatDefinition, AppError> {
+        let now = self.now()?;
+        let definition = StatDefinition::new(
+            self.new_id("stat")?,
+            code,
+            name,
+            description,
+            unit,
+            minimum,
+            maximum,
             now,
         )?;
-        self.store.insert_player_snapshot(&value)?;
-        Ok(value)
+        self.store.create_stat_definition(&definition)?;
+        Ok(definition)
+    }
+    pub fn set_player_stat(
+        &self,
+        player_id: &str,
+        stat_code: &str,
+        value: f64,
+    ) -> Result<PlayerStat, AppError> {
+        let player = self.required_player(player_id)?;
+        let definition = self
+            .store
+            .list_stat_definitions()?
+            .into_iter()
+            .find(|d| d.code == stat_code)
+            .ok_or_else(|| {
+                AppError::Domain(lr_domain::DomainError::invalid_value(
+                    "stat code",
+                    format!("no definition for `{stat_code}`"),
+                ))
+            })?;
+        let stat = PlayerStat::new(player.id, &definition, value, self.now()?)?;
+        self.store.set_player_stat(&stat)?;
+        Ok(stat)
+    }
+    pub fn deactivate_effect(&self, effect_id: &str) -> Result<Effect, AppError> {
+        let now = self.now()?;
+        self.store
+            .deactivate_effect(&EntityId::new(effect_id)?, &now)
+            .map_err(Into::into)
     }
     pub fn add_comment(
         &self,
@@ -346,12 +428,14 @@ mod tests {
     }
     struct Memory {
         player: Mutex<Option<Player>>,
+        skill: Mutex<Option<Skill>>,
         tx: Mutex<Vec<Transaction>>,
     }
     impl Memory {
         fn new() -> Self {
             Self {
                 player: Mutex::new(None),
+                skill: Mutex::new(None),
                 tx: Mutex::new(vec![]),
             }
         }
@@ -405,7 +489,7 @@ mod tests {
             Ok(())
         }
         fn get_skill(&self, _: &EntityId) -> Result<Option<Skill>, StorageError> {
-            Ok(None)
+            Ok(self.skill.lock().unwrap().clone())
         }
         fn update_skill(&self, _: &Skill) -> Result<(), StorageError> {
             Ok(())
@@ -435,6 +519,28 @@ mod tests {
         fn insert_player_snapshot(&self, _: &PlayerStateSnapshot) -> Result<(), StorageError> {
             Ok(())
         }
+        fn capture_player_snapshot(
+            &self,
+            player_id: &EntityId,
+            snapshot_date: &DateValue,
+            created_at: &Iso8601Timestamp,
+        ) -> Result<PlayerStateSnapshot, StorageError> {
+            let player = self
+                .player
+                .lock()
+                .unwrap()
+                .clone()
+                .filter(|p| &p.id == player_id)
+                .ok_or_else(|| StorageError::Operation("player not found".into()))?;
+            PlayerStateSnapshot::new(
+                player.id,
+                snapshot_date.clone(),
+                player.level,
+                player.current_xp,
+                created_at.clone(),
+            )
+            .map_err(|e| StorageError::Operation(e.to_string()))
+        }
         fn list_player_snapshots(
             &self,
             _: &EntityId,
@@ -446,6 +552,30 @@ mod tests {
             _: &lr_domain::SkillStateSnapshot,
         ) -> Result<(), StorageError> {
             Ok(())
+        }
+        fn capture_skill_snapshot(
+            &self,
+            skill_id: &EntityId,
+            date: &DateValue,
+            at: &Iso8601Timestamp,
+        ) -> Result<SkillStateSnapshot, StorageError> {
+            let skill = self
+                .skill
+                .lock()
+                .unwrap()
+                .clone()
+                .filter(|s| &s.id == skill_id)
+                .ok_or_else(|| StorageError::Operation("skill not found".into()))?;
+            SkillStateSnapshot::new(
+                skill.id,
+                date.clone(),
+                skill.level,
+                skill.current_xp,
+                skill.status,
+                skill.invested_minutes,
+                at.clone(),
+            )
+            .map_err(|e| StorageError::Operation(e.to_string()))
         }
         fn add_comment(&self, c: &Comment) -> Result<Comment, StorageError> {
             Ok(c.clone())
@@ -496,5 +626,49 @@ mod tests {
             .unwrap();
         assert_eq!(outcome.player.current_xp, 125);
         assert_eq!(outcome.transaction.resource, "xp");
+        assert_eq!(outcome.transaction.amount, 125);
+        assert_eq!(outcome.transaction.applied_amount, Some(125));
+    }
+    #[test]
+    fn xp_penalty_clamps_player_but_retains_requested_event() {
+        let service = WorldService::new(Memory::new(), Clock);
+        let p = service.create_player("Ada", None).unwrap();
+        let outcome = service
+            .award_xp(p.id.as_str(), -25, Some("penalty".into()), None)
+            .unwrap();
+        assert_eq!(outcome.player.current_xp, 0);
+        assert_eq!(outcome.transaction.amount, -25);
+        assert_eq!(outcome.transaction.applied_amount, Some(0));
+    }
+    #[test]
+    fn application_snapshot_use_case_is_date_keyed_and_uses_clock_time() {
+        let service = WorldService::new(Memory::new(), Clock);
+        let p = service.create_player("Ada", None).unwrap();
+        let snapshot = service.capture_player_snapshot(p.id.as_str()).unwrap();
+        assert_eq!(snapshot.snapshot_date.as_str(), "2026-09-25");
+        assert_eq!(snapshot.level, 1);
+        assert_eq!(snapshot.current_xp, 0);
+        assert_eq!(snapshot.created_at.as_str(), "2026-09-25T00:00:00+00:00");
+    }
+
+    #[test]
+    fn application_captures_a_skill_snapshot_through_the_skill_use_case() {
+        let memory = std::sync::Arc::new(Memory::new());
+        let service = WorldService::new(memory.clone(), Clock);
+        let skill = Skill::new(
+            EntityId::new("s1").unwrap(),
+            EntityId::new("tree1").unwrap(),
+            TypeRef::skill("core").unwrap(),
+            "Rust",
+            Iso8601Timestamp::parse("2026-09-25T00:00:00Z").unwrap(),
+        )
+        .unwrap();
+        *memory.skill.lock().unwrap() = Some(skill);
+        let snapshot = service.capture_skill_snapshot("s1").unwrap();
+        assert_eq!(snapshot.skill_id.as_str(), "s1");
+        assert_eq!(snapshot.snapshot_date.as_str(), "2026-09-25");
+        assert_eq!(snapshot.status.as_str(), "active");
+        assert_eq!(snapshot.invested_minutes, 0);
+        assert_eq!(snapshot.created_at.as_str(), "2026-09-25T00:00:00+00:00");
     }
 }

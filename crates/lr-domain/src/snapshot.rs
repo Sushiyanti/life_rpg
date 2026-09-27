@@ -2,6 +2,7 @@
 
 use crate::skill::SkillStatus;
 use crate::{DateValue, DomainError, DomainResult, EntityId, Iso8601Timestamp};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlayerStateSnapshot {
     pub id: Option<i64>,
@@ -9,6 +10,7 @@ pub struct PlayerStateSnapshot {
     pub snapshot_date: DateValue,
     pub level: i32,
     pub current_xp: i64,
+    /// Canonical, explicitly versioned daily state: dynamic stats and active effects.
     pub state_json: String,
     pub metadata_json: String,
     pub created_at: Iso8601Timestamp,
@@ -27,6 +29,12 @@ impl PlayerStateSnapshot {
                 "must be at least one",
             ));
         }
+        if current_xp < 0 {
+            return Err(DomainError::invalid_value(
+                "snapshot XP",
+                "must not be negative",
+            ));
+        }
         Ok(Self {
             id: None,
             player_id,
@@ -38,7 +46,12 @@ impl PlayerStateSnapshot {
             created_at,
         })
     }
+    pub fn with_state_json(mut self, state_json: String) -> Self {
+        self.state_json = state_json;
+        self
+    }
 }
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillStateSnapshot {
     pub id: Option<i64>,
@@ -48,6 +61,7 @@ pub struct SkillStateSnapshot {
     pub current_xp: i64,
     pub status: SkillStatus,
     pub invested_minutes: i64,
+    /// Reserved for documented skill state extensions; core fields stay structured.
     pub state_json: String,
     pub metadata_json: String,
     pub created_at: Iso8601Timestamp,
@@ -62,10 +76,10 @@ impl SkillStateSnapshot {
         invested_minutes: i64,
         created_at: Iso8601Timestamp,
     ) -> DomainResult<Self> {
-        if level < 1 || invested_minutes < 0 {
+        if level < 1 || current_xp < 0 || invested_minutes < 0 {
             return Err(DomainError::invalid_value(
                 "skill snapshot",
-                "invalid level or invested minutes",
+                "invalid level, XP, or invested minutes",
             ));
         }
         Ok(Self {

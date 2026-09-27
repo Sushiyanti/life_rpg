@@ -2,8 +2,8 @@
 
 use lr_application::{AwardXpOutcome, WorldOverview};
 use lr_domain::{
-    Comment, Effect, NarrativeEntry, Player, PlayerStateSnapshot, Quest, Skill, SkillTree,
-    Transaction,
+    Comment, Effect, NarrativeEntry, Player, PlayerStat, PlayerStateSnapshot, Quest, Skill,
+    SkillStateSnapshot, SkillTree, StatDefinition, Transaction,
 };
 use serde::{Deserialize, Serialize};
 
@@ -133,6 +133,7 @@ pub struct EffectDto {
     pub description: Option<String>,
     pub started_at: String,
     pub expires_at: Option<String>,
+    pub deactivated_at: Option<String>,
     pub intensity: i32,
 }
 impl From<Effect> for EffectDto {
@@ -145,6 +146,7 @@ impl From<Effect> for EffectDto {
             description: v.description,
             started_at: v.started_at.to_string(),
             expires_at: v.expires_at.map(|x| x.to_string()),
+            deactivated_at: v.deactivated_at.map(|x| x.to_string()),
             intensity: v.intensity,
         }
     }
@@ -157,6 +159,7 @@ pub struct TransactionDto {
     pub type_code: String,
     pub resource: String,
     pub amount: i64,
+    pub applied_amount: Option<i64>,
     pub occurred_at: String,
     pub reason: Option<String>,
     pub description: Option<String>,
@@ -171,6 +174,7 @@ impl From<Transaction> for TransactionDto {
             type_code: v.transaction_type.code,
             resource: v.resource,
             amount: v.amount,
+            applied_amount: v.applied_amount,
             occurred_at: v.occurred_at.to_string(),
             reason: v.reason,
             description: v.description,
@@ -187,6 +191,7 @@ pub struct PlayerSnapshotDto {
     pub snapshot_date: String,
     pub level: i32,
     pub current_xp: i64,
+    pub state_json: String,
     pub created_at: String,
 }
 impl From<PlayerStateSnapshot> for PlayerSnapshotDto {
@@ -197,6 +202,7 @@ impl From<PlayerStateSnapshot> for PlayerSnapshotDto {
             snapshot_date: v.snapshot_date.to_string(),
             level: v.level,
             current_xp: v.current_xp,
+            state_json: v.state_json,
             created_at: v.created_at.to_string(),
         }
     }
@@ -282,6 +288,80 @@ impl From<WorldOverview> for WorldOverviewDto {
             effects: v.effects.into_iter().map(Into::into).collect(),
             recent_transactions: v.recent_transactions.into_iter().map(Into::into).collect(),
             narratives: v.narratives.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillSnapshotDto {
+    pub id: Option<i64>,
+    pub skill_id: String,
+    pub snapshot_date: String,
+    pub level: i32,
+    pub current_xp: i64,
+    pub status: String,
+    pub invested_minutes: i64,
+    pub state_json: String,
+    pub created_at: String,
+}
+impl From<SkillStateSnapshot> for SkillSnapshotDto {
+    fn from(v: SkillStateSnapshot) -> Self {
+        Self {
+            id: v.id,
+            skill_id: v.skill_id.to_string(),
+            snapshot_date: v.snapshot_date.to_string(),
+            level: v.level,
+            current_xp: v.current_xp,
+            status: v.status.as_str().into(),
+            invested_minutes: v.invested_minutes,
+            state_json: v.state_json,
+            created_at: v.created_at.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatDefinitionDto {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub unit: Option<String>,
+    pub minimum: Option<f64>,
+    pub maximum: Option<f64>,
+    pub is_active: bool,
+}
+impl From<StatDefinition> for StatDefinitionDto {
+    fn from(v: StatDefinition) -> Self {
+        Self {
+            id: v.id.to_string(),
+            code: v.code,
+            name: v.name,
+            description: v.description,
+            unit: v.unit,
+            minimum: v.minimum,
+            maximum: v.maximum,
+            is_active: v.is_active,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerStatDto {
+    pub player_id: String,
+    pub stat_code: String,
+    pub current_value: f64,
+    pub updated_at: String,
+}
+impl From<PlayerStat> for PlayerStatDto {
+    fn from(v: PlayerStat) -> Self {
+        Self {
+            player_id: v.player_id.to_string(),
+            stat_code: v.stat_code,
+            current_value: v.current_value,
+            updated_at: v.updated_at.to_string(),
         }
     }
 }

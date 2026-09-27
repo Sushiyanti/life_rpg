@@ -3,8 +3,9 @@
 use crate::state::AppState;
 use lr_application::DEFAULT_LEDGER_LIMIT;
 use lr_contracts::world::{
-    AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, QuestDto,
-    SkillDto, SkillTreeDto, TransactionDto, WorldOverviewDto,
+    AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
+    QuestDto, SkillDto, SkillSnapshotDto, SkillTreeDto, StatDefinitionDto, TransactionDto,
+    WorldOverviewDto,
 };
 use lr_contracts::CommandErrorDto;
 use tauri::State;
@@ -199,4 +200,99 @@ pub fn list_transactions(
         .take(limit)
         .map(Into::into)
         .collect())
+}
+
+#[tauri::command]
+pub fn capture_skill_snapshot(
+    state: State<'_, AppState>,
+    skill_id: String,
+) -> Result<SkillSnapshotDto, CommandErrorDto> {
+    state
+        .world
+        .capture_skill_snapshot(&skill_id)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_player_snapshots(
+    state: State<'_, AppState>,
+    player_id: String,
+) -> Result<Vec<PlayerSnapshotDto>, CommandErrorDto> {
+    state
+        .world
+        .list_player_snapshots(&player_id)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_skill_snapshots(
+    state: State<'_, AppState>,
+    skill_id: String,
+) -> Result<Vec<SkillSnapshotDto>, CommandErrorDto> {
+    state
+        .world
+        .list_skill_snapshots(&skill_id)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn define_stat(
+    state: State<'_, AppState>,
+    code: String,
+    name: String,
+    description: Option<String>,
+    unit: Option<String>,
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+) -> Result<StatDefinitionDto, CommandErrorDto> {
+    state
+        .world
+        .define_stat(&code, &name, description, unit, minimum, maximum)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_stat_definitions(
+    state: State<'_, AppState>,
+) -> Result<Vec<StatDefinitionDto>, CommandErrorDto> {
+    state
+        .world
+        .list_stat_definitions()
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn set_player_stat(
+    state: State<'_, AppState>,
+    player_id: String,
+    stat_code: String,
+    value: f64,
+) -> Result<PlayerStatDto, CommandErrorDto> {
+    state
+        .world
+        .set_player_stat(&player_id, &stat_code, value)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_player_stats(
+    state: State<'_, AppState>,
+    player_id: String,
+) -> Result<Vec<PlayerStatDto>, CommandErrorDto> {
+    state
+        .world
+        .list_player_stats(&player_id)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn deactivate_effect(
+    state: State<'_, AppState>,
+    effect_id: String,
+) -> Result<lr_contracts::world::EffectDto, CommandErrorDto> {
+    state
+        .world
+        .deactivate_effect(&effect_id)
+        .map(Into::into)
+        .map_err(Into::into)
 }

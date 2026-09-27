@@ -7,8 +7,8 @@
 use lr_application::{StorageError, WorldStore};
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
-    Player, PlayerStateSnapshot, Quest, QuestStatus, Skill, SkillStateSnapshot, SkillStatus,
-    SkillTree, Transaction, TypeDefinition, TypeRef,
+    Player, PlayerStat, PlayerStateSnapshot, Quest, QuestStatus, Skill, SkillStateSnapshot,
+    SkillStatus, SkillTree, StatDefinition, Transaction, TypeDefinition, TypeRef,
 };
 use rusqlite::{params, Row, Transaction as SqlTransaction};
 
@@ -50,6 +50,30 @@ fn player(row: &Row<'_>) -> Result<Player, StorageError> {
         metadata_json: row.get(6).map_err(op)?,
         created_at: timestamp(row.get(7).map_err(op)?)?,
         updated_at: timestamp(row.get(8).map_err(op)?)?,
+    })
+}
+fn stat_definition(row: &Row<'_>) -> Result<StatDefinition, StorageError> {
+    Ok(StatDefinition {
+        id: id(row.get(0).map_err(op)?)?,
+        code: row.get(1).map_err(op)?,
+        name: row.get(2).map_err(op)?,
+        description: row.get(3).map_err(op)?,
+        unit: row.get(4).map_err(op)?,
+        minimum: row.get(5).map_err(op)?,
+        maximum: row.get(6).map_err(op)?,
+        is_active: b(row.get(7).map_err(op)?),
+        metadata_json: row.get(8).map_err(op)?,
+        created_at: timestamp(row.get(9).map_err(op)?)?,
+        updated_at: timestamp(row.get(10).map_err(op)?)?,
+    })
+}
+fn player_stat(row: &Row<'_>) -> Result<PlayerStat, StorageError> {
+    Ok(PlayerStat {
+        player_id: id(row.get(0).map_err(op)?)?,
+        stat_code: row.get(1).map_err(op)?,
+        current_value: row.get(2).map_err(op)?,
+        metadata_json: row.get(3).map_err(op)?,
+        updated_at: timestamp(row.get(4).map_err(op)?)?,
     })
 }
 fn quest(row: &Row<'_>) -> Result<Quest, StorageError> {
@@ -156,12 +180,17 @@ fn effect(row: &Row<'_>) -> Result<Effect, StorageError> {
             .map_err(op)?
             .map(timestamp)
             .transpose()?,
-        intensity: row.get(8).map_err(op)?,
-        source_kind: row.get(9).map_err(op)?,
-        source_id: row.get(10).map_err(op)?,
-        metadata_json: row.get(11).map_err(op)?,
-        created_at: timestamp(row.get(12).map_err(op)?)?,
-        updated_at: timestamp(row.get(13).map_err(op)?)?,
+        deactivated_at: row
+            .get::<_, Option<String>>(8)
+            .map_err(op)?
+            .map(timestamp)
+            .transpose()?,
+        intensity: row.get(9).map_err(op)?,
+        source_kind: row.get(10).map_err(op)?,
+        source_id: row.get(11).map_err(op)?,
+        metadata_json: row.get(12).map_err(op)?,
+        created_at: timestamp(row.get(13).map_err(op)?)?,
+        updated_at: timestamp(row.get(14).map_err(op)?)?,
     })
 }
 fn transaction(row: &Row<'_>) -> Result<Transaction, StorageError> {
@@ -171,12 +200,13 @@ fn transaction(row: &Row<'_>) -> Result<Transaction, StorageError> {
         transaction_type: type_ref(row.get(2).map_err(op)?, row.get(3).map_err(op)?)?,
         resource: row.get(4).map_err(op)?,
         amount: row.get(5).map_err(op)?,
-        occurred_at: timestamp(row.get(6).map_err(op)?)?,
-        reason: row.get(7).map_err(op)?,
-        description: row.get(8).map_err(op)?,
-        source_kind: row.get(9).map_err(op)?,
-        source_id: row.get(10).map_err(op)?,
-        metadata_json: row.get(11).map_err(op)?,
+        applied_amount: row.get(6).map_err(op)?,
+        occurred_at: timestamp(row.get(7).map_err(op)?)?,
+        reason: row.get(8).map_err(op)?,
+        description: row.get(9).map_err(op)?,
+        source_kind: row.get(10).map_err(op)?,
+        source_id: row.get(11).map_err(op)?,
+        metadata_json: row.get(12).map_err(op)?,
     })
 }
 fn comment(row: &Row<'_>) -> Result<Comment, StorageError> {
@@ -217,8 +247,8 @@ const PLAYER_SQL: &str =
 const QUEST_SQL: &str = "id,player_id,parent_quest_id,skill_id,quest_type_namespace,quest_type_code,title,description,story,instructions,status,difficulty,progress,xp_reward,due_at,started_at,completed_at,metadata_json,created_at,updated_at";
 const TREE_SQL: &str = "id,player_id,tree_type_namespace,tree_type_code,name,description,story,instructions,is_active,metadata_json,created_at,updated_at";
 const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at";
-const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at";
-const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,occurred_at,reason,description,source_kind,source_id,metadata_json";
+const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at";
+const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json";
 const COMMENT_SQL: &str =
     "id,author_player_id,target_kind,target_id,body,metadata_json,created_at,updated_at";
 const NARRATIVE_SQL: &str = "id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at";
@@ -227,7 +257,7 @@ fn insert_transaction(
     tx: &SqlTransaction<'_>,
     value: &Transaction,
 ) -> Result<Transaction, StorageError> {
-    tx.execute("INSERT INTO transactions (player_id,transaction_type_namespace,transaction_type_code,resource,amount,occurred_at,reason,description,source_kind,source_id,metadata_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![value.player_id.as_str(),value.transaction_type.namespace,value.transaction_type.code,value.resource,value.amount,value.occurred_at.as_str(),value.reason,value.description,value.source_kind,value.source_id,value.metadata_json]).map_err(op)?;
+    tx.execute("INSERT INTO transactions (player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![value.player_id.as_str(),value.transaction_type.namespace,value.transaction_type.code,value.resource,value.amount,value.applied_amount,value.occurred_at.as_str(),value.reason,value.description,value.source_kind,value.source_id,value.metadata_json]).map_err(op)?;
     let mut stored = value.clone();
     stored.id = Some(tx.last_insert_rowid());
     Ok(stored)
@@ -281,6 +311,19 @@ impl WorldStore for SqliteHealthStore {
     }
     fn update_player(&self, p: &Player) -> Result<(), StorageError> {
         self.with_conn(|conn|{let changed=conn.execute("UPDATE players SET name=?2,description=?3,level=?4,current_xp=?5,is_active=?6,metadata_json=?7,updated_at=?8 WHERE id=?1",params![p.id.as_str(),p.name,p.description,p.level,p.current_xp,p.is_active as i64,p.metadata_json,p.updated_at.as_str()]).map_err(op)?;if changed==0{Err(op("player not found"))}else{Ok(())}})
+    }
+
+    fn create_stat_definition(&self, d: &StatDefinition) -> Result<(), StorageError> {
+        self.with_conn(|conn| { conn.execute("INSERT INTO player_stat_definitions(id,code,name,description,unit,minimum,maximum,is_active,metadata_json,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)", params![d.id.as_str(),d.code,d.name,d.description,d.unit,d.minimum,d.maximum,d.is_active as i64,d.metadata_json,d.created_at.as_str(),d.updated_at.as_str()]).map_err(op)?; Ok(()) })
+    }
+    fn list_stat_definitions(&self) -> Result<Vec<StatDefinition>, StorageError> {
+        self.with_conn(|conn| { let mut stmt=conn.prepare("SELECT id,code,name,description,unit,minimum,maximum,is_active,metadata_json,created_at,updated_at FROM player_stat_definitions ORDER BY code").map_err(op)?; let mut rows=stmt.query([]).map_err(op)?; let mut out=vec![]; while let Some(row)=rows.next().map_err(op)? { out.push(stat_definition(row)?); } Ok(out) })
+    }
+    fn set_player_stat(&self, s: &PlayerStat) -> Result<(), StorageError> {
+        self.with_conn(|conn| { conn.execute("INSERT INTO player_stats(player_id,stat_code,current_value,metadata_json,updated_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(player_id,stat_code) DO UPDATE SET current_value=excluded.current_value,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at", params![s.player_id.as_str(),s.stat_code,s.current_value,s.metadata_json,s.updated_at.as_str()]).map_err(op)?; Ok(()) })
+    }
+    fn list_player_stats(&self, player_id: &EntityId) -> Result<Vec<PlayerStat>, StorageError> {
+        self.with_conn(|conn| { let mut stmt=conn.prepare("SELECT player_id,stat_code,current_value,metadata_json,updated_at FROM player_stats WHERE player_id=?1 ORDER BY stat_code").map_err(op)?; let mut rows=stmt.query([player_id.as_str()]).map_err(op)?; let mut out=vec![]; while let Some(row)=rows.next().map_err(op)? { out.push(player_stat(row)?); } Ok(out) })
     }
 
     fn insert_quest(&self, q: &Quest) -> Result<(), StorageError> {
@@ -376,17 +419,29 @@ impl WorldStore for SqliteHealthStore {
     }
 
     fn insert_effect(&self, e: &Effect) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str()]).map_err(op)?;Ok(())})
     }
     fn list_effects(
         &self,
         p: &EntityId,
         active_at: Option<&str>,
     ) -> Result<Vec<Effect>, StorageError> {
-        self.with_conn(|conn|{let sql=format!("SELECT {EFFECT_SQL} FROM effects WHERE player_id=?1 AND (?2 IS NULL OR expires_at IS NULL OR expires_at>?2) ORDER BY started_at DESC");let mut stmt=conn.prepare(&sql).map_err(op)?;let mut rows=stmt.query(params![p.as_str(),active_at]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(effect(r)?);}Ok(out)})
+        self.with_conn(|conn|{let sql=format!("SELECT {EFFECT_SQL} FROM effects WHERE player_id=?1 AND (?2 IS NULL OR (started_at<=?2 AND (expires_at IS NULL OR expires_at>?2) AND (deactivated_at IS NULL OR deactivated_at>?2))) ORDER BY started_at DESC");let mut stmt=conn.prepare(&sql).map_err(op)?;let mut rows=stmt.query(params![p.as_str(),active_at]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(effect(r)?);}Ok(out)})
+    }
+    fn deactivate_effect(
+        &self,
+        effect_id: &EntityId,
+        at: &Iso8601Timestamp,
+    ) -> Result<Effect, StorageError> {
+        self.with_conn_mut(|conn| { let tx=conn.transaction().map_err(op)?; let sql=format!("SELECT {EFFECT_SQL} FROM effects WHERE id=?1"); let current={let mut stmt=tx.prepare(&sql).map_err(op)?;let mut rows=stmt.query([effect_id.as_str()]).map_err(op)?;match rows.next().map_err(op)?{Some(r)=>effect(r)?,None=>return Err(op("effect not found"))}}; let mut changed=current; changed.deactivate(at.clone()).map_err(op)?; let n=tx.execute("UPDATE effects SET deactivated_at=?2,updated_at=?2 WHERE id=?1 AND deactivated_at IS NULL",params![effect_id.as_str(),at.as_str()]).map_err(op)?; if n!=1{return Err(op("effect is already deactivated"));} tx.commit().map_err(op)?; Ok(changed) })
     }
 
     fn append_transaction(&self, value: &Transaction) -> Result<Transaction, StorageError> {
+        if value.resource == "xp" {
+            return Err(op(
+                "XP history must be appended through an atomic XP operation",
+            ));
+        }
         self.with_conn_mut(|conn| {
             let tx = conn.transaction().map_err(op)?;
             let stored = insert_transaction(&tx, value)?;
@@ -402,7 +457,7 @@ impl WorldStore for SqliteHealthStore {
         self.with_conn(|conn|{let sql=format!("SELECT {TX_SQL} FROM transactions WHERE player_id=?1 ORDER BY occurred_at DESC,id DESC LIMIT ?2");let mut stmt=conn.prepare(&sql).map_err(op)?;let mut rows=stmt.query(params![p.as_str(),limit]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(transaction(r)?);}Ok(out)})
     }
     fn transaction_total(&self, p: &EntityId, resource: &str) -> Result<i64, StorageError> {
-        self.with_conn(|conn|conn.query_row("SELECT COALESCE(SUM(amount),0) FROM transactions WHERE player_id=?1 AND resource=?2",params![p.as_str(),resource],|r|r.get(0)).map_err(op))
+        self.with_conn(|conn|conn.query_row("SELECT COALESCE(SUM(CASE WHEN resource='xp' THEN COALESCE(applied_amount,amount) ELSE amount END),0) FROM transactions WHERE player_id=?1 AND resource=?2",params![p.as_str(),resource],|r|r.get(0)).map_err(op))
     }
 
     fn insert_player_snapshot(&self, s: &PlayerStateSnapshot) -> Result<(), StorageError> {
@@ -414,8 +469,55 @@ impl WorldStore for SqliteHealthStore {
     ) -> Result<Vec<PlayerStateSnapshot>, StorageError> {
         self.with_conn(|conn|{let mut stmt=conn.prepare("SELECT id,player_id,snapshot_date,level,current_xp,state_json,metadata_json,created_at FROM player_state_snapshots WHERE player_id=?1 ORDER BY snapshot_date").map_err(op)?;let mut rows=stmt.query([p.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(PlayerStateSnapshot{id:Some(r.get(0).map_err(op)?),player_id:id(r.get(1).map_err(op)?)?,snapshot_date:date(r.get(2).map_err(op)?)?,level:r.get(3).map_err(op)?,current_xp:r.get(4).map_err(op)?,state_json:r.get(5).map_err(op)?,metadata_json:r.get(6).map_err(op)?,created_at:timestamp(r.get(7).map_err(op)?)?});}Ok(out)})
     }
+    fn capture_player_snapshot(
+        &self,
+        player_id: &EntityId,
+        snapshot_date: &DateValue,
+        created_at: &Iso8601Timestamp,
+    ) -> Result<PlayerStateSnapshot, StorageError> {
+        self.with_conn_mut(|conn| {
+            let tx = conn.transaction().map_err(op)?;
+            let mut stmt=tx.prepare("SELECT level,current_xp FROM players WHERE id=?1").map_err(op)?;
+            let p=stmt.query_row([player_id.as_str()], |r| Ok((r.get::<_,i32>(0)?,r.get::<_,i64>(1)?))).map_err(op)?;
+            drop(stmt);
+            let stats={let mut stmt=tx.prepare("SELECT d.code,d.name,d.description,d.unit,d.minimum,d.maximum,d.metadata_json,s.current_value FROM player_stats s JOIN player_stat_definitions d ON d.code=s.stat_code WHERE s.player_id=?1 AND d.is_active=1 ORDER BY d.code").map_err(op)?;let rows=stmt.query_map([player_id.as_str()],|r| Ok(serde_json::json!({"code":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"description":r.get::<_,Option<String>>(2)?,"unit":r.get::<_,Option<String>>(3)?,"minimum":r.get::<_,Option<f64>>(4)?,"maximum":r.get::<_,Option<f64>>(5)?,"metadataJson":r.get::<_,String>(6)?,"value":r.get::<_,f64>(7)?}))).map_err(op)?;let values=rows.collect::<Result<Vec<_>,_>>().map_err(op)?;values};
+            let effects={let mut stmt=tx.prepare("SELECT id,effect_type_code,name,description,started_at,expires_at,intensity,source_kind,source_id,metadata_json FROM effects WHERE player_id=?1 AND started_at<=?2 AND (expires_at IS NULL OR expires_at>?2) AND (deactivated_at IS NULL OR deactivated_at>?2) ORDER BY id").map_err(op)?;let rows=stmt.query_map(params![player_id.as_str(),created_at.as_str()],|r| Ok(serde_json::json!({"id":r.get::<_,String>(0)?,"typeCode":r.get::<_,String>(1)?,"name":r.get::<_,String>(2)?,"description":r.get::<_,Option<String>>(3)?,"startedAt":r.get::<_,String>(4)?,"expiresAt":r.get::<_,Option<String>>(5)?,"intensity":r.get::<_,i32>(6)?,"sourceKind":r.get::<_,Option<String>>(7)?,"sourceId":r.get::<_,Option<String>>(8)?,"metadataJson":r.get::<_,String>(9)?}))).map_err(op)?;let values=rows.collect::<Result<Vec<_>,_>>().map_err(op)?;values};
+            let state=serde_json::json!({"schemaVersion":1,"stats":stats,"activeEffects":effects});
+            let state_json=serde_json::to_string(&state).map_err(op)?;
+            let mut value=PlayerStateSnapshot::new(player_id.clone(),snapshot_date.clone(),p.0,p.1,created_at.clone()).map_err(op)?.with_state_json(state_json);
+            tx.execute("INSERT INTO player_state_snapshots(player_id,snapshot_date,level,current_xp,state_json,metadata_json,created_at) VALUES (?1,?2,?3,?4,?5,'{}',?6)",params![player_id.as_str(),snapshot_date.as_str(),value.level,value.current_xp,value.state_json,created_at.as_str()]).map_err(op)?;
+            value.id=Some(tx.last_insert_rowid());
+            tx.commit().map_err(op)?;
+            Ok(value)
+        })
+    }
     fn insert_skill_snapshot(&self, s: &SkillStateSnapshot) -> Result<(), StorageError> {
         self.with_conn(|conn|{conn.execute("INSERT INTO skill_state_snapshots(skill_id,snapshot_date,level,current_xp,status,invested_minutes,state_json,metadata_json,created_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![s.skill_id.as_str(),s.snapshot_date.as_str(),s.level,s.current_xp,s.status.as_str(),s.invested_minutes,s.state_json,s.metadata_json,s.created_at.as_str()]).map_err(op)?;Ok(())})
+    }
+    fn capture_skill_snapshot(
+        &self,
+        skill_id: &EntityId,
+        snapshot_date: &DateValue,
+        created_at: &Iso8601Timestamp,
+    ) -> Result<SkillStateSnapshot, StorageError> {
+        self.with_conn_mut(|conn| {
+            let tx=conn.transaction().map_err(op)?;
+            let row=tx.query_row("SELECT skill_tree_id,parent_skill_id,level,current_xp,invested_minutes,status FROM skills WHERE id=?1",[skill_id.as_str()],|r| Ok((r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?,r.get::<_,i32>(2)?,r.get::<_,i64>(3)?,r.get::<_,i64>(4)?,r.get::<_,String>(5)?))).map_err(op)?;
+            let state=serde_json::json!({"schemaVersion":1,"skillTreeId":row.0,"parentSkillId":row.1});
+            let state_json=serde_json::to_string(&state).map_err(op)?;
+            let mut value=SkillStateSnapshot::new(skill_id.clone(),snapshot_date.clone(),row.2,row.3,skill_status(row.5)?,row.4,created_at.clone()).map_err(op)?;
+            value.state_json=state_json;
+            tx.execute("INSERT INTO skill_state_snapshots(skill_id,snapshot_date,level,current_xp,status,invested_minutes,state_json,metadata_json,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,'{}',?8)",params![skill_id.as_str(),snapshot_date.as_str(),value.level,value.current_xp,value.status.as_str(),value.invested_minutes,value.state_json,created_at.as_str()]).map_err(op)?;
+            value.id=Some(tx.last_insert_rowid());
+            tx.commit().map_err(op)?;
+            Ok(value)
+        })
+    }
+    fn list_skill_snapshots(
+        &self,
+        skill_id: &EntityId,
+    ) -> Result<Vec<SkillStateSnapshot>, StorageError> {
+        self.with_conn(|conn| { let mut stmt=conn.prepare("SELECT id,skill_id,snapshot_date,level,current_xp,status,invested_minutes,state_json,metadata_json,created_at FROM skill_state_snapshots WHERE skill_id=?1 ORDER BY snapshot_date").map_err(op)?; let mut rows=stmt.query([skill_id.as_str()]).map_err(op)?; let mut out=vec![]; while let Some(r)=rows.next().map_err(op)? { out.push(SkillStateSnapshot{id:Some(r.get(0).map_err(op)?),skill_id:id(r.get(1).map_err(op)?)?,snapshot_date:date(r.get(2).map_err(op)?)?,level:r.get(3).map_err(op)?,current_xp:r.get(4).map_err(op)?,status:skill_status(r.get(5).map_err(op)?)?,invested_minutes:r.get(6).map_err(op)?,state_json:r.get(7).map_err(op)?,metadata_json:r.get(8).map_err(op)?,created_at:timestamp(r.get(9).map_err(op)?)?}); } Ok(out) })
     }
 
     fn add_comment(&self, c: &Comment) -> Result<Comment, StorageError> {
@@ -438,6 +540,32 @@ impl WorldStore for SqliteHealthStore {
     fn award_xp(&self, p: &Player, value: &Transaction) -> Result<Transaction, StorageError> {
         self.with_conn_mut(|conn| {
             let tx = conn.transaction().map_err(op)?;
+            let current: i64 = tx
+                .query_row(
+                    "SELECT current_xp FROM players WHERE id=?1",
+                    [p.id.as_str()],
+                    |r| r.get(0),
+                )
+                .map_err(op)?;
+            let applied = value
+                .applied_amount
+                .ok_or_else(|| op("XP event must record its applied amount"))?;
+            if value.player_id != p.id
+                || value.resource != "xp"
+                || current.checked_add(applied) != Some(p.current_xp)
+                || p.current_xp < 0
+            {
+                return Err(op(
+                    "XP transaction does not match the Player state transition",
+                ));
+            }
+            if (value.amount > 0 && applied != value.amount)
+                || (value.amount < 0 && (applied > 0 || applied < value.amount))
+                || value.amount == 0
+            {
+                return Err(op("requested and applied XP amounts are inconsistent"));
+            }
+            let stored = insert_transaction(&tx, value)?;
             let changed = tx
                 .execute(
                     "UPDATE players SET level=?2,current_xp=?3,updated_at=?4 WHERE id=?1",
@@ -447,7 +575,6 @@ impl WorldStore for SqliteHealthStore {
             if changed != 1 {
                 return Err(op("player not found"));
             }
-            let stored = insert_transaction(&tx, value)?;
             tx.commit().map_err(op)?;
             Ok(stored)
         })
@@ -458,7 +585,30 @@ impl WorldStore for SqliteHealthStore {
         p: Option<&Player>,
         reward: Option<&Transaction>,
     ) -> Result<Option<Transaction>, StorageError> {
-        self.with_conn_mut(|conn|{let tx=conn.transaction().map_err(op)?;let changed=tx.execute("UPDATE quests SET status=?2,progress=?3,started_at=?4,completed_at=?5,updated_at=?6 WHERE id=?1",params![q.id.as_str(),q.status.as_str(),q.progress,q.started_at.as_ref().map(Iso8601Timestamp::as_str),q.completed_at.as_ref().map(Iso8601Timestamp::as_str),q.updated_at.as_str()]).map_err(op)?;if changed!=1{return Err(op("quest not found"));}let created=match(p,reward){(Some(player),Some(reward))=>{if tx.execute("UPDATE players SET level=?2,current_xp=?3,updated_at=?4 WHERE id=?1",params![player.id.as_str(),player.level,player.current_xp,player.updated_at.as_str()]).map_err(op)?!=1{return Err(op("reward player not found"));}Some(insert_transaction(&tx,reward)?)},(None,None)=>None,_=>return Err(op("quest reward player and transaction must be supplied together"))};tx.commit().map_err(op)?;Ok(created)})
+        self.with_conn_mut(|conn| {
+            let tx=conn.transaction().map_err(op)?;
+            let owner:String=tx.query_row("SELECT player_id FROM quests WHERE id=?1",[q.id.as_str()],|r|r.get(0)).map_err(op)?;
+            if owner!=q.player_id.as_str(){return Err(op("quest owner cannot change"));}
+            let created=match(p,reward){
+                (Some(player),Some(reward))=>{
+                    let current:i64=tx.query_row("SELECT current_xp FROM players WHERE id=?1",[player.id.as_str()],|r|r.get(0)).map_err(op)?;
+                    let applied=reward.applied_amount.ok_or_else(||op("XP reward must record its applied amount"))?;
+                    if player.id!=q.player_id||reward.player_id!=player.id||reward.resource!="xp"||reward.amount!=q.xp_reward||current.checked_add(applied)!=Some(player.current_xp)||player.current_xp<0 {
+                        return Err(op("quest reward does not match its owner's state transition"));
+                    }
+                    let stored=insert_transaction(&tx,reward)?;
+                    if tx.execute("UPDATE players SET level=?2,current_xp=?3,updated_at=?4 WHERE id=?1",params![player.id.as_str(),player.level,player.current_xp,player.updated_at.as_str()]).map_err(op)?!=1{return Err(op("reward player not found"));}
+                    Some(stored)
+                },
+                (None, None) if q.xp_reward == 0 => None,
+                (None, None) => return Err(op("quest with an XP reward must provide its Player and ledger event")),
+                _=>return Err(op("reward player and transaction must be supplied together")),
+            };
+            let changed=tx.execute("UPDATE quests SET status=?2,progress=?3,started_at=?4,completed_at=?5,updated_at=?6 WHERE id=?1",params![q.id.as_str(),q.status.as_str(),q.progress,q.started_at.as_ref().map(Iso8601Timestamp::as_str),q.completed_at.as_ref().map(Iso8601Timestamp::as_str),q.updated_at.as_str()]).map_err(op)?;
+            if changed!=1{return Err(op("quest not found"));}
+            tx.commit().map_err(op)?;
+            Ok(created)
+        })
     }
     fn invest_skill_time(
         &self,
@@ -467,6 +617,11 @@ impl WorldStore for SqliteHealthStore {
     ) -> Result<Transaction, StorageError> {
         self.with_conn_mut(|conn| {
             let tx = conn.transaction().map_err(op)?;
+            let current:i64=tx.query_row("SELECT invested_minutes FROM skills WHERE id=?1",[s.id.as_str()],|r|r.get(0)).map_err(op)?;
+            let owner:String=tx.query_row("SELECT t.player_id FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE s.id=?1",[s.id.as_str()],|r|r.get(0)).map_err(op)?;
+            if value.player_id.as_str()!=owner || value.resource!="minutes" || value.amount!=s.invested_minutes-current || value.amount<=0 {
+                return Err(op("time transaction does not match the Skill state transition"));
+            }
             if tx
                 .execute(
                     "UPDATE skills SET invested_minutes=?2,updated_at=?3 WHERE id=?1",
@@ -488,6 +643,7 @@ impl WorldStore for SqliteHealthStore {
 mod tests {
     use super::*;
     use lr_application::WorldStore;
+    use lr_domain::EffectLifecycle;
     const T0: &str = "2026-09-25T00:00:00+00:00";
     fn now() -> Iso8601Timestamp {
         Iso8601Timestamp::parse(T0).unwrap()
@@ -530,7 +686,6 @@ mod tests {
         )
         .unwrap();
         q.skill_id = Some(skill.id.clone());
-        q.xp_reward = 25;
         store.insert_quest(&q).unwrap();
         p.apply_xp(25, now()).unwrap();
         let mut tx = Transaction::new(
@@ -619,5 +774,406 @@ mod tests {
         .unwrap();
         store.insert_effect(&effect).unwrap();
         assert_eq!(store.list_effects(&p.id, Some(T0)).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn snapshots_capture_stats_effects_and_skill_state_atomically() {
+        let store = store();
+        let p = player_value();
+        store.create_player(&p).unwrap();
+        let definition = StatDefinition::new(
+            EntityId::new("stat-focus").unwrap(),
+            "focus",
+            "Focus",
+            None,
+            Some("points".into()),
+            Some(0.0),
+            Some(10.0),
+            now(),
+        )
+        .unwrap();
+        store.create_stat_definition(&definition).unwrap();
+        let stat = PlayerStat::new(p.id.clone(), &definition, 7.5, now()).unwrap();
+        store.set_player_stat(&stat).unwrap();
+        store
+            .set_player_stat(&PlayerStat::new(p.id.clone(), &definition, 8.0, now()).unwrap())
+            .unwrap();
+        assert_eq!(
+            store.list_player_stats(&p.id).unwrap()[0].current_value,
+            8.0
+        );
+        let mut invalid_stat = stat.clone();
+        invalid_stat.current_value = 11.0;
+        assert!(store.set_player_stat(&invalid_stat).is_err());
+
+        let mut active = Effect::new(
+            EntityId::new("active-effect").unwrap(),
+            p.id.clone(),
+            TypeRef::effect("buff").unwrap(),
+            "Focused",
+            now(),
+        )
+        .unwrap();
+        active.intensity = 2;
+        store.insert_effect(&active).unwrap();
+        let snapshot = store
+            .capture_player_snapshot(&p.id, &DateValue::parse("2026-09-25").unwrap(), &now())
+            .unwrap();
+        let state: serde_json::Value = serde_json::from_str(&snapshot.state_json).unwrap();
+        assert_eq!(state["schemaVersion"], 1);
+        assert_eq!(state["stats"][0]["value"], 8.0);
+        assert_eq!(state["activeEffects"][0]["id"], "active-effect");
+        assert_eq!(
+            store.list_player_snapshots(&p.id).unwrap(),
+            vec![snapshot.clone()]
+        );
+        let snapshot_id = snapshot.id.unwrap();
+        assert!(
+            store
+                .with_conn(|conn| conn
+                    .execute(
+                        "UPDATE player_state_snapshots SET state_json='{}' WHERE id=?1",
+                        [snapshot_id]
+                    )
+                    .map(|_| ())
+                    .map_err(op))
+                .is_err(),
+            "historical state cannot be edited in place"
+        );
+        assert!(
+            store
+                .with_conn(|conn| conn
+                    .execute(
+                        "DELETE FROM player_state_snapshots WHERE id=?1",
+                        [snapshot_id]
+                    )
+                    .map(|_| ())
+                    .map_err(op))
+                .is_err(),
+            "historical state cannot be deleted in place"
+        );
+        assert!(
+            store
+                .capture_player_snapshot(&p.id, &DateValue::parse("2026-09-25").unwrap(), &now())
+                .is_err(),
+            "one snapshot per player/date"
+        );
+
+        let tree = SkillTree::new(
+            EntityId::new("t1").unwrap(),
+            p.id.clone(),
+            TypeRef::skill_tree("programming").unwrap(),
+            "Programming",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill_tree(&tree).unwrap();
+        let mut skill = Skill::new(
+            EntityId::new("s1").unwrap(),
+            tree.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Rust",
+            now(),
+        )
+        .unwrap();
+        skill.invest_time(30, now()).unwrap();
+        store.insert_skill(&skill).unwrap();
+        let skill_snapshot = store
+            .capture_skill_snapshot(&skill.id, &DateValue::parse("2026-09-25").unwrap(), &now())
+            .unwrap();
+        let skill_state: serde_json::Value =
+            serde_json::from_str(&skill_snapshot.state_json).unwrap();
+        assert_eq!(skill_state["skillTreeId"], "t1");
+        assert_eq!(
+            store.list_skill_snapshots(&skill.id).unwrap(),
+            vec![skill_snapshot]
+        );
+    }
+
+    #[test]
+    fn effect_lifecycle_and_xp_applied_delta_are_persisted() {
+        let store = store();
+        let mut p = player_value();
+        store.create_player(&p).unwrap();
+        let mut effect = Effect::new(
+            EntityId::new("e1").unwrap(),
+            p.id.clone(),
+            TypeRef::effect("buff").unwrap(),
+            "Focus",
+            now(),
+        )
+        .unwrap();
+        effect.expires_at = Some(Iso8601Timestamp::parse("2026-09-26T00:00:00Z").unwrap());
+        store.insert_effect(&effect).unwrap();
+        assert_eq!(store.list_effects(&p.id, Some(T0)).unwrap().len(), 1);
+        let deactivated = store
+            .deactivate_effect(
+                &effect.id,
+                &Iso8601Timestamp::parse("2026-09-25T12:00:00Z").unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            deactivated.lifecycle_at(&Iso8601Timestamp::parse("2026-09-25T13:00:00Z").unwrap()),
+            EffectLifecycle::ManuallyDeactivated
+        );
+        assert!(store
+            .list_effects(&p.id, Some("2026-09-25T13:00:00+00:00"))
+            .unwrap()
+            .is_empty());
+
+        p.apply_xp(5, now()).unwrap();
+        let gain = Transaction::xp_adjustment(p.id.clone(), 5, 5, now()).unwrap();
+        store.award_xp(&p, &gain).unwrap();
+        p.apply_xp(-20, now()).unwrap();
+        let penalty = Transaction::xp_adjustment(p.id.clone(), -20, -5, now()).unwrap();
+        store.award_xp(&p, &penalty).unwrap();
+        assert_eq!(p.current_xp, 0);
+        assert_eq!(store.transaction_total(&p.id, "xp").unwrap(), 0);
+        let events = store.list_transactions(&p.id, 10).unwrap();
+        assert_eq!(events[0].amount, -20);
+        assert_eq!(events[0].applied_amount, Some(-5));
+        let event_id = events[0].id.unwrap();
+        assert!(
+            store
+                .with_conn(|conn| conn
+                    .execute(
+                        "UPDATE transactions SET reason='rewritten' WHERE id=?1",
+                        [event_id]
+                    )
+                    .map(|_| ())
+                    .map_err(op))
+                .is_err(),
+            "ledger events are append-only"
+        );
+        assert!(
+            store
+                .with_conn(|conn| conn
+                    .execute("DELETE FROM transactions WHERE id=?1", [event_id])
+                    .map(|_| ())
+                    .map_err(op))
+                .is_err(),
+            "ledger events cannot be deleted"
+        );
+        let direct = store.with_conn(|conn| {
+            conn.execute("UPDATE players SET current_xp=-1 WHERE id='p1'", [])
+                .map(|_| ())
+                .map_err(op)
+        });
+        assert!(
+            direct.is_err(),
+            "SQLite protects cached XP even when bypassing the domain"
+        );
+    }
+
+    #[test]
+    fn atomic_world_operations_reject_mismatched_history_without_partial_writes() {
+        let store = store();
+        let p = player_value();
+        store.create_player(&p).unwrap();
+        let mut next = p.clone();
+        next.apply_xp(10, now()).unwrap();
+        let mismatched = Transaction::xp_adjustment(p.id.clone(), 9, 9, now()).unwrap();
+        assert!(store.award_xp(&next, &mismatched).is_err());
+        assert_eq!(store.get_player(&p.id).unwrap().unwrap().current_xp, 0);
+        assert_eq!(store.list_transactions(&p.id, 10).unwrap().len(), 0);
+
+        let mut q = Quest::new(
+            EntityId::new("q1").unwrap(),
+            p.id.clone(),
+            TypeRef::quest("main").unwrap(),
+            "Reward",
+            now(),
+        )
+        .unwrap();
+        q.xp_reward = 20;
+        store.insert_quest(&q).unwrap();
+        q.complete(now()).unwrap();
+        let mut awarded = p.clone();
+        awarded.apply_xp(20, now()).unwrap();
+        let reward = Transaction::xp_adjustment(p.id.clone(), 19, 19, now()).unwrap();
+        assert!(store
+            .complete_quest(&q, Some(&awarded), Some(&reward))
+            .is_err());
+        assert_eq!(store.get_player(&p.id).unwrap().unwrap().current_xp, 0);
+        assert_eq!(
+            store.get_quest(&q.id).unwrap().unwrap().status,
+            QuestStatus::Open
+        );
+        assert_eq!(store.list_transactions(&p.id, 10).unwrap().len(), 0);
+
+        let tree = SkillTree::new(
+            EntityId::new("t1").unwrap(),
+            p.id.clone(),
+            TypeRef::skill_tree("programming").unwrap(),
+            "Programming",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill_tree(&tree).unwrap();
+        let mut skill = Skill::new(
+            EntityId::new("s1").unwrap(),
+            tree.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Rust",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill(&skill).unwrap();
+        skill.invest_time(60, now()).unwrap();
+        let time = Transaction::new(
+            p.id.clone(),
+            TypeRef::transaction("time").unwrap(),
+            "minutes",
+            30,
+            now(),
+        )
+        .unwrap();
+        assert!(store.invest_skill_time(&skill, &time).is_err());
+        assert_eq!(
+            store
+                .get_skill(&skill.id)
+                .unwrap()
+                .unwrap()
+                .invested_minutes,
+            0
+        );
+        assert_eq!(store.list_transactions(&p.id, 10).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn sqlite_rejects_cross_owner_parent_links_and_cycles() {
+        let store = store();
+        let p1 = player_value();
+        let p2 = Player::new(EntityId::new("p2").unwrap(), "Lin", now()).unwrap();
+        store.create_player(&p1).unwrap();
+        store.create_player(&p2).unwrap();
+        let t1 = SkillTree::new(
+            EntityId::new("t1").unwrap(),
+            p1.id.clone(),
+            TypeRef::skill_tree("programming").unwrap(),
+            "One",
+            now(),
+        )
+        .unwrap();
+        let t2 = SkillTree::new(
+            EntityId::new("t2").unwrap(),
+            p2.id.clone(),
+            TypeRef::skill_tree("programming").unwrap(),
+            "Two",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill_tree(&t1).unwrap();
+        store.insert_skill_tree(&t2).unwrap();
+        let parent = Skill::new(
+            EntityId::new("s1").unwrap(),
+            t1.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Parent",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill(&parent).unwrap();
+        let mut child = Skill::new(
+            EntityId::new("s2").unwrap(),
+            t2.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Child",
+            now(),
+        )
+        .unwrap();
+        child.set_parent(Some(parent.id.clone())).unwrap();
+        assert!(
+            store.insert_skill(&child).is_err(),
+            "cross-tree parent must be rejected"
+        );
+        let foreign_skill = Skill::new(
+            EntityId::new("s-foreign").unwrap(),
+            t2.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Foreign skill",
+            now(),
+        )
+        .unwrap();
+        store.insert_skill(&foreign_skill).unwrap();
+        let mut local_child = Skill::new(
+            EntityId::new("s-local").unwrap(),
+            t1.id.clone(),
+            TypeRef::skill("core").unwrap(),
+            "Local child",
+            now(),
+        )
+        .unwrap();
+        local_child.set_parent(Some(parent.id.clone())).unwrap();
+        store.insert_skill(&local_child).unwrap();
+        let mut cycle = parent.clone();
+        cycle.set_parent(Some(local_child.id.clone())).unwrap();
+        assert!(
+            store.update_skill(&cycle).is_err(),
+            "indirect skill cycles are rejected"
+        );
+
+        let mut q1 = Quest::new(
+            EntityId::new("q1").unwrap(),
+            p1.id.clone(),
+            TypeRef::quest("main").unwrap(),
+            "One",
+            now(),
+        )
+        .unwrap();
+        let q2 = Quest::new(
+            EntityId::new("q2").unwrap(),
+            p2.id.clone(),
+            TypeRef::quest("main").unwrap(),
+            "Two",
+            now(),
+        )
+        .unwrap();
+        store.insert_quest(&q1).unwrap();
+        store.insert_quest(&q2).unwrap();
+        let mut cross = q1.clone();
+        cross.id = EntityId::new("q3").unwrap();
+        cross.player_id = p2.id.clone();
+        cross.set_parent(Some(q1.id.clone())).unwrap();
+        assert!(
+            store.insert_quest(&cross).is_err(),
+            "cross-player parent must be rejected"
+        );
+        let mut other_world_skill = Quest::new(
+            EntityId::new("q-skill").unwrap(),
+            p1.id.clone(),
+            TypeRef::quest("main").unwrap(),
+            "Wrong skill",
+            now(),
+        )
+        .unwrap();
+        other_world_skill.skill_id = Some(foreign_skill.id.clone());
+        assert!(
+            store.insert_quest(&other_world_skill).is_err(),
+            "quest cannot refer to a skill owned by another player's world"
+        );
+        let mut local_child_quest = Quest::new(
+            EntityId::new("q-local").unwrap(),
+            p1.id.clone(),
+            TypeRef::quest("main").unwrap(),
+            "Child",
+            now(),
+        )
+        .unwrap();
+        local_child_quest.set_parent(Some(q1.id.clone())).unwrap();
+        store.insert_quest(&local_child_quest).unwrap();
+        let mut quest_cycle = q1.clone();
+        quest_cycle
+            .set_parent(Some(local_child_quest.id.clone()))
+            .unwrap();
+        assert!(
+            store.update_quest(&quest_cycle).is_err(),
+            "indirect quest cycles are rejected"
+        );
+        q1.set_parent(Some(q2.id.clone())).unwrap();
+        assert!(
+            store.update_quest(&q1).is_err(),
+            "cross-player parent update must be rejected"
+        );
     }
 }

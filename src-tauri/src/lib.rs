@@ -94,6 +94,14 @@ pub fn run() {
             commands::world::add_skill,
             commands::world::invest_skill_time,
             commands::world::capture_player_snapshot,
+            commands::world::capture_skill_snapshot,
+            commands::world::list_player_snapshots,
+            commands::world::list_skill_snapshots,
+            commands::world::define_stat,
+            commands::world::list_stat_definitions,
+            commands::world::set_player_stat,
+            commands::world::list_player_stats,
+            commands::world::deactivate_effect,
             commands::world::add_comment,
             commands::world::write_narrative,
             commands::world::get_world_overview,
@@ -123,19 +131,58 @@ mod tests {
         assert!(dir.path().join(WORLD_DB_FILENAME).exists());
     }
     #[test]
-    fn phase2_world_survives_restart() {
+    fn phase21_world_stats_and_snapshots_survive_restart() {
         let dir = tempfile::tempdir().unwrap();
         let id;
+        let skill_id;
         {
             let state = bootstrap(dir.path(), T0);
             let player = state.world.create_player("Ada", None).unwrap();
             id = player.id.to_string();
             state.world.award_xp(&id, 125, None, None).unwrap();
+            state
+                .world
+                .define_stat(
+                    "focus",
+                    "Focus",
+                    None,
+                    Some("points".into()),
+                    Some(0.0),
+                    Some(10.0),
+                )
+                .unwrap();
+            state.world.set_player_stat(&id, "focus", 7.5).unwrap();
+            let tree = state
+                .world
+                .create_skill_tree(&id, "programming", "Programming")
+                .unwrap();
+            let skill = state
+                .world
+                .add_skill(tree.id.as_str(), "core", "Rust", None)
+                .unwrap();
+            skill_id = skill.id.to_string();
+            state.world.capture_player_snapshot(&id).unwrap();
+            state.world.capture_skill_snapshot(&skill_id).unwrap();
         }
         let state = bootstrap(dir.path(), T0);
         assert_eq!(
             state.world.get_player(&id).unwrap().unwrap().current_xp,
             125
         );
+        assert_eq!(
+            state.world.list_player_stats(&id).unwrap()[0].current_value,
+            7.5
+        );
+        let player_history = state.world.list_player_snapshots(&id).unwrap();
+        assert_eq!(player_history.len(), 1);
+        assert_eq!(player_history[0].current_xp, 125);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&player_history[0].state_json).unwrap()
+                ["stats"][0]["value"],
+            7.5
+        );
+        let skill_history = state.world.list_skill_snapshots(&skill_id).unwrap();
+        assert_eq!(skill_history.len(), 1);
+        assert_eq!(skill_history[0].status.as_str(), "active");
     }
 }
