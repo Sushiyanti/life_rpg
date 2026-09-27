@@ -346,6 +346,80 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
     ) -> Result<Vec<PresentationPreference>, StorageError> {
         self.with_conn(|d|{let mut s=d.prepare("SELECT player_id,entity_kind,entity_id,context,is_visible,sort_order,is_pinned,is_collapsed,variant,density,metadata_json,created_at,updated_at FROM presentation_preferences WHERE player_id=?1 AND context=?2 ORDER BY is_pinned DESC,sort_order,entity_id").map_err(op)?;let mut rows=s.query(params![p.as_str(),c]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(preference(r)?)}Ok(out)})
     }
+    fn create_workspace(&self, v: &Workspace) -> Result<(), StorageError> {
+        self.with_conn(|d| { d.execute("INSERT INTO workspaces(id,player_id,name,template,sort_order,is_default,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![v.id.as_str(),v.player_id.as_str(),v.name,v.template,v.sort_order,v.is_default as i64,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?; Ok(()) })
+    }
+    fn list_workspaces(&self, p: &EntityId) -> Result<Vec<Workspace>, StorageError> {
+        self.with_conn(|d| { let mut s=d.prepare("SELECT id,player_id,name,template,sort_order,is_default,created_at,updated_at FROM workspaces WHERE player_id=?1 ORDER BY sort_order,id").map_err(op)?; let mut rows=s.query([p.as_str()]).map_err(op)?; let mut out=vec![]; while let Some(r)=rows.next().map_err(op)? { out.push(Workspace { id:eid(r.get(0).map_err(op)?)?, player_id:eid(r.get(1).map_err(op)?)?, name:r.get(2).map_err(op)?, template:r.get(3).map_err(op)?, sort_order:r.get(4).map_err(op)?, is_default:r.get::<_,i64>(5).map_err(op)?!=0, created_at:ts(r.get(6).map_err(op)?)?, updated_at:ts(r.get(7).map_err(op)?)? }); } Ok(out) })
+    }
+    fn rename_workspace(
+        &self,
+        p: &EntityId,
+        w: &EntityId,
+        name: &str,
+        at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        self.with_conn(|d| {
+            let n = d
+                .execute(
+                    "UPDATE workspaces SET name=?3,updated_at=?4 WHERE player_id=?1 AND id=?2",
+                    params![p.as_str(), w.as_str(), name, at.as_str()],
+                )
+                .map_err(op)?;
+            if n != 1 {
+                return Err(op("workspace not found in Player world"));
+            }
+            Ok(())
+        })
+    }
+    fn delete_workspace(&self, p: &EntityId, w: &EntityId) -> Result<(), StorageError> {
+        self.with_conn(|d| {
+            let n = d
+                .execute(
+                    "DELETE FROM workspaces WHERE player_id=?1 AND id=?2",
+                    params![p.as_str(), w.as_str()],
+                )
+                .map_err(op)?;
+            if n != 1 {
+                return Err(op("workspace not found in Player world"));
+            }
+            Ok(())
+        })
+    }
+    fn save_workspace_panel(
+        &self,
+        player: &EntityId,
+        v: &WorkspacePanel,
+    ) -> Result<(), StorageError> {
+        v.validate().map_err(op)?;
+        self.with_conn(|d| { let owner:i64=d.query_row("SELECT COUNT(*) FROM workspaces WHERE id=?1 AND player_id=?2",params![v.workspace_id.as_str(),player.as_str()],|r|r.get(0)).map_err(op)?; if owner!=1{return Err(op("workspace not found in Player world"));} let n=d.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,item_limit,sort_order,is_pinned,is_collapsed,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13) ON CONFLICT(id) DO UPDATE SET title=excluded.title,variant=excluded.variant,density=excluded.density,filter_status=excluded.filter_status,item_limit=excluded.item_limit,sort_order=excluded.sort_order,is_pinned=excluded.is_pinned,is_collapsed=excluded.is_collapsed,updated_at=excluded.updated_at WHERE workspace_panels.workspace_id=excluded.workspace_id",params![v.id.as_str(),v.workspace_id.as_str(),v.panel_type,v.title,v.variant,v.density,v.filter_status,v.item_limit,v.sort_order,v.is_pinned as i64,v.is_collapsed as i64,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?; if n!=1{return Err(op("panel id belongs to another workspace"));} Ok(()) })
+    }
+    fn delete_workspace_panel(
+        &self,
+        player: &EntityId,
+        w: &EntityId,
+        p: &EntityId,
+    ) -> Result<(), StorageError> {
+        self.with_conn(|d| {
+            let n = d
+                .execute(
+                    "DELETE FROM workspace_panels WHERE workspace_id=?1 AND id=?2 AND EXISTS(SELECT 1 FROM workspaces WHERE id=?1 AND player_id=?3)",
+                    params![w.as_str(), p.as_str(), player.as_str()],
+                )
+                .map_err(op)?;
+            if n != 1 {
+                return Err(op("panel not found in workspace"));
+            }
+            Ok(())
+        })
+    }
+    fn list_workspace_panels(
+        &self,
+        player: &EntityId,
+        w: &EntityId,
+    ) -> Result<Vec<WorkspacePanel>, StorageError> {
+        self.with_conn(|d| { let mut s=d.prepare("SELECT p.id,p.workspace_id,p.panel_type,p.title,p.variant,p.density,p.filter_status,p.item_limit,p.sort_order,p.is_pinned,p.is_collapsed,p.created_at,p.updated_at FROM workspace_panels p JOIN workspaces w ON w.id=p.workspace_id WHERE p.workspace_id=?1 AND w.player_id=?2 ORDER BY p.is_pinned DESC,p.sort_order,p.id").map_err(op)?; let mut rows=s.query(params![w.as_str(),player.as_str()]).map_err(op)?; let mut out=vec![]; while let Some(r)=rows.next().map_err(op)? { out.push(WorkspacePanel { id:eid(r.get(0).map_err(op)?)?, workspace_id:eid(r.get(1).map_err(op)?)?, panel_type:r.get(2).map_err(op)?, title:r.get(3).map_err(op)?, variant:r.get(4).map_err(op)?, density:r.get(5).map_err(op)?, filter_status:r.get(6).map_err(op)?, item_limit:r.get(7).map_err(op)?, sort_order:r.get(8).map_err(op)?, is_pinned:r.get::<_,i64>(9).map_err(op)?!=0, is_collapsed:r.get::<_,i64>(10).map_err(op)?!=0, created_at:ts(r.get(11).map_err(op)?)?, updated_at:ts(r.get(12).map_err(op)?)? }); } Ok(out) })
+    }
     fn insert_suggestion(&self, v: &ProgressSuggestion) -> Result<(), StorageError> {
         self.with_conn(|d|{d.execute("INSERT INTO progress_suggestions(id,player_id,concept_id,track_code,proposed_value,proposed_level,reason,source,status,created_at,resolved_at,metadata_json)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![v.id.as_str(),v.player_id.as_str(),v.concept_id.as_str(),v.track_code,v.proposed_value,v.proposed_level,v.reason,v.source,v.status.as_str(),v.created_at.as_str(),v.resolved_at.as_ref().map(Iso8601Timestamp::as_str),v.metadata_json]).map_err(op)?;Ok(())})
     }
@@ -394,6 +468,115 @@ mod tests {
     }
     fn store() -> Arc<SqliteHealthStore> {
         Arc::new(SqliteHealthStore::open_in_memory(T0))
+    }
+    #[test]
+    fn workspaces_are_persistent_player_scoped_and_panels_are_bounded() {
+        let store = store();
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store, Frozen);
+        let p1 = world.create_player("Ada", None).unwrap();
+        let p2 = world.create_player("Grace", None).unwrap();
+        let ws = semantics
+            .create_workspace(p1.id.as_str(), "Learning", "learning", true)
+            .unwrap();
+        assert_eq!(semantics.list_workspaces(p1.id.as_str()).unwrap().len(), 1);
+        assert!(semantics
+            .list_workspaces(p2.id.as_str())
+            .unwrap()
+            .is_empty());
+        let panel = semantics
+            .save_workspace_panel(
+                p1.id.as_str(),
+                ws.id.as_str(),
+                None,
+                "quests",
+                Some("Open learning quests".into()),
+                "cards",
+                "cozy",
+                Some("in_progress"),
+                8,
+                0,
+                true,
+                false,
+            )
+            .unwrap();
+        assert_eq!(
+            semantics
+                .list_workspace_panels(p1.id.as_str(), ws.id.as_str())
+                .unwrap(),
+            vec![panel.clone()]
+        );
+        assert!(semantics
+            .list_workspace_panels(p2.id.as_str(), ws.id.as_str())
+            .unwrap()
+            .is_empty());
+        assert!(semantics
+            .save_workspace_panel(
+                p1.id.as_str(),
+                ws.id.as_str(),
+                None,
+                "quests",
+                None,
+                "cards",
+                "cozy",
+                Some("status=1 OR 1=1"),
+                6,
+                0,
+                false,
+                false
+            )
+            .is_err());
+        assert!(semantics
+            .save_workspace_panel(
+                p1.id.as_str(),
+                ws.id.as_str(),
+                None,
+                "skills",
+                None,
+                "cards",
+                "cozy",
+                None,
+                51,
+                1,
+                false,
+                false
+            )
+            .is_err());
+        let other = semantics
+            .create_workspace(p2.id.as_str(), "Overview", "overview", true)
+            .unwrap();
+        assert!(semantics
+            .save_workspace_panel(
+                p2.id.as_str(),
+                other.id.as_str(),
+                Some(panel.id.as_str()),
+                "quests",
+                None,
+                "cards",
+                "cozy",
+                None,
+                6,
+                0,
+                false,
+                false
+            )
+            .is_err());
+        assert!(semantics
+            .rename_workspace(p2.id.as_str(), ws.id.as_str(), "Stolen")
+            .is_err());
+        assert!(semantics
+            .delete_workspace(p2.id.as_str(), ws.id.as_str())
+            .is_err());
+        assert!(semantics
+            .delete_workspace_panel(p2.id.as_str(), ws.id.as_str(), panel.id.as_str())
+            .is_err());
+        semantics
+            .delete_workspace_panel(p1.id.as_str(), ws.id.as_str(), panel.id.as_str())
+            .unwrap();
+        assert!(semantics
+            .list_workspace_panels(p1.id.as_str(), ws.id.as_str())
+            .unwrap()
+            .is_empty());
     }
     #[test]
     fn quest_activity_content_associations_visibility_and_recovery_are_persisted() {

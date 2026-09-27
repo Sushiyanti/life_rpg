@@ -256,7 +256,7 @@ mod tests {
 
         let schema = store.schema_report().expect("schema");
         assert!(schema.is_current());
-        assert_eq!(schema.migrations.len(), 8);
+        assert_eq!(schema.migrations.len(), 9);
     }
 
     #[test]
@@ -386,7 +386,7 @@ mod tests {
         assert!(report.database.as_ref().unwrap().schema_current);
         assert_eq!(
             report.database.as_ref().unwrap().migrations.len(),
-            8,
+            9,
             "status screen shows real migration history"
         );
     }

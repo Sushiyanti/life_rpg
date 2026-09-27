@@ -397,6 +397,113 @@ pub fn list_presentation_preferences(
         .map_err(Into::into)
 }
 #[tauri::command]
+pub fn create_workspace(
+    state: State<'_, AppState>,
+    player_id: String,
+    name: String,
+    template: String,
+    is_default: bool,
+) -> Result<WorkspaceDto, CommandErrorDto> {
+    state
+        .semantics
+        .create_workspace(&player_id, &name, &template, is_default)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_workspaces(
+    state: State<'_, AppState>,
+    player_id: String,
+) -> Result<Vec<WorkspaceDto>, CommandErrorDto> {
+    state
+        .semantics
+        .list_workspaces(&player_id)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn rename_workspace(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+    name: String,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .rename_workspace(&player_id, &workspace_id, &name)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn delete_workspace(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .delete_workspace(&player_id, &workspace_id)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_workspace_panels(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+) -> Result<Vec<WorkspacePanelDto>, CommandErrorDto> {
+    state
+        .semantics
+        .list_workspace_panels(&player_id, &workspace_id)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn save_workspace_panel(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+    panel_id: Option<String>,
+    panel_type: String,
+    title: Option<String>,
+    variant: String,
+    density: String,
+    filter_status: Option<String>,
+    item_limit: i32,
+    sort_order: i32,
+    is_pinned: bool,
+    is_collapsed: bool,
+) -> Result<WorkspacePanelDto, CommandErrorDto> {
+    state
+        .semantics
+        .save_workspace_panel(
+            &player_id,
+            &workspace_id,
+            panel_id.as_deref(),
+            &panel_type,
+            title,
+            &variant,
+            &density,
+            filter_status.as_deref(),
+            item_limit,
+            sort_order,
+            is_pinned,
+            is_collapsed,
+        )
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn delete_workspace_panel(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+    panel_id: String,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .delete_workspace_panel(&player_id, &workspace_id, &panel_id)
+        .map_err(Into::into)
+}
+#[tauri::command]
 pub fn suggest_concept_progress(
     state: State<'_, AppState>,
     player_id: String,

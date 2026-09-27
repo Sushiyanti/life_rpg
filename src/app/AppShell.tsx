@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { Player } from '../domain/world';
+import type { Player, Workspace } from '../domain/world';
 import './AppShell.css';
 
 export type AppRoute = 'dashboard'|'player'|'quests'|'skills'|'skillTrees'|'concepts'|'effects'|'journal'|'explorer'|'history'|'rules'|'status';
@@ -9,7 +9,7 @@ const navigation: {section:string;items:{id:AppRoute;label:string;glyph:string}[
 ];
 const titles:Record<AppRoute,string>={dashboard:'Your world',player:'Player',quests:'Quest log',skills:'Skills',skillTrees:'Skill trees',concepts:'Concepts',effects:'Effects',journal:'Chronicle',explorer:'World explorer',history:'History & recovery',rules:'Rules & automation',status:'System health'};
 
-export function AppShell({children,route,onNavigate,player,players,onPlayerChange,onCreate,ready}:{children:ReactNode;route:AppRoute;onNavigate:(route:AppRoute)=>void;player:Player|null;players:{id:string;name:string}[];onPlayerChange:(id:string)=>void;onCreate:()=>void;ready:boolean}) {
+export function AppShell({children,route,onNavigate,player,players,onPlayerChange,workspaces,workspace,onWorkspaceChange,onCreate,ready}:{children:ReactNode;route:AppRoute;onNavigate:(route:AppRoute)=>void;player:Player|null;players:{id:string;name:string}[];onPlayerChange:(id:string)=>void;workspaces:Workspace[];workspace:Workspace|null;onWorkspaceChange:(id:string)=>void;onCreate:()=>void;ready:boolean}) {
   return <div className="app-shell">
     <aside className="app-rail" aria-label="Main navigation">
       <button className="app-brand" onClick={()=>onNavigate('dashboard')} aria-label="Life RPG home"><span className="app-brand__mark">L</span><span>Life RPG</span></button>
@@ -18,7 +18,7 @@ export function AppShell({children,route,onNavigate,player,players,onPlayerChang
     </aside>
     <div className="app-main-column">
       <header className="app-topbar"><div className="app-topbar__title"><span>WORLD / {titles[route].toUpperCase()}</span><h1>{titles[route]}</h1></div>
-        <div className="app-topbar__actions">{players.length>0&&<label className="world-switch"><span>Active world</span><select aria-label="Active player world" value={player?.id??''} onChange={e=>onPlayerChange(e.target.value)}>{players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}{player&&<div className="top-player"><span className="avatar">{player.name.slice(0,1).toUpperCase()}</span><div><strong>{player.name}</strong><small>Level {player.level}{player.levelName?` · ${player.levelName}`:''}</small></div></div>}<button className="button button--primary button--compact" onClick={onCreate} disabled={!player} aria-label="Create new item">＋ New</button></div>
+        <div className="app-topbar__actions">{players.length>0&&<label className="world-switch"><span>Active world</span><select aria-label="Active player world" value={player?.id??''} onChange={e=>onPlayerChange(e.target.value)}>{players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}{route==='dashboard'&&player&&workspaces.length>0&&<label className="world-switch"><span>Workspace</span><select aria-label="Active workspace" value={workspace?.id??''} onChange={e=>onWorkspaceChange(e.target.value)}>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}{player&&<div className="top-player"><span className="avatar">{player.name.slice(0,1).toUpperCase()}</span><div><strong>{player.name}</strong><small>Level {player.level}{player.levelName?` · ${player.levelName}`:''}</small></div></div>}<button className="button button--primary button--compact" onClick={onCreate} disabled={!player} aria-label="Create new item">＋ New</button></div>
       </header>
       <main className="app-shell__content" key={route}>{children}</main>
       <footer className="app-footer"><span>Life RPG <b>3.6 · world semantics</b></span><span>Progress is player-authored · history stays recoverable</span></footer>

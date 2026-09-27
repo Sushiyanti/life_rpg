@@ -3,7 +3,7 @@ use crate::error::StorageError;
 use lr_domain::{
     AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, EntityId,
     EntityRevision, Iso8601Timestamp, LifecycleState, PresentationPreference, ProgressSuggestion,
-    QuestBranch, QuestSession, QuestStage, RevisionTargetKind,
+    QuestBranch, QuestSession, QuestStage, RevisionTargetKind, Workspace, WorkspacePanel,
 };
 
 pub trait SemanticsStore: Send + Sync {
@@ -84,6 +84,36 @@ pub trait SemanticsStore: Send + Sync {
         player_id: &EntityId,
         context: &str,
     ) -> Result<Vec<PresentationPreference>, StorageError>;
+    fn create_workspace(&self, value: &Workspace) -> Result<(), StorageError>;
+    fn list_workspaces(&self, player_id: &EntityId) -> Result<Vec<Workspace>, StorageError>;
+    fn rename_workspace(
+        &self,
+        player_id: &EntityId,
+        workspace_id: &EntityId,
+        name: &str,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError>;
+    fn delete_workspace(
+        &self,
+        player_id: &EntityId,
+        workspace_id: &EntityId,
+    ) -> Result<(), StorageError>;
+    fn save_workspace_panel(
+        &self,
+        player_id: &EntityId,
+        value: &WorkspacePanel,
+    ) -> Result<(), StorageError>;
+    fn delete_workspace_panel(
+        &self,
+        player_id: &EntityId,
+        workspace_id: &EntityId,
+        panel_id: &EntityId,
+    ) -> Result<(), StorageError>;
+    fn list_workspace_panels(
+        &self,
+        player_id: &EntityId,
+        workspace_id: &EntityId,
+    ) -> Result<Vec<WorkspacePanel>, StorageError>;
     fn insert_suggestion(&self, value: &ProgressSuggestion) -> Result<(), StorageError>;
     fn get_suggestion(&self, id: &EntityId) -> Result<Option<ProgressSuggestion>, StorageError>;
     fn list_suggestions(
@@ -233,6 +263,46 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
         c: &str,
     ) -> Result<Vec<PresentationPreference>, StorageError> {
         (**self).list_presentation(p, c)
+    }
+    fn create_workspace(&self, v: &Workspace) -> Result<(), StorageError> {
+        (**self).create_workspace(v)
+    }
+    fn list_workspaces(&self, p: &EntityId) -> Result<Vec<Workspace>, StorageError> {
+        (**self).list_workspaces(p)
+    }
+    fn rename_workspace(
+        &self,
+        p: &EntityId,
+        w: &EntityId,
+        n: &str,
+        at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        (**self).rename_workspace(p, w, n, at)
+    }
+    fn delete_workspace(&self, p: &EntityId, w: &EntityId) -> Result<(), StorageError> {
+        (**self).delete_workspace(p, w)
+    }
+    fn save_workspace_panel(
+        &self,
+        player: &EntityId,
+        v: &WorkspacePanel,
+    ) -> Result<(), StorageError> {
+        (**self).save_workspace_panel(player, v)
+    }
+    fn delete_workspace_panel(
+        &self,
+        player: &EntityId,
+        w: &EntityId,
+        p: &EntityId,
+    ) -> Result<(), StorageError> {
+        (**self).delete_workspace_panel(player, w, p)
+    }
+    fn list_workspace_panels(
+        &self,
+        player: &EntityId,
+        w: &EntityId,
+    ) -> Result<Vec<WorkspacePanel>, StorageError> {
+        (**self).list_workspace_panels(player, w)
     }
     fn insert_suggestion(&self, v: &ProgressSuggestion) -> Result<(), StorageError> {
         (**self).insert_suggestion(v)

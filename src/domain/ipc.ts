@@ -24,6 +24,7 @@ import type {
   WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
   ProgressSuggestion, SearchHit, SearchQuery,
+  Workspace, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -90,6 +91,8 @@ export const COMMANDS = {
   setPlayerProgression: 'set_player_progression',
   setSkillProgression: 'set_skill_progression',
   setConceptProgressControl: 'set_concept_progress_control',
+  createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
+  listWorkspacePanels: 'list_workspace_panels', saveWorkspacePanel: 'save_workspace_panel', deleteWorkspacePanel: 'delete_workspace_panel',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -180,6 +183,13 @@ export class CoreClient {
   async relateConcepts(sourceConceptId:string,targetConceptId:string,relationshipCode:string):Promise<ConceptRelationship>{return this.invoke<ConceptRelationship>(COMMANDS.relateConcepts,{sourceConceptId,targetConceptId,relationshipCode});}
   async searchWorld(query:SearchQuery):Promise<SearchHit[]>{return this.invoke<SearchHit[]>(COMMANDS.searchWorld,{query});}
   async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
+  async createWorkspace(playerId:string,name:string,template:WorkspaceTemplate,isDefault=false):Promise<Workspace>{return this.invoke(COMMANDS.createWorkspace,{playerId,name,template,isDefault});}
+  async listWorkspaces(playerId:string):Promise<Workspace[]>{return this.invoke(COMMANDS.listWorkspaces,{playerId});}
+  async renameWorkspace(playerId:string,workspaceId:string,name:string):Promise<void>{return this.invoke(COMMANDS.renameWorkspace,{playerId,workspaceId,name});}
+  async deleteWorkspace(playerId:string,workspaceId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspace,{playerId,workspaceId});}
+  async listWorkspacePanels(playerId:string,workspaceId:string):Promise<WorkspacePanel[]>{return this.invoke(COMMANDS.listWorkspacePanels,{playerId,workspaceId});}
+  async saveWorkspacePanel(value:{playerId:string;workspaceId:string;panelId?:string;panelType:WorkspacePanelType;title:string|null;variant:'cards'|'rows';density:'cozy'|'compact';filterStatus:WorkspacePanel['filterStatus'];itemLimit:number;sortOrder:number;isPinned:boolean;isCollapsed:boolean}):Promise<WorkspacePanel>{return this.invoke(COMMANDS.saveWorkspacePanel,{...value,panelId:value.panelId??null});}
+  async deleteWorkspacePanel(playerId:string,workspaceId:string,panelId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspacePanel,{playerId,workspaceId,panelId});}
   async setPresentationPreference(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'|'sortOrder'|'isPinned'|'isCollapsed'|'variant'|'density'>):Promise<PresentationPreference>{return this.invoke<PresentationPreference>(COMMANDS.setPresentationPreference,value);}
   async setPresentationVisibility(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'>):Promise<void>{return this.invoke<void>(COMMANDS.setPresentationVisibility,value);}
   async listEntityRevisions(targetKind:string,targetId:string):Promise<EntityRevision[]>{return this.invoke<EntityRevision[]>(COMMANDS.listEntityRevisions,{targetKind,targetId});}

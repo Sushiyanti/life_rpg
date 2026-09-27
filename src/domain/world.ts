@@ -35,3 +35,7 @@ export type SearchQuery={text:string|null;kind:string|null;playerId:string|null;
 export type SearchHit={kind:string;id:string;playerId:string|null;conceptId:string|null;typeCode:string|null;status:string|null;active:boolean|null;lifecycle:'active'|'archived'|'trashed';visible:boolean|null;occurredAt:string|null;capturedAt:string|null;name:string;snippet:string;progression:number|null;relevance:number|null};
 export type Concept={id:string;playerId:string;typeCode:string;name:string;description:string|null;isActive:boolean;metadataJson:string;createdAt:string;updatedAt:string};
 export type ConceptRelationship={id:string;playerId:string;sourceConceptId:string;targetConceptId:string;relationshipCode:string;isActive:boolean;createdAt:string;updatedAt:string};
+export type WorkspaceTemplate='overview'|'focus'|'learning'|'health'|'review'|'custom';
+export type Workspace={id:string;playerId:string;name:string;template:WorkspaceTemplate;sortOrder:number;isDefault:boolean;createdAt:string;updatedAt:string};
+export type WorkspacePanelType='quests'|'skills'|'concepts'|'effects'|'activity'|'transactions'|'journal';
+export type WorkspacePanel={id:string;workspaceId:string;panelType:WorkspacePanelType;title:string|null;variant:'cards'|'rows';density:'cozy'|'compact';filterStatus:'active'|'in_progress'|'pending'|'completed'|'archived'|null;itemLimit:number;sortOrder:number;isPinned:boolean;isCollapsed:boolean;createdAt:string;updatedAt:string};

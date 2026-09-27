@@ -22,6 +22,7 @@ pub mod stat;
 pub mod transaction;
 pub mod type_definition;
 pub mod value;
+pub mod workspace;
 
 pub use association::{AssociatedEntityKind, ConceptAssociation};
 pub use comment::{Comment, CommentTargetKind};
@@ -48,6 +49,7 @@ pub use stat::{PlayerStat, StatDefinition};
 pub use transaction::Transaction;
 pub use type_definition::{TypeDefinition, TypeRef};
 pub use value::{DateValue, EntityId, Iso8601Timestamp, SchemaVersion};
+pub use workspace::{Workspace, WorkspacePanel};
 
 /// Human-readable name of this layer, used by status reporting.
 pub const LAYER_NAME: &str = "domain";

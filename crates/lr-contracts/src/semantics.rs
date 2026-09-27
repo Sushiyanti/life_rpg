@@ -2,9 +2,72 @@
 use lr_application::{SearchHit, SearchQuery};
 use lr_domain::{
     ConceptAssociation, ContentAttachment, EntityRevision, LifecycleState, PresentationPreference,
-    ProgressSuggestion, QuestBranch, QuestSession, QuestStage,
+    ProgressSuggestion, QuestBranch, QuestSession, QuestStage, Workspace, WorkspacePanel,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceDto {
+    pub id: String,
+    pub player_id: String,
+    pub name: String,
+    pub template: String,
+    pub sort_order: i32,
+    pub is_default: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<Workspace> for WorkspaceDto {
+    fn from(v: Workspace) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            name: v.name,
+            template: v.template,
+            sort_order: v.sort_order,
+            is_default: v.is_default,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePanelDto {
+    pub id: String,
+    pub workspace_id: String,
+    pub panel_type: String,
+    pub title: Option<String>,
+    pub variant: String,
+    pub density: String,
+    pub filter_status: Option<String>,
+    pub item_limit: i32,
+    pub sort_order: i32,
+    pub is_pinned: bool,
+    pub is_collapsed: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<WorkspacePanel> for WorkspacePanelDto {
+    fn from(v: WorkspacePanel) -> Self {
+        Self {
+            id: v.id.to_string(),
+            workspace_id: v.workspace_id.to_string(),
+            panel_type: v.panel_type,
+            title: v.title,
+            variant: v.variant,
+            density: v.density,
+            filter_status: v.filter_status,
+            item_limit: v.item_limit,
+            sort_order: v.sort_order,
+            is_pinned: v.is_pinned,
+            is_collapsed: v.is_collapsed,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

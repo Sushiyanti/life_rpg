@@ -6,7 +6,8 @@ use crate::{
 use lr_domain::{
     AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, EntityId,
     EntityRevision, Iso8601Timestamp, LifecycleState, PresentationPreference, ProgressSuggestion,
-    QuestBranch, QuestSession, QuestStage, RevisionTargetKind, SessionStatus, TypeRef,
+    QuestBranch, QuestSession, QuestStage, RevisionTargetKind, SessionStatus, TypeRef, Workspace,
+    WorkspacePanel,
 };
 use std::{
     collections::HashSet,
@@ -415,6 +416,118 @@ where
         Ok(self
             .store
             .list_presentation(&EntityId::new(player_id)?, context)?)
+    }
+    pub fn create_workspace(
+        &self,
+        player_id: &str,
+        name: &str,
+        template: &str,
+        is_default: bool,
+    ) -> Result<Workspace, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        self.store
+            .get_player(&player_id)?
+            .ok_or_else(|| AppError::Internal("Player not found".into()))?;
+        let mut workspace = Workspace::new(
+            self.id("workspace")?,
+            player_id,
+            name,
+            template,
+            self.now()?,
+        )?;
+        workspace.is_default = is_default;
+        self.store.create_workspace(&workspace)?;
+        Ok(workspace)
+    }
+    pub fn list_workspaces(&self, player_id: &str) -> Result<Vec<Workspace>, AppError> {
+        Ok(self.store.list_workspaces(&EntityId::new(player_id)?)?)
+    }
+    pub fn rename_workspace(
+        &self,
+        player_id: &str,
+        workspace_id: &str,
+        name: &str,
+    ) -> Result<(), AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let workspace_id = EntityId::new(workspace_id)?;
+        let checked = Workspace::new(
+            workspace_id.clone(),
+            player_id.clone(),
+            name,
+            "custom",
+            self.now()?,
+        )?;
+        self.store
+            .rename_workspace(&player_id, &workspace_id, &checked.name, &self.now()?)?;
+        Ok(())
+    }
+    pub fn delete_workspace(&self, player_id: &str, workspace_id: &str) -> Result<(), AppError> {
+        self.store
+            .delete_workspace(&EntityId::new(player_id)?, &EntityId::new(workspace_id)?)?;
+        Ok(())
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub fn save_workspace_panel(
+        &self,
+        player_id: &str,
+        workspace_id: &str,
+        panel_id: Option<&str>,
+        panel_type: &str,
+        title: Option<String>,
+        variant: &str,
+        density: &str,
+        filter_status: Option<&str>,
+        item_limit: i32,
+        sort_order: i32,
+        is_pinned: bool,
+        is_collapsed: bool,
+    ) -> Result<WorkspacePanel, AppError> {
+        let now = self.now()?;
+        let id = panel_id
+            .map(EntityId::new)
+            .transpose()?
+            .unwrap_or(self.id("panel")?);
+        let panel = WorkspacePanel {
+            id,
+            workspace_id: EntityId::new(workspace_id)?,
+            panel_type: panel_type.into(),
+            title,
+            variant: variant.into(),
+            density: density.into(),
+            filter_status: filter_status.map(str::to_string),
+            item_limit,
+            sort_order,
+            is_pinned,
+            is_collapsed,
+            created_at: now.clone(),
+            updated_at: now,
+        };
+        panel.validate()?;
+        self.store
+            .save_workspace_panel(&EntityId::new(player_id)?, &panel)?;
+        Ok(panel)
+    }
+    pub fn list_workspace_panels(
+        &self,
+        player_id: &str,
+        workspace_id: &str,
+    ) -> Result<Vec<WorkspacePanel>, AppError> {
+        Ok(self
+            .store
+            .list_workspace_panels(&EntityId::new(player_id)?, &EntityId::new(workspace_id)?)?)
+    }
+    pub fn delete_workspace_panel(
+        &self,
+        player_id: &str,
+        workspace_id: &str,
+        panel_id: &str,
+    ) -> Result<(), AppError> {
+        self.store.delete_workspace_panel(
+            &EntityId::new(player_id)?,
+            &EntityId::new(workspace_id)?,
+            &EntityId::new(panel_id)?,
+        )?;
+        Ok(())
     }
     pub fn suggest_progress(
         &self,
