@@ -6,7 +6,7 @@ pub mod commands;
 pub mod state;
 pub use state::AppState;
 
-use lr_application::{Clock, HealthService, WorldService};
+use lr_application::{Clock, HealthService, SemanticsService, WorldService};
 use lr_persistence::SqliteHealthStore;
 use std::{path::PathBuf, sync::Arc};
 use tauri::Manager;
@@ -34,14 +34,16 @@ pub fn bootstrap(app_data_dir: &std::path::Path, now: &str) -> AppState {
     ));
     AppState::new(
         HealthService::new(store.clone(), SystemClock),
-        WorldService::new(store, SystemClock),
+        WorldService::new(store.clone(), SystemClock),
+        SemanticsService::new(store, SystemClock),
     )
 }
 pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
     let store = Arc::new(SqliteHealthStore::open_in_memory(now));
     let mut state = AppState::new(
         HealthService::new(store.clone(), SystemClock),
-        WorldService::new(store, SystemClock),
+        WorldService::new(store.clone(), SystemClock),
+        SemanticsService::new(store, SystemClock),
     );
     state.set_startup_warning(Some(reason.into()));
     state
@@ -86,6 +88,8 @@ pub fn run() {
             commands::status::ping,
             commands::world::create_player,
             commands::world::get_player,
+            commands::world::set_player_progression,
+            commands::world::set_skill_progression,
             commands::world::award_xp,
             commands::world::create_quest,
             commands::world::start_quest,
@@ -109,7 +113,31 @@ pub fn run() {
             commands::world::add_comment,
             commands::world::write_narrative,
             commands::world::get_world_overview,
-            commands::world::list_transactions
+            commands::world::list_transactions,
+            commands::semantics::create_quest_stage,
+            commands::semantics::list_quest_stages,
+            commands::semantics::create_quest_branch,
+            commands::semantics::list_quest_branches,
+            commands::semantics::start_quest_session,
+            commands::semantics::finish_quest_session,
+            commands::semantics::list_quest_sessions,
+            commands::semantics::attach_content,
+            commands::semantics::list_attached_content,
+            commands::semantics::associate_concept,
+            commands::semantics::list_concept_associations,
+            commands::semantics::set_concept_association_active,
+            commands::semantics::set_entity_lifecycle,
+            commands::semantics::get_entity_lifecycle,
+            commands::semantics::list_entity_revisions,
+            commands::semantics::restore_entity_revision,
+            commands::semantics::set_presentation_preference,
+            commands::semantics::list_presentation_preferences,
+            commands::semantics::suggest_concept_progress,
+            commands::semantics::list_progress_suggestions,
+            commands::semantics::accept_progress_suggestion,
+            commands::semantics::reject_progress_suggestion,
+            commands::semantics::search_world,
+            commands::semantics::set_concept_progress_control
         ])
         .run(tauri::generate_context!())
         .expect("error while running the Life RPG desktop shell");

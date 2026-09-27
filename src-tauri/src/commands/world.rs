@@ -79,6 +79,36 @@ pub fn get_player(
         .map(|v| v.map(Into::into))
         .map_err(Into::into)
 }
+/// Set authored Player progression independently from the XP ledger.
+#[tauri::command]
+pub fn set_player_progression(
+    state: State<'_, AppState>,
+    player_id: String,
+    level: i32,
+    level_name: Option<String>,
+    progression_label: Option<String>,
+) -> Result<PlayerDto, CommandErrorDto> {
+    state
+        .world
+        .set_player_progression(&player_id, level, level_name, progression_label)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+/// Set authored Skill progression independently from the XP ledger.
+#[tauri::command]
+pub fn set_skill_progression(
+    state: State<'_, AppState>,
+    skill_id: String,
+    level: i32,
+    level_name: Option<String>,
+    progression_label: Option<String>,
+) -> Result<SkillDto, CommandErrorDto> {
+    state
+        .world
+        .set_skill_progression(&skill_id, level, level_name, progression_label)
+        .map(Into::into)
+        .map_err(Into::into)
+}
 #[tauri::command]
 pub fn award_xp(
     state: State<'_, AppState>,

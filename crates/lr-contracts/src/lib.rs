@@ -26,6 +26,7 @@
 //! surface the UI needs. Phase 2 adds `PlayerDto`, `QuestDto`, … following the
 //! same pattern.
 
+pub mod semantics;
 pub mod world;
 
 use lr_application::HealthReport;
@@ -429,6 +430,17 @@ mod tests {
         assert_eq!(round_trip, definition);
         let unknown = serde_json::json!({"schemaVersion":1,"trigger":"stat_changed","condition":{"op":"run_code","source":"x"},"actions":[{"kind":"set_player_stat","statCode":"focus","value":5}]});
         assert!(serde_json::from_value::<RuleDefinition>(unknown).is_err());
+    }
+
+    #[test]
+    fn phase36_search_contract_exposes_context_and_lifecycle_as_camel_case() {
+        let dto = semantics::SearchQueryDto::from(lr_application::SearchQuery::default());
+        let json = serde_json::to_value(dto).unwrap();
+        assert_eq!(json["includeHidden"], false);
+        assert_eq!(json["includeArchived"], false);
+        assert_eq!(json["includeTrashed"], false);
+        assert_eq!(json["sort"], "newest");
+        assert!(json.get("include_hidden").is_none());
     }
 
     #[test]

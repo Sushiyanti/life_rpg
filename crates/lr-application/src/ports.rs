@@ -294,6 +294,13 @@ pub trait ConceptStore: Send + Sync {
         &self,
         concept_id: &EntityId,
     ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError>;
+    fn set_concept_progress_control(
+        &self,
+        concept_id: &EntityId,
+        track_code: &str,
+        control: lr_domain::ProgressControl,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError>;
     fn list_concept_progress_history(
         &self,
         concept_id: &EntityId,
@@ -375,6 +382,15 @@ impl<T: ConceptStore + ?Sized> ConceptStore for std::sync::Arc<T> {
         id: &EntityId,
     ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError> {
         (**self).list_concept_progress(id)
+    }
+    fn set_concept_progress_control(
+        &self,
+        id: &EntityId,
+        code: &str,
+        control: lr_domain::ProgressControl,
+        at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        (**self).set_concept_progress_control(id, code, control, at)
     }
     fn list_concept_progress_history(
         &self,

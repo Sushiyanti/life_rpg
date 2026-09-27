@@ -1,24 +1,31 @@
 //! Application state constructed once by the shell composition root.
 
 use crate::SystemClock;
-use lr_application::{HealthService, WorldService};
+use lr_application::{HealthService, SemanticsService, WorldService};
 use lr_persistence::SqliteHealthStore;
 use std::sync::{Arc, RwLock};
 
 pub type WiredStore = Arc<SqliteHealthStore>;
 pub type WiredHealthService = HealthService<WiredStore, SystemClock>;
 pub type WiredWorldService = WorldService<WiredStore, SystemClock>;
+pub type WiredSemanticsService = SemanticsService<WiredStore, SystemClock>;
 
 pub struct AppState {
     pub health: WiredHealthService,
     pub world: WiredWorldService,
+    pub semantics: WiredSemanticsService,
     startup_warning: RwLock<Option<String>>,
 }
 impl AppState {
-    pub fn new(health: WiredHealthService, world: WiredWorldService) -> Self {
+    pub fn new(
+        health: WiredHealthService,
+        world: WiredWorldService,
+        semantics: WiredSemanticsService,
+    ) -> Self {
         Self {
             health,
             world,
+            semantics,
             startup_warning: RwLock::new(None),
         }
     }

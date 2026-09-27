@@ -14,15 +14,14 @@ fn text(field: &'static str, value: impl Into<String>) -> DomainResult<String> {
     Ok(v.to_string())
 }
 
-/// XP per level in the Phase 2 cached progression model. Rules-engine work is deferred.
-pub const XP_PER_LEVEL: i64 = 1_000;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Player {
     pub id: EntityId,
     pub name: String,
     pub description: Option<String>,
     pub level: i32,
+    pub level_name: Option<String>,
+    pub progression_label: Option<String>,
     pub current_xp: i64,
     pub is_active: bool,
     pub metadata_json: String,
@@ -36,6 +35,8 @@ impl Player {
             name: text("player name", name)?,
             description: None,
             level: 1,
+            level_name: None,
+            progression_label: None,
             current_xp: 0,
             is_active: true,
             metadata_json: "{}".into(),
@@ -49,7 +50,28 @@ impl Player {
             .checked_add(amount)
             .ok_or_else(|| DomainError::Invariant("XP overflow".into()))?;
         self.current_xp = next_xp.max(0);
-        self.level = (self.current_xp.div_euclid(XP_PER_LEVEL) + 1).max(1) as i32;
+        self.updated_at = now;
+        Ok(())
+    }
+    /// Set player-authored progression. XP changes never call this implicitly.
+    pub fn set_progression(
+        &mut self,
+        level: i32,
+        level_name: Option<String>,
+        progression_label: Option<String>,
+        now: Iso8601Timestamp,
+    ) -> DomainResult<()> {
+        if level < 1 {
+            return Err(DomainError::invalid_value(
+                "player level",
+                "must be positive",
+            ));
+        }
+        self.level_name = level_name.map(|v| text("level name", v)).transpose()?;
+        self.progression_label = progression_label
+            .map(|v| text("progression label", v))
+            .transpose()?;
+        self.level = level;
         self.updated_at = now;
         Ok(())
     }
@@ -78,6 +100,18 @@ mod tests {
         player.apply_xp(-25, now()).unwrap();
         assert_eq!(player.current_xp, 0);
         player.apply_xp(1_000, now()).unwrap();
-        assert_eq!((player.current_xp, player.level), (1_000, 2));
+        assert_eq!((player.current_xp, player.level), (1_000, 1));
+        player
+            .set_progression(2, Some("Journeyman".into()), Some("Learning".into()), now())
+            .unwrap();
+        assert_eq!(
+            (player.level, player.level_name.as_deref()),
+            (2, Some("Journeyman"))
+        );
+        player.set_progression(1, None, None, now()).unwrap();
+        assert_eq!(
+            player.level, 1,
+            "manual level edits can move progression backward"
+        );
     }
 }

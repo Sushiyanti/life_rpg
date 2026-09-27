@@ -543,6 +543,12 @@ pub struct RuleExecutionRecord {
     pub depth: u16,
     pub executed_at: Iso8601Timestamp,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressMutationSource {
+    Manual,
+    Rule,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RuleOperation {
     CompleteQuest {
@@ -561,9 +567,15 @@ pub enum RuleOperation {
     },
     ConceptProgress {
         player_id: EntityId,
+        source: ProgressMutationSource,
         track: lr_domain::ConceptProgressTrack,
         expected_previous: Option<f64>,
         history: lr_domain::ConceptProgressEntry,
+    },
+    ResolveProgressSuggestion {
+        suggestion_id: EntityId,
+        player_id: EntityId,
+        accepted_at: Iso8601Timestamp,
     },
 }
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]

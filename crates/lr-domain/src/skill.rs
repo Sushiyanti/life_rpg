@@ -92,6 +92,8 @@ pub struct Skill {
     pub story: Option<String>,
     pub instructions: Option<String>,
     pub level: i32,
+    pub level_name: Option<String>,
+    pub progression_label: Option<String>,
     pub current_xp: i64,
     pub invested_minutes: i64,
     pub status: SkillStatus,
@@ -131,6 +133,8 @@ impl Skill {
             story: None,
             instructions: None,
             level: 1,
+            level_name: None,
+            progression_label: None,
             current_xp: 0,
             invested_minutes: 0,
             status: SkillStatus::Active,
@@ -152,6 +156,28 @@ impl Skill {
             .invested_minutes
             .checked_add(minutes)
             .ok_or_else(|| DomainError::Invariant("invested time overflow".into()))?;
+        self.updated_at = now;
+        Ok(())
+    }
+    /// Skill level is player-authored; XP is optional and never implies a level.
+    pub fn set_progression(
+        &mut self,
+        level: i32,
+        level_name: Option<String>,
+        progression_label: Option<String>,
+        now: Iso8601Timestamp,
+    ) -> DomainResult<()> {
+        if level < 1 {
+            return Err(DomainError::invalid_value(
+                "skill level",
+                "must be positive",
+            ));
+        }
+        self.level_name = level_name.map(|v| required("level name", v)).transpose()?;
+        self.progression_label = progression_label
+            .map(|v| required("progression label", v))
+            .transpose()?;
+        self.level = level;
         self.updated_at = now;
         Ok(())
     }

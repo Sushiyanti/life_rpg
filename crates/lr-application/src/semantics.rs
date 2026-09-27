@@ -1,0 +1,232 @@
+//! Focused persistence contract for Phase 3.6 world semantics.
+use crate::error::StorageError;
+use lr_domain::{
+    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, EntityId,
+    EntityRevision, Iso8601Timestamp, LifecycleState, PresentationPreference, ProgressSuggestion,
+    QuestBranch, QuestSession, QuestStage, RevisionTargetKind,
+};
+
+pub trait SemanticsStore: Send + Sync {
+    fn insert_stage(&self, value: &QuestStage) -> Result<(), StorageError>;
+    fn get_stage(&self, id: &EntityId) -> Result<Option<QuestStage>, StorageError>;
+    fn list_stages(&self, quest_id: &EntityId) -> Result<Vec<QuestStage>, StorageError>;
+    fn insert_branch(&self, value: &QuestBranch) -> Result<(), StorageError>;
+    fn list_branches(&self, stage_id: &EntityId) -> Result<Vec<QuestBranch>, StorageError>;
+    fn insert_session(&self, value: &QuestSession) -> Result<(), StorageError>;
+    fn get_session(&self, id: &EntityId) -> Result<Option<QuestSession>, StorageError>;
+    fn update_session(&self, value: &QuestSession) -> Result<(), StorageError>;
+    fn list_sessions(
+        &self,
+        player_id: &EntityId,
+        quest_id: Option<&EntityId>,
+        stage_id: Option<&EntityId>,
+    ) -> Result<Vec<QuestSession>, StorageError>;
+    fn attach_content(&self, value: &ContentAttachment) -> Result<(), StorageError>;
+    fn list_content_attachments(
+        &self,
+        kind: ContentTargetKind,
+        target_id: &EntityId,
+    ) -> Result<Vec<ContentAttachment>, StorageError>;
+    fn insert_association(&self, value: &ConceptAssociation) -> Result<(), StorageError>;
+    fn get_association(&self, id: &EntityId) -> Result<Option<ConceptAssociation>, StorageError>;
+    fn update_association(&self, value: &ConceptAssociation) -> Result<(), StorageError>;
+    fn list_associations(
+        &self,
+        concept_id: &EntityId,
+        entity_kind: Option<AssociatedEntityKind>,
+        entity_id: Option<&str>,
+    ) -> Result<Vec<ConceptAssociation>, StorageError>;
+    fn list_associations_for_entity(
+        &self,
+        entity_kind: AssociatedEntityKind,
+        entity_id: &str,
+    ) -> Result<Vec<ConceptAssociation>, StorageError>;
+    fn append_revision(&self, value: &EntityRevision) -> Result<(), StorageError>;
+    fn list_revisions(
+        &self,
+        kind: RevisionTargetKind,
+        target_id: &EntityId,
+    ) -> Result<Vec<EntityRevision>, StorageError>;
+    fn get_revision(&self, id: &EntityId) -> Result<Option<EntityRevision>, StorageError>;
+    fn restore_revision(
+        &self,
+        revision_id: &EntityId,
+        now: &Iso8601Timestamp,
+        reason: Option<&str>,
+    ) -> Result<EntityRevision, StorageError>;
+    fn set_lifecycle(
+        &self,
+        kind: RevisionTargetKind,
+        target_id: &EntityId,
+        player_id: &EntityId,
+        state: LifecycleState,
+        occurred_at: &Iso8601Timestamp,
+        captured_at: &Iso8601Timestamp,
+        reason: Option<&str>,
+    ) -> Result<(), StorageError>;
+    fn get_lifecycle(
+        &self,
+        kind: RevisionTargetKind,
+        target_id: &EntityId,
+    ) -> Result<LifecycleState, StorageError>;
+    fn set_presentation(&self, value: &PresentationPreference) -> Result<(), StorageError>;
+    fn list_presentation(
+        &self,
+        player_id: &EntityId,
+        context: &str,
+    ) -> Result<Vec<PresentationPreference>, StorageError>;
+    fn insert_suggestion(&self, value: &ProgressSuggestion) -> Result<(), StorageError>;
+    fn get_suggestion(&self, id: &EntityId) -> Result<Option<ProgressSuggestion>, StorageError>;
+    fn list_suggestions(
+        &self,
+        concept_id: &EntityId,
+        include_resolved: bool,
+    ) -> Result<Vec<ProgressSuggestion>, StorageError>;
+    fn resolve_suggestion(
+        &self,
+        id: &EntityId,
+        player_id: &EntityId,
+        accepted: bool,
+        at: &Iso8601Timestamp,
+    ) -> Result<ProgressSuggestion, StorageError>;
+}
+impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
+    fn insert_stage(&self, v: &QuestStage) -> Result<(), StorageError> {
+        (**self).insert_stage(v)
+    }
+    fn get_stage(&self, id: &EntityId) -> Result<Option<QuestStage>, StorageError> {
+        (**self).get_stage(id)
+    }
+    fn list_stages(&self, id: &EntityId) -> Result<Vec<QuestStage>, StorageError> {
+        (**self).list_stages(id)
+    }
+    fn insert_branch(&self, v: &QuestBranch) -> Result<(), StorageError> {
+        (**self).insert_branch(v)
+    }
+    fn list_branches(&self, id: &EntityId) -> Result<Vec<QuestBranch>, StorageError> {
+        (**self).list_branches(id)
+    }
+    fn insert_session(&self, v: &QuestSession) -> Result<(), StorageError> {
+        (**self).insert_session(v)
+    }
+    fn get_session(&self, id: &EntityId) -> Result<Option<QuestSession>, StorageError> {
+        (**self).get_session(id)
+    }
+    fn update_session(&self, v: &QuestSession) -> Result<(), StorageError> {
+        (**self).update_session(v)
+    }
+    fn list_sessions(
+        &self,
+        p: &EntityId,
+        q: Option<&EntityId>,
+        s: Option<&EntityId>,
+    ) -> Result<Vec<QuestSession>, StorageError> {
+        (**self).list_sessions(p, q, s)
+    }
+    fn attach_content(&self, v: &ContentAttachment) -> Result<(), StorageError> {
+        (**self).attach_content(v)
+    }
+    fn list_content_attachments(
+        &self,
+        k: ContentTargetKind,
+        id: &EntityId,
+    ) -> Result<Vec<ContentAttachment>, StorageError> {
+        (**self).list_content_attachments(k, id)
+    }
+    fn insert_association(&self, v: &ConceptAssociation) -> Result<(), StorageError> {
+        (**self).insert_association(v)
+    }
+    fn get_association(&self, id: &EntityId) -> Result<Option<ConceptAssociation>, StorageError> {
+        (**self).get_association(id)
+    }
+    fn update_association(&self, v: &ConceptAssociation) -> Result<(), StorageError> {
+        (**self).update_association(v)
+    }
+    fn list_associations(
+        &self,
+        c: &EntityId,
+        k: Option<AssociatedEntityKind>,
+        id: Option<&str>,
+    ) -> Result<Vec<ConceptAssociation>, StorageError> {
+        (**self).list_associations(c, k, id)
+    }
+    fn list_associations_for_entity(
+        &self,
+        k: AssociatedEntityKind,
+        id: &str,
+    ) -> Result<Vec<ConceptAssociation>, StorageError> {
+        (**self).list_associations_for_entity(k, id)
+    }
+    fn append_revision(&self, v: &EntityRevision) -> Result<(), StorageError> {
+        (**self).append_revision(v)
+    }
+    fn list_revisions(
+        &self,
+        k: RevisionTargetKind,
+        id: &EntityId,
+    ) -> Result<Vec<EntityRevision>, StorageError> {
+        (**self).list_revisions(k, id)
+    }
+    fn get_revision(&self, id: &EntityId) -> Result<Option<EntityRevision>, StorageError> {
+        (**self).get_revision(id)
+    }
+    fn restore_revision(
+        &self,
+        id: &EntityId,
+        at: &Iso8601Timestamp,
+        r: Option<&str>,
+    ) -> Result<EntityRevision, StorageError> {
+        (**self).restore_revision(id, at, r)
+    }
+    fn set_lifecycle(
+        &self,
+        k: RevisionTargetKind,
+        id: &EntityId,
+        p: &EntityId,
+        s: LifecycleState,
+        o: &Iso8601Timestamp,
+        c: &Iso8601Timestamp,
+        r: Option<&str>,
+    ) -> Result<(), StorageError> {
+        (**self).set_lifecycle(k, id, p, s, o, c, r)
+    }
+    fn get_lifecycle(
+        &self,
+        k: RevisionTargetKind,
+        id: &EntityId,
+    ) -> Result<LifecycleState, StorageError> {
+        (**self).get_lifecycle(k, id)
+    }
+    fn set_presentation(&self, v: &PresentationPreference) -> Result<(), StorageError> {
+        (**self).set_presentation(v)
+    }
+    fn list_presentation(
+        &self,
+        p: &EntityId,
+        c: &str,
+    ) -> Result<Vec<PresentationPreference>, StorageError> {
+        (**self).list_presentation(p, c)
+    }
+    fn insert_suggestion(&self, v: &ProgressSuggestion) -> Result<(), StorageError> {
+        (**self).insert_suggestion(v)
+    }
+    fn get_suggestion(&self, id: &EntityId) -> Result<Option<ProgressSuggestion>, StorageError> {
+        (**self).get_suggestion(id)
+    }
+    fn list_suggestions(
+        &self,
+        id: &EntityId,
+        include: bool,
+    ) -> Result<Vec<ProgressSuggestion>, StorageError> {
+        (**self).list_suggestions(id, include)
+    }
+    fn resolve_suggestion(
+        &self,
+        id: &EntityId,
+        p: &EntityId,
+        a: bool,
+        at: &Iso8601Timestamp,
+    ) -> Result<ProgressSuggestion, StorageError> {
+        (**self).resolve_suggestion(id, p, a, at)
+    }
+}

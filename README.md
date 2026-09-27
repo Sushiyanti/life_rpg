@@ -6,13 +6,15 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 3.5 — Domain refinement.** Alongside Phase 3's bounded,
-> fail-atomic declarative rules, the world now has typed Concepts, Concept
-> relationships and non-XP progress tracks, temporal progress history, Concept
-> Effect targets, and bounded cross-entity search. Phase 4 UI work has not begun.
-> See the [Domain Design
-> Codex](docs/DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
-> [Phase 3 report](docs/PHASE-3-REPORT.md), and [Phase 3.5 report](docs/PHASE-3.5-REPORT.md).
+> **Status: Phase 3.6 — World semantics (implementation / verification).** In
+> addition to typed Concepts, the model includes optional Quest Stages and
+> Branches, real timestamped Sessions, manually authored Player/Skill levels,
+> progress suggestions with explicit acceptance, recoverable revisions and
+> soft lifecycle states, and contextual visibility preferences. Phase 4 UI work
+> has not begun. See the [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+> [Architecture](docs/ARCHITECTURE.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
+> [Phase 3 report](docs/PHASE-3-REPORT.md), [Phase 3.5 report](docs/PHASE-3.5-REPORT.md),
+> and [Phase 3.6 report](docs/PHASE-3.6-REPORT.md).
 
 ---
 
@@ -158,10 +160,11 @@ life-rpg/
 │  │     ├─ lib.rs
 │  │     ├─ error.rs             #   PersistenceError -> StorageError translation
 │  │     ├─ pragma.rs            #   WAL / foreign_keys / synchronous / busy_timeout
-│  │     ├─ migrations.rs        #   schema versions 1–7 + upgrade tests
+│  │     ├─ migrations.rs        #   schema versions 1–8 + upgrade tests
 │  │     ├─ sqlite_store.rs      #   health/connection adapter
 │  │     ├─ world_store.rs       #   atomic world/rule persistence + tests
 │  │     ├─ concept_store.rs     #   Concept/progress/search adapters + tests
+│  │     └─ semantics_store.rs   #   activity/recovery/preferences/suggestions
 │  │     └─ migrations/
 │  │        ├─ 0001_core_ledger.sql … 0003_type_definition_registry.sql
 │  │        ├─ 0004_phase2_domain.sql

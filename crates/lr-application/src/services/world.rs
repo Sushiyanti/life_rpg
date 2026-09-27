@@ -83,6 +83,36 @@ where
     pub fn get_player(&self, id: &str) -> Result<Option<Player>, AppError> {
         Ok(self.store.get_player(&EntityId::new(id)?)?)
     }
+    /// Player level and labels are manually authored; XP is an independent ledger.
+    pub fn set_player_progression(
+        &self,
+        player_id: &str,
+        level: i32,
+        level_name: Option<String>,
+        progression_label: Option<String>,
+    ) -> Result<Player, AppError> {
+        let mut player = self.required_player(player_id)?;
+        player.set_progression(level, level_name, progression_label, self.now()?)?;
+        self.store.update_player(&player)?;
+        Ok(player)
+    }
+    /// Skill levels may be corrected in either direction independent of optional XP.
+    pub fn set_skill_progression(
+        &self,
+        skill_id: &str,
+        level: i32,
+        level_name: Option<String>,
+        progression_label: Option<String>,
+    ) -> Result<Skill, AppError> {
+        let id = EntityId::new(skill_id)?;
+        let mut skill = self
+            .store
+            .get_skill(&id)?
+            .ok_or_else(|| AppError::Internal("skill not found".into()))?;
+        skill.set_progression(level, level_name, progression_label, self.now()?)?;
+        self.store.update_skill(&skill)?;
+        Ok(skill)
+    }
     fn execute_rule_events(
         &self,
         events: Vec<RuleEvent>,
@@ -659,6 +689,11 @@ mod tests {
                     RuleOperation::ConceptProgress { .. } => {
                         return Err(StorageError::Operation(
                             "test store does not persist Concept progress".into(),
+                        ));
+                    }
+                    RuleOperation::ResolveProgressSuggestion { .. } => {
+                        return Err(StorageError::Operation(
+                            "test store does not persist progress suggestions".into(),
                         ));
                     }
                 }

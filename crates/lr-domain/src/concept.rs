@@ -144,6 +144,31 @@ impl ConceptRelationship {
     }
 }
 
+/// Whether Rules may write the current progress value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProgressControl {
+    Manual,
+    RuleControlled,
+}
+impl ProgressControl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::RuleControlled => "rule_controlled",
+        }
+    }
+    pub fn parse(v: &str) -> DomainResult<Self> {
+        match v {
+            "manual" => Ok(Self::Manual),
+            "rule_controlled" => Ok(Self::RuleControlled),
+            _ => Err(DomainError::invalid_value(
+                "progress control",
+                "unknown control mode",
+            )),
+        }
+    }
+}
+
 /// Progress semantics are explicit: these measures are not interchangeable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProgressSemantics {
@@ -287,6 +312,9 @@ pub struct ConceptProgressTrack {
     pub track_code: String,
     pub current_value: f64,
     pub level: Option<i32>,
+    pub level_name: Option<String>,
+    pub progression_label: Option<String>,
+    pub control: ProgressControl,
     pub is_active: bool,
     pub metadata_json: String,
     pub created_at: Iso8601Timestamp,
@@ -319,6 +347,9 @@ impl ConceptProgressTrack {
             track_code: definition.code.clone(),
             current_value: value,
             level,
+            level_name: None,
+            progression_label: None,
+            control: ProgressControl::Manual,
             is_active: true,
             metadata_json: "{}".into(),
             created_at: now.clone(),
@@ -351,6 +382,23 @@ impl ConceptProgressTrack {
         }
         self.current_value = value;
         self.level = level;
+        self.updated_at = now;
+        Ok(())
+    }
+    pub fn set_control(&mut self, control: ProgressControl, now: Iso8601Timestamp) {
+        self.control = control;
+        self.updated_at = now;
+    }
+    pub fn set_labels(
+        &mut self,
+        level_name: Option<String>,
+        progression_label: Option<String>,
+        now: Iso8601Timestamp,
+    ) -> DomainResult<()> {
+        self.level_name = level_name.map(|v| non_blank("level name", v)).transpose()?;
+        self.progression_label = progression_label
+            .map(|v| non_blank("progression label", v))
+            .transpose()?;
         self.updated_at = now;
         Ok(())
     }

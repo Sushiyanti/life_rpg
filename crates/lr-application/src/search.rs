@@ -1,11 +1,14 @@
 //! Typed global search/query API. Results remain domain entity references, not generic database rows.
-use lr_domain::{EntityId, Iso8601Timestamp};
+use lr_domain::{EntityId, Iso8601Timestamp, LifecycleState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchEntityKind {
     Player,
     Concept,
     Quest,
+    QuestStage,
+    QuestBranch,
+    QuestSession,
     SkillTree,
     Skill,
     Effect,
@@ -20,6 +23,9 @@ impl SearchEntityKind {
             Self::Player => "player",
             Self::Concept => "concept",
             Self::Quest => "quest",
+            Self::QuestStage => "quest_stage",
+            Self::QuestBranch => "quest_branch",
+            Self::QuestSession => "quest_session",
             Self::SkillTree => "skill_tree",
             Self::Skill => "skill",
             Self::Effect => "effect",
@@ -34,6 +40,9 @@ impl SearchEntityKind {
             "player" => Self::Player,
             "concept" => Self::Concept,
             "quest" => Self::Quest,
+            "quest_stage" => Self::QuestStage,
+            "quest_branch" => Self::QuestBranch,
+            "quest_session" => Self::QuestSession,
             "skill_tree" => Self::SkillTree,
             "skill" => Self::Skill,
             "effect" => Self::Effect,
@@ -64,6 +73,11 @@ pub struct SearchQuery {
     pub active: Option<bool>,
     pub from: Option<Iso8601Timestamp>,
     pub through: Option<Iso8601Timestamp>,
+    /// Apply contextual visibility only when an actual UI context is requested.
+    pub context: Option<String>,
+    pub include_hidden: bool,
+    pub include_archived: bool,
+    pub include_trashed: bool,
     pub sort: SearchSort,
     pub limit: u32,
     pub offset: u32,
@@ -80,6 +94,10 @@ impl Default for SearchQuery {
             active: None,
             from: None,
             through: None,
+            context: None,
+            include_hidden: false,
+            include_archived: false,
+            include_trashed: false,
             sort: SearchSort::Newest,
             limit: 50,
             offset: 0,
@@ -122,6 +140,15 @@ impl SearchQuery {
         if self.offset > 1_000_000 {
             return Err("search offset is too large".into());
         }
+        if self.context.as_ref().is_some_and(|v| {
+            v.is_empty()
+                || v.len() > 160
+                || !v
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+        }) {
+            return Err("search context must be a 1-160 character lowercase identifier".into());
+        }
         Ok(())
     }
     /// Convert input into a quoted AND query; callers cannot inject FTS operators.
@@ -151,6 +178,8 @@ pub struct SearchHit {
     pub type_code: Option<String>,
     pub status: Option<String>,
     pub active: Option<bool>,
+    pub lifecycle: LifecycleState,
+    pub visible: Option<bool>,
     pub occurred_at: Option<Iso8601Timestamp>,
     pub captured_at: Option<Iso8601Timestamp>,
     pub name: String,

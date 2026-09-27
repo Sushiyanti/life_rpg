@@ -36,8 +36,9 @@ pub struct Migration {
 ///
 /// Phase 1 shipped three foundation steps; Phase 2 and Phase 2.1 append
 /// persistent world state and integrity improvements. Phase 3 adds declarative
-/// rules; Phase 3.5 adds typed Concepts and history/query structures. Applied
-/// bodies never change.
+/// rules; Phase 3.5 adds typed Concepts and history/query structures; Phase 3.6
+/// adds progression authority, activity, recovery, and contextual preferences.
+/// Applied bodies never change.
 pub const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -73,6 +74,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 7,
         name: "0007_phase35_concepts",
         sql: include_str!("migrations/0007_phase35_concepts.sql"),
+    },
+    Migration {
+        version: 8,
+        name: "0008_phase36_world_semantics",
+        sql: include_str!("migrations/0008_phase36_world_semantics.sql"),
     },
 ];
 
@@ -224,7 +230,7 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -232,7 +238,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 7);
+        assert_eq!(first.len(), 8);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -240,7 +246,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 7, "ledger must not accumulate duplicates");
+        assert_eq!(count, 8, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -250,7 +256,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 7);
+        assert_eq!(report.migrations.len(), 8);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -276,7 +282,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).unwrap();
         assert_eq!(
             applied,
-            vec![2, 3, 4, 5, 6, 7],
+            vec![2, 3, 4, 5, 6, 7, 8],
             "must apply only the missing steps"
         );
 
@@ -308,7 +314,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![4, 5, 6, 7]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![4, 5, 6, 7, 8]);
         assert!(schema_report(&conn).unwrap().is_current());
 
         let proof_rows: i64 = conn
@@ -353,7 +359,7 @@ mod tests {
         conn.execute("INSERT INTO rules(id,name,trigger_kind,schema_version,definition_json,created_at,updated_at) VALUES ('rule-legacy','Preserved rule','quest_completed',1,'{\"schemaVersion\":1,\"trigger\":\"quest_completed\",\"condition\":{\"op\":\"always\"},\"actions\":[{\"action\":\"award_xp\",\"amount\":10}]}',?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO rule_execution_history(id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,depth,executed_at) VALUES ('audit-legacy','chain-legacy','rule-legacy','quest_completed','{}',1,'[]','succeeded',0,?1)",[T0]).unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![7]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![7, 8]);
         assert!(schema_report(&conn).unwrap().is_current());
         let player: (i64, i32) = conn
             .query_row(
@@ -425,7 +431,7 @@ mod tests {
         }
         conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES ('old-player','Old',1,-35,?1,?1)", [T0]).unwrap();
         conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![5, 6, 7]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![5, 6, 7, 8]);
         let player: (i64, i32) = conn
             .query_row(
                 "SELECT current_xp,level FROM players WHERE id='old-player'",

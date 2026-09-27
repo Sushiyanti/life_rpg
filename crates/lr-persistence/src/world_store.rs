@@ -47,6 +47,8 @@ fn player(row: &Row<'_>) -> Result<Player, StorageError> {
         name: row.get(1).map_err(op)?,
         description: row.get(2).map_err(op)?,
         level: row.get(3).map_err(op)?,
+        level_name: row.get(9).map_err(op)?,
+        progression_label: row.get(10).map_err(op)?,
         current_xp: row.get(4).map_err(op)?,
         is_active: b(row.get(5).map_err(op)?),
         metadata_json: row.get(6).map_err(op)?,
@@ -151,6 +153,8 @@ fn skill(row: &Row<'_>) -> Result<Skill, StorageError> {
         story: row.get(7).map_err(op)?,
         instructions: row.get(8).map_err(op)?,
         level: row.get(9).map_err(op)?,
+        level_name: row.get(18).map_err(op)?,
+        progression_label: row.get(19).map_err(op)?,
         current_xp: row.get(10).map_err(op)?,
         invested_minutes: row.get(11).map_err(op)?,
         status: skill_status(row.get(12).map_err(op)?)?,
@@ -259,10 +263,10 @@ fn narrative(row: &Row<'_>) -> Result<NarrativeEntry, StorageError> {
 }
 
 const PLAYER_SQL: &str =
-    "id,name,description,level,current_xp,is_active,metadata_json,created_at,updated_at";
+    "id,name,description,level,current_xp,is_active,metadata_json,created_at,updated_at,level_name,progression_label";
 const QUEST_SQL: &str = "id,player_id,parent_quest_id,skill_id,quest_type_namespace,quest_type_code,title,description,story,instructions,status,difficulty,progress,xp_reward,due_at,started_at,completed_at,metadata_json,created_at,updated_at";
 const TREE_SQL: &str = "id,player_id,tree_type_namespace,tree_type_code,name,description,story,instructions,is_active,metadata_json,created_at,updated_at";
-const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at";
+const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label";
 const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id";
 const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json,captured_at";
 const COMMENT_SQL: &str =
@@ -457,14 +461,22 @@ impl WorldStore for SqliteHealthStore {
                         if current!=*expected_previous{return Err(op("rule stat action observed a stale value"));}
                         tx.execute("INSERT INTO player_stats(player_id,stat_code,current_value,metadata_json,updated_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(player_id,stat_code) DO UPDATE SET current_value=excluded.current_value,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at",params![stat.player_id.as_str(),stat.stat_code,stat.current_value,stat.metadata_json,stat.updated_at.as_str()]).map_err(op)?;
                     }
-                    RuleOperation::ConceptProgress{player_id,track,expected_previous,history}=>{
+                    RuleOperation::ConceptProgress{player_id,source,track,expected_previous,history}=>{
                         if history.concept_id!=track.concept_id||history.track_code!=track.track_code||history.previous_value!=*expected_previous||history.current_value!=track.current_value||history.level!=track.level{return Err(op("Concept progress operation and history disagree"));}
                         let owner:String=tx.query_row("SELECT player_id FROM concepts WHERE id=?1",[track.concept_id.as_str()],|r|r.get(0)).map_err(op)?;
-                        let current:Option<f64>=tx.query_row("SELECT current_value FROM concept_progress_tracks WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code],|r|r.get(0)).optional().map_err(op)?;
-                        if current!=*expected_previous{return Err(op("rule Concept progress action observed a stale value"));}
-                        if current.is_some(){tx.execute("UPDATE concept_progress_tracks SET current_value=?3,level=?4,is_active=?5,metadata_json=?6,updated_at=?7 WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.updated_at.as_str()]).map_err(op)?;}else{tx.execute("INSERT INTO concept_progress_tracks(id,concept_id,track_code,current_value,level,is_active,metadata_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![track.id.as_str(),track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.created_at.as_str(),track.updated_at.as_str()]).map_err(op)?;}
+                        let current:Option<(f64,String)>=tx.query_row("SELECT current_value,control FROM concept_progress_tracks WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(op)?;
+                        if current.as_ref().map(|v|v.0)!=*expected_previous{return Err(op("Concept progress action observed a stale value"));}
+                        match (source,current.as_ref()) { (lr_application::rules::ProgressMutationSource::Rule,Some((_,control))) if control!="rule_controlled"=>return Err(op("Rule action cannot overwrite a manual Concept track")), (lr_application::rules::ProgressMutationSource::Rule,None)=>return Err(op("Rule action requires an explicitly rule-controlled Concept track")), _=>{} }
+                        if current.is_some(){tx.execute("UPDATE concept_progress_tracks SET current_value=?3,level=?4,is_active=?5,metadata_json=?6,updated_at=?7,level_name=?8,progression_label=?9 WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.updated_at.as_str(),track.level_name,track.progression_label]).map_err(op)?;}else{tx.execute("INSERT INTO concept_progress_tracks(id,concept_id,track_code,current_value,level,is_active,metadata_json,created_at,updated_at,level_name,progression_label,control) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![track.id.as_str(),track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.created_at.as_str(),track.updated_at.as_str(),track.level_name,track.progression_label,track.control.as_str()]).map_err(op)?;}
                         if owner!=player_id.as_str(){return Err(op("Concept progress rule target belongs to another Player"));}
                         tx.execute("INSERT INTO concept_progress_history(id,concept_id,track_code,previous_value,current_value,level,occurred_at,captured_at,metadata_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![history.id.as_str(),history.concept_id.as_str(),history.track_code,history.previous_value,history.current_value,history.level,history.occurred_at.as_str(),history.captured_at.as_str(),history.metadata_json]).map_err(op)?;
+                    }
+                    RuleOperation::ResolveProgressSuggestion{suggestion_id,player_id,accepted_at}=>{
+                        let (concept_id,track_code,value,created_at,status):(String,String,f64,String,String)=tx.query_row("SELECT concept_id,track_code,proposed_value,created_at,status FROM progress_suggestions WHERE id=?1 AND player_id=?2",params![suggestion_id.as_str(),player_id.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).map_err(op)?;
+                        if status!="pending"{return Err(op("progress suggestion is not pending"));}
+                        let recorded:i64=tx.query_row("SELECT count(*) FROM concept_progress_history WHERE concept_id=?1 AND track_code=?2 AND current_value=?3 AND occurred_at>=?4",params![concept_id,track_code,value,created_at],|r|r.get(0)).map_err(op)?;
+                        if recorded==0{return Err(op("accepted suggestion has no matching progress history"));}
+                        if tx.execute("UPDATE progress_suggestions SET status='accepted',resolved_at=?2 WHERE id=?1 AND player_id=?3 AND status='pending'",params![suggestion_id.as_str(),accepted_at.as_str(),player_id.as_str()]).map_err(op)?!=1{return Err(op("progress suggestion changed during atomic acceptance"));}
                     }
                 }
             }
@@ -485,7 +497,7 @@ impl WorldStore for SqliteHealthStore {
     }
 
     fn create_player(&self, p: &Player) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO players(id,name,description,level,current_xp,is_active,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![p.id.as_str(),p.name,p.description,p.level,p.current_xp,p.is_active as i64,p.metadata_json,p.created_at.as_str(),p.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{conn.execute("INSERT INTO players(id,name,description,level,current_xp,is_active,metadata_json,created_at,updated_at,level_name,progression_label)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![p.id.as_str(),p.name,p.description,p.level,p.current_xp,p.is_active as i64,p.metadata_json,p.created_at.as_str(),p.updated_at.as_str(),p.level_name,p.progression_label]).map_err(op)?;Ok(())})
     }
     fn get_player(&self, key: &EntityId) -> Result<Option<Player>, StorageError> {
         self.with_conn(|conn| {
@@ -499,7 +511,7 @@ impl WorldStore for SqliteHealthStore {
         })
     }
     fn update_player(&self, p: &Player) -> Result<(), StorageError> {
-        self.with_conn(|conn|{let changed=conn.execute("UPDATE players SET name=?2,description=?3,level=?4,current_xp=?5,is_active=?6,metadata_json=?7,updated_at=?8 WHERE id=?1",params![p.id.as_str(),p.name,p.description,p.level,p.current_xp,p.is_active as i64,p.metadata_json,p.updated_at.as_str()]).map_err(op)?;if changed==0{Err(op("player not found"))}else{Ok(())}})
+        self.with_conn(|conn|{let changed=conn.execute("UPDATE players SET name=?2,description=?3,level=?4,current_xp=?5,is_active=?6,metadata_json=?7,updated_at=?8,level_name=?9,progression_label=?10 WHERE id=?1",params![p.id.as_str(),p.name,p.description,p.level,p.current_xp,p.is_active as i64,p.metadata_json,p.updated_at.as_str(),p.level_name,p.progression_label]).map_err(op)?;if changed==0{Err(op("player not found"))}else{Ok(())}})
     }
 
     fn create_stat_definition(&self, d: &StatDefinition) -> Result<(), StorageError> {
@@ -576,7 +588,7 @@ impl WorldStore for SqliteHealthStore {
         })
     }
     fn insert_skill(&self, s: &Skill) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO skills(id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",params![s.id.as_str(),s.skill_tree_id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.skill_type.namespace,s.skill_type.code,s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.created_at.as_str(),s.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{conn.execute("INSERT INTO skills(id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",params![s.id.as_str(),s.skill_tree_id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.skill_type.namespace,s.skill_type.code,s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.created_at.as_str(),s.updated_at.as_str(),s.level_name,s.progression_label]).map_err(op)?;Ok(())})
     }
     fn get_skill(&self, key: &EntityId) -> Result<Option<Skill>, StorageError> {
         self.with_conn(|conn| {
@@ -590,7 +602,7 @@ impl WorldStore for SqliteHealthStore {
         })
     }
     fn update_skill(&self, s: &Skill) -> Result<(), StorageError> {
-        self.with_conn(|conn|{let changed=conn.execute("UPDATE skills SET parent_skill_id=?2,name=?3,description=?4,story=?5,instructions=?6,level=?7,current_xp=?8,invested_minutes=?9,status=?10,started_at=?11,completed_at=?12,metadata_json=?13,updated_at=?14 WHERE id=?1",params![s.id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.updated_at.as_str()]).map_err(op)?;if changed==0{Err(op("skill not found"))}else{Ok(())}})
+        self.with_conn(|conn|{let changed=conn.execute("UPDATE skills SET parent_skill_id=?2,name=?3,description=?4,story=?5,instructions=?6,level=?7,current_xp=?8,invested_minutes=?9,status=?10,started_at=?11,completed_at=?12,metadata_json=?13,updated_at=?14,level_name=?15,progression_label=?16 WHERE id=?1",params![s.id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.updated_at.as_str(),s.level_name,s.progression_label]).map_err(op)?;if changed==0{Err(op("skill not found"))}else{Ok(())}})
     }
     fn list_skills(&self, tree_id: &EntityId) -> Result<Vec<Skill>, StorageError> {
         self.with_conn(|conn| {

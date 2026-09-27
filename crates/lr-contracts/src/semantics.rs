@@ -1,0 +1,416 @@
+//! Serializable IPC mirrors for Phase 3.6 world semantics.
+use lr_application::{SearchHit, SearchQuery};
+use lr_domain::{
+    ConceptAssociation, ContentAttachment, EntityRevision, LifecycleState, PresentationPreference,
+    ProgressSuggestion, QuestBranch, QuestSession, QuestStage,
+};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestStageDto {
+    pub id: String,
+    pub player_id: String,
+    pub quest_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub story: Option<String>,
+    pub instructions: Option<String>,
+    pub status: String,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<QuestStage> for QuestStageDto {
+    fn from(v: QuestStage) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            quest_id: v.quest_id.to_string(),
+            title: v.title,
+            description: v.description,
+            story: v.story,
+            instructions: v.instructions,
+            status: v.status.as_str().into(),
+            sort_order: v.sort_order,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestBranchDto {
+    pub id: String,
+    pub player_id: String,
+    pub quest_id: String,
+    pub stage_id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub status: String,
+    pub sort_order: i32,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<QuestBranch> for QuestBranchDto {
+    fn from(v: QuestBranch) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            quest_id: v.quest_id.to_string(),
+            stage_id: v.stage_id.to_string(),
+            title: v.title,
+            description: v.description,
+            status: v.status.as_str().into(),
+            sort_order: v.sort_order,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestSessionDto {
+    pub id: String,
+    pub player_id: String,
+    pub quest_id: Option<String>,
+    pub stage_id: Option<String>,
+    pub branch_id: Option<String>,
+    pub skill_id: Option<String>,
+    pub concept_id: Option<String>,
+    pub started_at: String,
+    pub ended_at: Option<String>,
+    pub status: String,
+    pub progress_before: Option<i32>,
+    pub progress_after: Option<i32>,
+    pub result: Option<String>,
+    pub notes: Option<String>,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<QuestSession> for QuestSessionDto {
+    fn from(v: QuestSession) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            quest_id: v.quest_id.map(|x| x.to_string()),
+            stage_id: v.stage_id.map(|x| x.to_string()),
+            branch_id: v.branch_id.map(|x| x.to_string()),
+            skill_id: v.skill_id.map(|x| x.to_string()),
+            concept_id: v.concept_id.map(|x| x.to_string()),
+            started_at: v.started_at.to_string(),
+            ended_at: v.ended_at.map(|x| x.to_string()),
+            status: v.status.as_str().into(),
+            progress_before: v.progress_before,
+            progress_after: v.progress_after,
+            result: v.result,
+            notes: v.notes,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContentAttachmentDto {
+    pub content_id: String,
+    pub player_id: String,
+    pub target_kind: String,
+    pub target_id: String,
+    pub role_code: String,
+    pub is_active: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<ContentAttachment> for ContentAttachmentDto {
+    fn from(v: ContentAttachment) -> Self {
+        Self {
+            content_id: v.content_id.to_string(),
+            player_id: v.player_id.to_string(),
+            target_kind: v.target_kind.as_str().into(),
+            target_id: v.target_id.to_string(),
+            role_code: v.role_code,
+            is_active: v.is_active,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptAssociationDto {
+    pub id: String,
+    pub player_id: String,
+    pub concept_id: String,
+    pub entity_kind: String,
+    pub entity_id: String,
+    pub association_code: String,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<ConceptAssociation> for ConceptAssociationDto {
+    fn from(v: ConceptAssociation) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            concept_id: v.concept_id.to_string(),
+            entity_kind: v.entity_kind.as_str().into(),
+            entity_id: v.entity_id,
+            association_code: v.association_code,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntityRevisionDto {
+    pub id: String,
+    pub player_id: String,
+    pub target_kind: String,
+    pub target_id: String,
+    pub revision_number: u32,
+    pub recorded_at: String,
+    pub author_player_id: Option<String>,
+    pub reason: Option<String>,
+    pub snapshot_json: String,
+    pub metadata_json: String,
+}
+impl From<EntityRevision> for EntityRevisionDto {
+    fn from(v: EntityRevision) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            target_kind: v.target_kind.as_str().into(),
+            target_id: v.target_id.to_string(),
+            revision_number: v.revision_number,
+            recorded_at: v.recorded_at.to_string(),
+            author_player_id: v.author_player_id.map(|x| x.to_string()),
+            reason: v.reason,
+            snapshot_json: v.snapshot_json,
+            metadata_json: v.metadata_json,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresentationPreferenceDto {
+    pub player_id: String,
+    pub entity_kind: String,
+    pub entity_id: String,
+    pub context: String,
+    pub is_visible: bool,
+    pub sort_order: i32,
+    pub is_pinned: bool,
+    pub is_collapsed: Option<bool>,
+    pub variant: Option<String>,
+    pub density: Option<String>,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<PresentationPreference> for PresentationPreferenceDto {
+    fn from(v: PresentationPreference) -> Self {
+        Self {
+            player_id: v.player_id.to_string(),
+            entity_kind: v.entity_kind,
+            entity_id: v.entity_id.to_string(),
+            context: v.context,
+            is_visible: v.is_visible,
+            sort_order: v.sort_order,
+            is_pinned: v.is_pinned,
+            is_collapsed: v.is_collapsed,
+            variant: v.variant,
+            density: v.density,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProgressSuggestionDto {
+    pub id: String,
+    pub player_id: String,
+    pub concept_id: String,
+    pub track_code: String,
+    pub proposed_value: f64,
+    pub proposed_level: Option<i32>,
+    pub reason: Option<String>,
+    pub source: String,
+    pub status: String,
+    pub created_at: String,
+    pub resolved_at: Option<String>,
+    pub metadata_json: String,
+}
+impl From<ProgressSuggestion> for ProgressSuggestionDto {
+    fn from(v: ProgressSuggestion) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            concept_id: v.concept_id.to_string(),
+            track_code: v.track_code,
+            proposed_value: v.proposed_value,
+            proposed_level: v.proposed_level,
+            reason: v.reason,
+            source: v.source,
+            status: v.status.as_str().into(),
+            created_at: v.created_at.to_string(),
+            resolved_at: v.resolved_at.map(|x| x.to_string()),
+            metadata_json: v.metadata_json,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConceptProgressTrackDto {
+    pub id: String,
+    pub concept_id: String,
+    pub track_code: String,
+    pub current_value: f64,
+    pub level: Option<i32>,
+    pub level_name: Option<String>,
+    pub progression_label: Option<String>,
+    pub control: String,
+    pub is_active: bool,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<lr_domain::ConceptProgressTrack> for ConceptProgressTrackDto {
+    fn from(v: lr_domain::ConceptProgressTrack) -> Self {
+        Self {
+            id: v.id.to_string(),
+            concept_id: v.concept_id.to_string(),
+            track_code: v.track_code,
+            current_value: v.current_value,
+            level: v.level,
+            level_name: v.level_name,
+            progression_label: v.progression_label,
+            control: v.control.as_str().into(),
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LifecycleStateDto {
+    pub state: String,
+}
+impl From<LifecycleState> for LifecycleStateDto {
+    fn from(v: LifecycleState) -> Self {
+        Self {
+            state: v.as_str().into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchQueryDto {
+    pub text: Option<String>,
+    pub kind: Option<String>,
+    pub player_id: Option<String>,
+    pub concept_id: Option<String>,
+    pub type_code: Option<String>,
+    pub status: Option<String>,
+    pub active: Option<bool>,
+    pub from: Option<String>,
+    pub through: Option<String>,
+    pub context: Option<String>,
+    pub include_hidden: bool,
+    pub include_archived: bool,
+    pub include_trashed: bool,
+    pub sort: String,
+    pub limit: u32,
+    pub offset: u32,
+}
+impl From<SearchQuery> for SearchQueryDto {
+    fn from(v: SearchQuery) -> Self {
+        Self {
+            text: v.text,
+            kind: v.kind.map(|x| x.as_str().into()),
+            player_id: v.player_id.map(|x| x.to_string()),
+            concept_id: v.concept_id.map(|x| x.to_string()),
+            type_code: v.type_code,
+            status: v.status,
+            active: v.active,
+            from: v.from.map(|x| x.to_string()),
+            through: v.through.map(|x| x.to_string()),
+            context: v.context,
+            include_hidden: v.include_hidden,
+            include_archived: v.include_archived,
+            include_trashed: v.include_trashed,
+            sort: match v.sort {
+                lr_application::SearchSort::Relevance => "relevance",
+                lr_application::SearchSort::Newest => "newest",
+                lr_application::SearchSort::Oldest => "oldest",
+                lr_application::SearchSort::Name => "name",
+                lr_application::SearchSort::Progression => "progression",
+            }
+            .into(),
+            limit: v.limit,
+            offset: v.offset,
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchHitDto {
+    pub kind: String,
+    pub id: String,
+    pub player_id: Option<String>,
+    pub concept_id: Option<String>,
+    pub type_code: Option<String>,
+    pub status: Option<String>,
+    pub active: Option<bool>,
+    pub lifecycle: String,
+    pub visible: Option<bool>,
+    pub occurred_at: Option<String>,
+    pub captured_at: Option<String>,
+    pub name: String,
+    pub snippet: String,
+    pub progression: Option<f64>,
+    pub relevance: Option<f64>,
+}
+impl From<SearchHit> for SearchHitDto {
+    fn from(v: SearchHit) -> Self {
+        Self {
+            kind: v.kind.as_str().into(),
+            id: v.id,
+            player_id: v.player_id.map(|x| x.to_string()),
+            concept_id: v.concept_id.map(|x| x.to_string()),
+            type_code: v.type_code,
+            status: v.status,
+            active: v.active,
+            lifecycle: v.lifecycle.as_str().into(),
+            visible: v.visible,
+            occurred_at: v.occurred_at.map(|x| x.to_string()),
+            captured_at: v.captured_at.map(|x| x.to_string()),
+            name: v.name,
+            snippet: v.snippet,
+            progression: v.progression,
+            relevance: v.relevance,
+        }
+    }
+}

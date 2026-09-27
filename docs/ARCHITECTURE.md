@@ -6,7 +6,7 @@ decisions that will matter in later phases.
 
 For the product-specific vocabulary and current invariants, see the [Domain
 Design Codex](DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](PHASE-2.1-REPORT.md),
-the [Phase 3 report](PHASE-3-REPORT.md), and [Phase 3.5 report](PHASE-3.5-REPORT.md).
+the [Phase 3 report](PHASE-3-REPORT.md), [Phase 3.5 report](PHASE-3.5-REPORT.md), and [Phase 3.6 report](PHASE-3.6-REPORT.md).
 
 ---
 
@@ -287,7 +287,23 @@ Daily snapshots are immutable, unique per entity/date observations, not summarie
 
 ---
 
-## 8. Roadmap
+## 8. Phase 3.6 world semantics
+
+### Player authority over progression
+
+Player and Skill levels are explicit, manually controlled state. XP remains an independent accumulated ledger; no formula converts it to a level, and a change in XP cannot rewrite the Player's authored level or label. Concept progress definitions declare whether a track is manual or rule-authorized. Automatic rules cannot mutate a manual track. Where a derived proposal is useful, it is persisted as a suggestion and has no effect until the Player explicitly accepts it; acceptance and the progress-history/rule chain commit atomically.
+
+### Structured Quest activity and real sessions
+
+Stages and Branches are optional typed child records, not a universal requirement or a generic tree framework. Each Stage belongs to a Quest and each Branch to a Stage under that same Quest. Quest Sessions record actual started/ended periods and context. They do not synthesize daily activity from calendars, snapshots, durations, or gaps. Existing snapshot semantics remain: a missing date means no observation was recorded.
+
+### Recovery and presentation are separate concerns
+
+SQLite before-image revision triggers capture mutable aggregate edits. Recovery uses a new mutation with its own revision, not an overwrite of history. Active/archived/trashed lifecycle is soft and reversible; trashed records remain stored. Contextual visibility is a per-player presentation preference and is never a domain state, deletion, or permission. Search applies it only when a caller requests a specific context, while lifecycle filters remain separate.
+
+Phase 3.6 exposes the use cases through typed contracts and thin Tauri adapters. It establishes data and behavior for later screens but intentionally adds no React components, workspace, or Phase 4 UI state.
+
+## 9. Roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -296,7 +312,8 @@ Daily snapshots are immutable, unique per entity/date observations, not summarie
 | **2.1** | Canonical daily state history, dynamic stats, XP policy, lifecycle and hierarchy hardening | **complete in `phase-2.1`** |
 | **3** | Typed, declarative event/condition/action engine, bounded chains, rule audit and atomic SQLite execution | **complete in `phase-3`** |
 | **3.5** | Typed Concepts, relationships, progress tracks/history, temporal clarity, and global search foundation | **complete in `phase-3.5`** |
-| 4 | Dynamic presentation: stored presentation records, UI-state persistence, workspace layout | planned |
+| **3.6** | Manual progression authority, Quest Stages/Branches, real Sessions, recoverable revisions/trash, contextual visibility, and suggestions | **implementation / verification in `phase-3.6`** |
+| 4 | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | planned |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |
 

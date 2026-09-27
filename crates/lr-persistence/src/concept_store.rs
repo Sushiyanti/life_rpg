@@ -75,6 +75,10 @@ fn track(r: &Row<'_>) -> Result<ConceptProgressTrack, StorageError> {
         track_code: r.get(2).map_err(op)?,
         current_value: r.get(3).map_err(op)?,
         level: r.get(4).map_err(op)?,
+        level_name: r.get(9).map_err(op)?,
+        progression_label: r.get(10).map_err(op)?,
+        control: lr_domain::ProgressControl::parse(&r.get::<_, String>(11).map_err(op)?)
+            .map_err(op)?,
         is_active: r.get::<_, i64>(5).map_err(op)? != 0,
         metadata_json: r.get(6).map_err(op)?,
         created_at: ts(r.get(7).map_err(op)?)?,
@@ -158,7 +162,22 @@ impl ConceptStore for SqliteHealthStore {
         &self,
         c: &EntityId,
     ) -> Result<Vec<ConceptProgressTrack>, StorageError> {
-        self.with_conn(|db|{let mut s=db.prepare("SELECT id,concept_id,track_code,current_value,level,is_active,metadata_json,created_at,updated_at FROM concept_progress_tracks WHERE concept_id=?1 ORDER BY track_code").map_err(op)?;let mut rows=s.query([c.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(track(r)?)}Ok(out)})
+        self.with_conn(|db|{let mut s=db.prepare("SELECT id,concept_id,track_code,current_value,level,is_active,metadata_json,created_at,updated_at,level_name,progression_label,control FROM concept_progress_tracks WHERE concept_id=?1 ORDER BY track_code").map_err(op)?;let mut rows=s.query([c.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(track(r)?)}Ok(out)})
+    }
+    fn set_concept_progress_control(
+        &self,
+        concept_id: &EntityId,
+        track_code: &str,
+        control: lr_domain::ProgressControl,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        self.with_conn(|db| {
+            let changed = db.execute(
+                "UPDATE concept_progress_tracks SET control=?3,updated_at=?4 WHERE concept_id=?1 AND track_code=?2",
+                params![concept_id.as_str(),track_code,control.as_str(),updated_at.as_str()],
+            ).map_err(op)?;
+            if changed==1 { Ok(()) } else { Err(op("Concept progress track not found")) }
+        })
     }
     fn list_concept_progress_history(
         &self,
@@ -207,7 +226,65 @@ impl SearchStore for SqliteHealthStore {
         at: &Iso8601Timestamp,
     ) -> Result<Vec<SearchHit>, StorageError> {
         q.validate().map_err(op)?;
-        self.with_conn(|db|{let fts=q.fts_query();let match_clause=if fts.is_some(){"world_search_fts MATCH ?1"}else{"1=1"};let score_expr=if fts.is_some(){"bm25(world_search_fts)"}else{"0.0"};let sort=match q.sort{SearchSort::Newest=>"f.occurred_at DESC,f.kind,f.entity_id",SearchSort::Oldest=>"f.occurred_at ASC,f.kind,f.entity_id",SearchSort::Name=>"f.name COLLATE NOCASE ASC,f.kind,f.entity_id",SearchSort::Progression=>"progression DESC,f.occurred_at DESC",SearchSort::Relevance if fts.is_some()=>"score ASC,f.occurred_at DESC",SearchSort::Relevance=>"f.occurred_at DESC,f.kind,f.entity_id"};let sql=format!("SELECT f.kind,f.entity_id,f.player_id,CASE WHEN f.kind='concept' THEN f.entity_id WHEN f.kind='concept_progress' THEN (SELECT concept_id FROM concept_progress_history h WHERE h.id=f.entity_id) WHEN f.kind='effect' THEN (SELECT target_concept_id FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept') ELSE (SELECT concept_id FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id ORDER BY l.created_at LIMIT 1) END,f.type_code,f.status,CASE WHEN f.kind='effect' THEN CASE WHEN EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.started_at<=?9 AND (e.expires_at IS NULL OR e.expires_at>?9) AND (e.deactivated_at IS NULL OR e.deactivated_at>?9)) THEN 1 ELSE 0 END ELSE f.active END,f.occurred_at,CASE WHEN f.kind='transaction' THEN (SELECT captured_at FROM transactions tx WHERE CAST(tx.id AS TEXT)=f.entity_id) WHEN f.kind='concept_progress' THEN (SELECT captured_at FROM concept_progress_history h WHERE h.id=f.entity_id) ELSE NULL END,f.name,CASE WHEN ?1 IS NULL THEN substr(f.body,1,240) ELSE snippet(world_search_fts,8,'','',' …',18) END,CASE WHEN f.kind='concept' THEN (SELECT MAX(current_value) FROM concept_progress_tracks t WHERE t.concept_id=f.entity_id AND t.is_active=1) WHEN f.kind='concept_progress' THEN (SELECT current_value FROM concept_progress_history h WHERE h.id=f.entity_id) ELSE NULL END,{score_expr} AS score FROM world_search_fts f WHERE {match_clause} AND (?2 IS NULL OR f.kind=?2) AND (?3 IS NULL OR f.player_id=?3) AND (?4 IS NULL OR f.type_code=?4) AND (?5 IS NULL OR f.status=?5) AND (?6 IS NULL OR f.occurred_at>=?6) AND (?7 IS NULL OR f.occurred_at<=?7) AND (?8 IS NULL OR (CASE WHEN f.kind='effect' THEN CASE WHEN EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.started_at<=?9 AND (e.expires_at IS NULL OR e.expires_at>?9) AND (e.deactivated_at IS NULL OR e.deactivated_at>?9)) THEN 1 ELSE 0 END ELSE f.active END)=?8) AND (?10 IS NULL OR ((f.kind='concept' AND (f.entity_id=?10 OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.source_concept_id=f.entity_id AND r.target_concept_id=?10 AND r.is_active=1) OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.target_concept_id=f.entity_id AND r.source_concept_id=?10 AND r.is_active=1))) OR (f.kind='concept_progress' AND EXISTS(SELECT 1 FROM concept_progress_history h WHERE h.id=f.entity_id AND h.concept_id=?10)) OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id AND l.concept_id=?10) OR (f.kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept' AND e.target_concept_id=?10)))) ORDER BY {sort} LIMIT ?11 OFFSET ?12");let mut s=db.prepare(&sql).map_err(op)?;let mut rows=s.query(params![fts,q.kind.map(SearchEntityKind::as_str),q.player_id.as_ref().map(EntityId::as_str),q.type_code,q.status,q.from.as_ref().map(Iso8601Timestamp::as_str),q.through.as_ref().map(Iso8601Timestamp::as_str),q.active.map(i64::from),at.as_str(),q.concept_id.as_ref().map(EntityId::as_str),q.limit,q.offset]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{let kind_raw:String=r.get(0).map_err(op)?;let kind=SearchEntityKind::parse(&kind_raw).ok_or_else(||op("unknown search entity kind"))?;let raw_id:String=r.get(1).map_err(op)?;let player:r#Option<String>=r.get(2).map_err(op)?;let concept:r#Option<String>=r.get(3).map_err(op)?;let timestamp_raw:r#Option<String>=r.get(7).map_err(op)?;let active_raw:r#Option<i64>=r.get(6).map_err(op)?;out.push(SearchHit{kind,id:raw_id,player_id:player.map(id).transpose()?,concept_id:concept.map(id).transpose()?,type_code:r.get(4).map_err(op)?,status:r.get(5).map_err(op)?,active:active_raw.map(|x|x!=0),occurred_at:timestamp_raw.map(ts).transpose()?,captured_at:r.get::<_,Option<String>>(8).map_err(op)?.map(ts).transpose()?,name:r.get(9).map_err(op)?,snippet:r.get(10).map_err(op)?,progression:r.get(11).map_err(op)?,relevance:r.get(12).map_err(op)?});}Ok(out)})
+        self.with_conn(|db|{
+            let fts=q.fts_query();
+            let match_clause=if fts.is_some(){"world_search_fts MATCH ?1"}else{"1=1"};
+            let score_expr=if fts.is_some(){"bm25(world_search_fts)"}else{"0.0"};
+            let sort=match q.sort {
+                SearchSort::Newest=>"f.occurred_at DESC,f.kind,f.entity_id",
+                SearchSort::Oldest=>"f.occurred_at ASC,f.kind,f.entity_id",
+                SearchSort::Name=>"f.name COLLATE NOCASE ASC,f.kind,f.entity_id",
+                SearchSort::Progression=>"progression DESC,f.occurred_at DESC",
+                SearchSort::Relevance if fts.is_some()=>"score ASC,f.occurred_at DESC",
+                SearchSort::Relevance=>"f.occurred_at DESC,f.kind,f.entity_id",
+            };
+            let sql=format!(r#"SELECT f.kind,f.entity_id,f.player_id,
+                CASE WHEN f.kind='concept' THEN f.entity_id
+                     WHEN f.kind='concept_progress' THEN (SELECT concept_id FROM concept_progress_history h WHERE h.id=f.entity_id)
+                     WHEN f.kind='effect' THEN (SELECT target_concept_id FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept')
+                     ELSE COALESCE((SELECT concept_id FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id ORDER BY l.created_at LIMIT 1),
+                                   (SELECT concept_id FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.is_active=1 ORDER BY a.created_at LIMIT 1)) END AS concept_id,
+                f.type_code,f.status,
+                CASE WHEN f.kind='effect' THEN CASE WHEN EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.started_at<=?9 AND (e.expires_at IS NULL OR e.expires_at>?9) AND (e.deactivated_at IS NULL OR e.deactivated_at>?9)) THEN 1 ELSE 0 END ELSE f.active END AS active,
+                f.occurred_at,
+                CASE WHEN f.kind='transaction' THEN (SELECT captured_at FROM transactions tx WHERE CAST(tx.id AS TEXT)=f.entity_id)
+                     WHEN f.kind='concept_progress' THEN (SELECT captured_at FROM concept_progress_history h WHERE h.id=f.entity_id) ELSE NULL END AS captured_at,
+                f.name,COALESCE(CASE WHEN ?1 IS NULL THEN substr(f.body,1,240) ELSE snippet(world_search_fts,8,'','',' …',18) END,'') AS snippet,
+                CASE WHEN f.kind='concept' THEN (SELECT MAX(current_value) FROM concept_progress_tracks t WHERE t.concept_id=f.entity_id AND t.is_active=1)
+                     WHEN f.kind='concept_progress' THEN (SELECT current_value FROM concept_progress_history h WHERE h.id=f.entity_id) ELSE NULL END AS progression,
+                {score_expr} AS score,COALESCE(el.state,'active') AS lifecycle,
+                CASE WHEN ?13 IS NULL THEN NULL ELSE COALESCE(pp.is_visible,1) END AS visible
+                FROM world_search_fts f
+                LEFT JOIN entity_lifecycle el ON el.target_kind=f.kind AND el.target_id=f.entity_id
+                LEFT JOIN presentation_preferences pp ON pp.player_id=f.player_id AND pp.entity_kind=f.kind AND pp.entity_id=f.entity_id AND pp.context=?13
+                WHERE {match_clause}
+                  AND (?2 IS NULL OR f.kind=?2) AND (?3 IS NULL OR f.player_id=?3)
+                  AND (?4 IS NULL OR f.type_code=?4) AND (?5 IS NULL OR f.status=?5)
+                  AND (?6 IS NULL OR f.occurred_at>=?6) AND (?7 IS NULL OR f.occurred_at<=?7)
+                  AND (?8 IS NULL OR (CASE WHEN f.kind='effect' THEN CASE WHEN EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.started_at<=?9 AND (e.expires_at IS NULL OR e.expires_at>?9) AND (e.deactivated_at IS NULL OR e.deactivated_at>?9)) THEN 1 ELSE 0 END ELSE f.active END)=?8)
+                  AND (?10 IS NULL OR ((f.kind='concept' AND (f.entity_id=?10 OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.source_concept_id=f.entity_id AND r.target_concept_id=?10 AND r.is_active=1) OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.target_concept_id=f.entity_id AND r.source_concept_id=?10 AND r.is_active=1)))
+                     OR (f.kind='concept_progress' AND EXISTS(SELECT 1 FROM concept_progress_history h WHERE h.id=f.entity_id AND h.concept_id=?10))
+                     OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id AND l.concept_id=?10)
+                     OR EXISTS(SELECT 1 FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.concept_id=?10 AND a.is_active=1)
+                     OR (f.kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept' AND e.target_concept_id=?10))))
+                  AND (COALESCE(el.state,'active')='active' OR (COALESCE(el.state,'active')='archived' AND ?15=1) OR (COALESCE(el.state,'active')='trashed' AND ?16=1))
+                  AND (?13 IS NULL OR ?14=1 OR COALESCE(pp.is_visible,1)=1)
+                ORDER BY {sort} LIMIT ?11 OFFSET ?12"#);
+            let mut stmt=db.prepare(&sql).map_err(op)?;
+            let mut rows=stmt.query(params![fts,q.kind.map(SearchEntityKind::as_str),q.player_id.as_ref().map(EntityId::as_str),q.type_code,q.status,q.from.as_ref().map(Iso8601Timestamp::as_str),q.through.as_ref().map(Iso8601Timestamp::as_str),q.active.map(i64::from),at.as_str(),q.concept_id.as_ref().map(EntityId::as_str),q.limit,q.offset,q.context,q.include_hidden as i64,q.include_archived as i64,q.include_trashed as i64]).map_err(op)?;
+            let mut out=Vec::new();
+            while let Some(r)=rows.next().map_err(op)?{
+                let kind_raw:String=r.get(0).map_err(op)?;
+                let kind=SearchEntityKind::parse(&kind_raw).ok_or_else(||op("unknown search entity kind"))?;
+                let lifecycle_raw:String=r.get(13).map_err(op)?;
+                out.push(SearchHit{
+                    kind,id:r.get(1).map_err(op)?,player_id:r.get::<_,Option<String>>(2).map_err(op)?.map(id).transpose()?,concept_id:r.get::<_,Option<String>>(3).map_err(op)?.map(id).transpose()?,
+                    type_code:r.get(4).map_err(op)?,status:r.get(5).map_err(op)?,active:r.get::<_,Option<i64>>(6).map_err(op)?.map(|v|v!=0),lifecycle:lr_domain::LifecycleState::parse(&lifecycle_raw).map_err(op)?,visible:r.get::<_,Option<i64>>(14).map_err(op)?.map(|v|v!=0),
+                    occurred_at:r.get::<_,Option<String>>(7).map_err(op)?.map(ts).transpose()?,captured_at:r.get::<_,Option<String>>(8).map_err(op)?.map(ts).transpose()?,name:r.get(9).map_err(op)?,snippet:r.get(10).map_err(op)?,progression:r.get(11).map_err(op)?,relevance:r.get(12).map_err(op)?,
+                });
+            }
+            Ok(out)
+        })
     }
 }
 
@@ -295,6 +372,16 @@ mod tests {
                 quest.id.as_str(),
             )
             .unwrap();
+        concepts
+            .set_progress(health.id.as_str(), "familiarity", 0.0, None, None)
+            .unwrap();
+        concepts
+            .set_progress_control(
+                health.id.as_str(),
+                "familiarity",
+                lr_domain::ProgressControl::RuleControlled,
+            )
+            .unwrap();
         let rule = RuleCondition::TextCompare {
             subject: TextSubject::ConceptTrackCode,
             comparison: TextComparison::Equal,
@@ -349,7 +436,7 @@ mod tests {
                 .progress_history(health.id.as_str(), None)
                 .unwrap()
                 .len(),
-            2
+            3
         );
         assert_eq!(world.list_rule_executions(100).unwrap().len(), 4);
         let history = concepts
@@ -392,7 +479,9 @@ mod tests {
             active: Some(true),
             ..Default::default()
         };
-        assert_eq!(concepts.search(&active).unwrap().len(), 1);
+        let active_hits = concepts.search(&active).unwrap();
+        assert_eq!(active_hits.len(), 1);
+        assert_eq!(active_hits[0].id, quest.id.as_str());
         let filtered = SearchQuery {
             type_code: Some("main".into()),
             status: Some("open".into()),

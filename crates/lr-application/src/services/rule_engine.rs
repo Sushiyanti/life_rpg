@@ -289,18 +289,24 @@ fn plan_action<S: WorldStore>(
             let previous = pending_concept_progress(store, &concept_key, track_code, operations)?;
             let track = match previous.as_ref() {
                 Some(current) => {
+                    if current.control != lr_domain::ProgressControl::RuleControlled {
+                        return Err(lr_domain::DomainError::invalid_value(
+                            "rule Concept progress action",
+                            "target progress track is manual; explicitly delegate it to Rules first",
+                        )
+                        .into());
+                    }
                     let mut next = current.clone();
                     next.change(&definition, *value, *level, now.clone())?;
                     next
                 }
-                None => lr_domain::ConceptProgressTrack::new(
-                    EntityId::new(next_id()?)?,
-                    concept.id.clone(),
-                    &definition,
-                    *value,
-                    *level,
-                    now.clone(),
-                )?,
+                None => {
+                    return Err(lr_domain::DomainError::invalid_value(
+                        "rule Concept progress action",
+                        "target progress track must exist and be explicitly delegated to Rules",
+                    )
+                    .into())
+                }
             };
             let history = lr_domain::ConceptProgressEntry::new(
                 EntityId::new(next_id()?)?,
@@ -320,6 +326,7 @@ fn plan_action<S: WorldStore>(
             });
             operations.push(RuleOperation::ConceptProgress {
                 player_id: player_id.clone(),
+                source: crate::rules::ProgressMutationSource::Rule,
                 track,
                 expected_previous: previous.map(|p| p.current_value),
                 history,

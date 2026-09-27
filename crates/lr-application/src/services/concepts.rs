@@ -1,9 +1,12 @@
 //! Concept domain use cases and read models; Concepts remain distinct from referenced entities.
-use crate::{AppError, Clock, ConceptStore, SearchHit, SearchQuery, SearchStore, WorldStore};
+use crate::{
+    AppError, Clock, ConceptStore, SearchHit, SearchQuery, SearchStore, SemanticsStore, WorldStore,
+};
 use lr_domain::{
-    Concept, ConceptEntityKind, ConceptEntityLink, ConceptProgressEntry, ConceptProgressTrack,
-    ConceptRelationship, ConceptStateSnapshot, DateValue, EntityId, Iso8601Timestamp,
-    ProgressSemantics, ProgressTrackDefinition, TypeRef,
+    Concept, ConceptAssociation, ConceptEntityKind, ConceptEntityLink, ConceptProgressEntry,
+    ConceptProgressTrack, ConceptRelationship, ConceptStateSnapshot, ContentAttachment,
+    ContentTargetKind, DateValue, EntityId, Iso8601Timestamp, ProgressSemantics,
+    ProgressTrackDefinition, TypeRef,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -13,6 +16,10 @@ pub struct ConceptDetail {
     pub progress_tracks: Vec<ConceptProgressTrack>,
     pub relationships: Vec<ConceptRelationship>,
     pub related_entities: Vec<ConceptEntityLink>,
+    pub associations: Vec<ConceptAssociation>,
+    pub content: Vec<ContentAttachment>,
+    /// Typed global-search rows are the bounded cross-entity projection for future detail UI.
+    pub related_search_results: Vec<SearchHit>,
     pub progress_history: Vec<ConceptProgressEntry>,
     pub snapshots: Vec<ConceptStateSnapshot>,
 }
@@ -23,7 +30,7 @@ pub struct ConceptService<S, C> {
 }
 impl<S, C> ConceptService<S, C>
 where
-    S: ConceptStore + SearchStore + WorldStore,
+    S: ConceptStore + SearchStore + SemanticsStore + WorldStore,
     C: Clock,
 {
     pub fn new(store: S, clock: C) -> Self {
@@ -188,6 +195,26 @@ where
             .store
             .list_concept_progress(&EntityId::new(concept_id)?)?)
     }
+    /// Rules may change only tracks explicitly delegated by the Player.
+    pub fn set_progress_control(
+        &self,
+        concept_id: &str,
+        track_code: &str,
+        control: lr_domain::ProgressControl,
+    ) -> Result<ConceptProgressTrack, AppError> {
+        let concept = self.required_concept(concept_id)?;
+        let mut track = self
+            .store
+            .list_concept_progress(&concept.id)?
+            .into_iter()
+            .find(|t| t.track_code == track_code)
+            .ok_or_else(|| AppError::Internal("Concept progress track not found".into()))?;
+        let now = self.now()?;
+        track.set_control(control, now.clone());
+        self.store
+            .set_concept_progress_control(&concept.id, track_code, control, &now)?;
+        Ok(track)
+    }
     /// `occurred_at` is when the real-world change happened; `captured_at` is this installation's observation time.
     pub fn set_progress(
         &self,
@@ -255,6 +282,7 @@ where
         };
         let operation = crate::rules::RuleOperation::ConceptProgress {
             player_id: concept.player_id,
+            source: crate::rules::ProgressMutationSource::Manual,
             track: track.clone(),
             expected_previous,
             history,
@@ -311,10 +339,22 @@ where
         let Some(concept) = self.store.get_concept(&key)? else {
             return Ok(None);
         };
+        let mut query = SearchQuery::default();
+        query.concept_id = Some(key.clone());
+        query.limit = 200;
+        query.include_hidden = true;
+        query.include_archived = true;
+        query.include_trashed = true;
+        let related_search_results = self.store.search(&query, &self.now()?)?;
         Ok(Some(ConceptDetail {
             progress_tracks: self.store.list_concept_progress(&key)?,
             relationships: self.store.list_concept_relationships(&key)?,
             related_entities: self.store.list_concept_entity_links(&key, None)?,
+            associations: self.store.list_associations(&key, None, None)?,
+            content: self
+                .store
+                .list_content_attachments(ContentTargetKind::Concept, &key)?,
+            related_search_results,
             progress_history: self.store.list_concept_progress_history(&key, None)?,
             snapshots: self.store.list_concept_snapshots(&key)?,
             concept,
