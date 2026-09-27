@@ -241,6 +241,7 @@ impl SearchStore for SqliteHealthStore {
             let sql=format!(r#"SELECT f.kind,f.entity_id,f.player_id,
                 CASE WHEN f.kind='concept' THEN f.entity_id
                      WHEN f.kind='concept_progress' THEN (SELECT concept_id FROM concept_progress_history h WHERE h.id=f.entity_id)
+                     WHEN f.kind='quest_session' THEN (SELECT concept_id FROM quest_sessions s WHERE s.id=f.entity_id)
                      WHEN f.kind='effect' THEN (SELECT target_concept_id FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept')
                      ELSE COALESCE((SELECT concept_id FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id ORDER BY l.created_at LIMIT 1),
                                    (SELECT concept_id FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.is_active=1 ORDER BY a.created_at LIMIT 1)) END AS concept_id,
@@ -264,6 +265,7 @@ impl SearchStore for SqliteHealthStore {
                   AND (?8 IS NULL OR (CASE WHEN f.kind='effect' THEN CASE WHEN EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.started_at<=?9 AND (e.expires_at IS NULL OR e.expires_at>?9) AND (e.deactivated_at IS NULL OR e.deactivated_at>?9)) THEN 1 ELSE 0 END ELSE f.active END)=?8)
                   AND (?10 IS NULL OR ((f.kind='concept' AND (f.entity_id=?10 OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.source_concept_id=f.entity_id AND r.target_concept_id=?10 AND r.is_active=1) OR EXISTS(SELECT 1 FROM concept_relationships r WHERE r.target_concept_id=f.entity_id AND r.source_concept_id=?10 AND r.is_active=1)))
                      OR (f.kind='concept_progress' AND EXISTS(SELECT 1 FROM concept_progress_history h WHERE h.id=f.entity_id AND h.concept_id=?10))
+                     OR (f.kind='quest_session' AND EXISTS(SELECT 1 FROM quest_sessions s WHERE s.id=f.entity_id AND s.concept_id=?10))
                      OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id AND l.concept_id=?10)
                      OR EXISTS(SELECT 1 FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.concept_id=?10 AND a.is_active=1)
                      OR (f.kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept' AND e.target_concept_id=?10))))
@@ -293,7 +295,8 @@ mod tests {
     use super::*;
     use lr_application::{
         Clock, Comparison, ConceptService, EventKind, NumericSubject, RuleAction, RuleCondition,
-        SearchEntityKind, SearchSort, TextComparison, TextSubject, WorldService, WorldStore,
+        SearchEntityKind, SearchSort, SemanticsService, TextComparison, TextSubject, WorldService,
+        WorldStore,
     };
     use std::sync::Arc;
     const T0: &str = "2026-09-27T10:00:00Z";
@@ -714,5 +717,61 @@ mod tests {
             .len(),
             1
         );
+    }
+
+    #[test]
+    fn quest_sessions_are_searchable_by_status_time_and_recorded_concept() {
+        let store = Arc::new(store());
+        let world = WorldService::new(store.clone(), FrozenClock);
+        let player = world.create_player("Ada", None).unwrap();
+        let concepts = ConceptService::new(store.clone(), FrozenClock);
+        let concept = concepts
+            .create_concept(player.id.as_str(), "subject", "Reading", None)
+            .unwrap();
+        let semantics = SemanticsService::new(store.clone(), FrozenClock);
+        let session = semantics
+            .start_session(
+                player.id.as_str(),
+                None,
+                None,
+                None,
+                None,
+                Some(concept.id.as_str()),
+                Some("2026-09-27T09:00:00Z"),
+            )
+            .unwrap();
+        let query = SearchQuery {
+            kind: Some(SearchEntityKind::QuestSession),
+            player_id: Some(player.id.clone()),
+            concept_id: Some(concept.id.clone()),
+            status: Some("in_progress".into()),
+            from: Some(Iso8601Timestamp::parse("2026-09-27T08:00:00Z").unwrap()),
+            active: Some(true),
+            ..Default::default()
+        };
+        let hits = concepts.search(&query).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, session.id.as_str());
+        assert_eq!(hits[0].concept_id.as_ref(), Some(&concept.id));
+
+        semantics
+            .finish_session(
+                session.id.as_str(),
+                Some("2026-09-27T10:00:00Z"),
+                lr_domain::SessionStatus::Interrupted,
+                None,
+                None,
+            )
+            .unwrap();
+        let updated = SearchQuery {
+            status: Some("interrupted".into()),
+            active: None,
+            ..query
+        };
+        let hits = concepts.search(&updated).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, session.id.as_str());
+        assert_eq!(hits[0].status.as_deref(), Some("interrupted"));
+        assert_eq!(hits[0].active, Some(true));
     }
 }

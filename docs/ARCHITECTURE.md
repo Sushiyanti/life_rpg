@@ -347,3 +347,16 @@ The first-generation scope intentionally defers unrestricted workspace authoring
   FKs alone only prove that a referenced row exists.
 - Quest lifecycle deliberately remains the Phase 2 set; pause/failure semantics
   await an intentional gameplay/rules design instead of accumulating unused states.
+
+
+## 7. Persistent workspaces and declarative panel instances (Phases 5–5.1)
+
+A workspace is **Player/world-owned presentation configuration**, not a world entity, quest, or account preference. Migration 9 introduced `workspaces` and `workspace_panels`; migration 10 rebuilds the panel table forward-only to retain existing rows while permitting repeated source types and storing bounded filter/layout settings. The application port and service enforce Player ownership; SQLite remains behind the `SemanticsStore` boundary. Tauri commands are DTO adapters, and the frontend uses a typed `CoreClient`.
+
+A workspace can contain several independent panel instances for one source—for example, separate in-progress and completed Quest panels. Each panel stores a closed source identifier and typed title, presentation variant, density, lifecycle/type/Concept/recent-time filters, sort, result limit, position, one-or-two-column span, panel visibility, pinning and collapsed state. Domain validation cross-checks a source's allowed filters and variants; SQL adds field, range and foreign-key constraints. Search remains the query executor. No panel field is executable code, raw SQL, HTML, or an arbitrary predicate.
+
+Panel membership/visibility is distinct from entity existence, lifecycle (active/archived/trashed), and per-entity contextual visibility. A panel may be hidden without hiding the underlying Quest; an entity hidden in the Dashboard context remains a world record and can be exposed separately through contextual preference/search controls. Workspace edits never call domain-mutation operations. Removing a panel deletes only that presentation instance; deleting a workspace removes its panels, but the final workspace of a Player is protected. Deleting the default workspace atomically assigns a replacement when possible.
+
+The browser may remember the last-opened workspace ID as runtime selection only. Workspace and panel definitions, including the database default and every display option, are canonical in SQLite. Migration 10 preserves version 9 panel IDs and fields and intentionally drops the old `(workspace_id, panel_type)` uniqueness restriction.
+
+No drag-and-drop/layout library was added: native draggable cards and explicit up/down buttons share persisted ordering, and bounded grid spans collapse at responsive breakpoints. Imports use a strict version-1 JSON allowlist and the same UI registry; they never accept executable properties. See [Phase 5](PHASE-5-REPORT.md) and [Phase 5.1](PHASE-5.1-REPORT.md) for concrete field vocabularies, verification and deferred work.

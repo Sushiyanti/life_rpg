@@ -91,7 +91,7 @@ export const COMMANDS = {
   setPlayerProgression: 'set_player_progression',
   setSkillProgression: 'set_skill_progression',
   setConceptProgressControl: 'set_concept_progress_control',
-  createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
+  createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', setDefaultWorkspace: 'set_default_workspace', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
   listWorkspacePanels: 'list_workspace_panels', saveWorkspacePanel: 'save_workspace_panel', deleteWorkspacePanel: 'delete_workspace_panel',
 } as const;
 
@@ -185,10 +185,11 @@ export class CoreClient {
   async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
   async createWorkspace(playerId:string,name:string,template:WorkspaceTemplate,isDefault=false):Promise<Workspace>{return this.invoke(COMMANDS.createWorkspace,{playerId,name,template,isDefault});}
   async listWorkspaces(playerId:string):Promise<Workspace[]>{return this.invoke(COMMANDS.listWorkspaces,{playerId});}
+  async setDefaultWorkspace(playerId:string,workspaceId:string):Promise<void>{return this.invoke(COMMANDS.setDefaultWorkspace,{playerId,workspaceId});}
   async renameWorkspace(playerId:string,workspaceId:string,name:string):Promise<void>{return this.invoke(COMMANDS.renameWorkspace,{playerId,workspaceId,name});}
   async deleteWorkspace(playerId:string,workspaceId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspace,{playerId,workspaceId});}
   async listWorkspacePanels(playerId:string,workspaceId:string):Promise<WorkspacePanel[]>{return this.invoke(COMMANDS.listWorkspacePanels,{playerId,workspaceId});}
-  async saveWorkspacePanel(value:{playerId:string;workspaceId:string;panelId?:string;panelType:WorkspacePanelType;title:string|null;variant:'cards'|'rows';density:'cozy'|'compact';filterStatus:WorkspacePanel['filterStatus'];itemLimit:number;sortOrder:number;isPinned:boolean;isCollapsed:boolean}):Promise<WorkspacePanel>{return this.invoke(COMMANDS.saveWorkspacePanel,{...value,panelId:value.panelId??null});}
+  async saveWorkspacePanel(value:{playerId:string;workspaceId:string;panelId?:string;panelType:WorkspacePanelType;title:string|null;variant:WorkspacePanel['variant'];density:'cozy'|'compact';filterStatus:WorkspacePanel['filterStatus'];filterActive?:boolean|null;filterTypeCode?:string|null;filterConceptId?:string|null;filterRecentDays?:number|null;sortBy?:WorkspacePanel['sortBy'];itemLimit:number;sortOrder:number;gridSpan?:number;isVisible?:boolean;isPinned:boolean;isCollapsed:boolean}):Promise<WorkspacePanel>{return this.invoke(COMMANDS.saveWorkspacePanel,{filterActive:null,filterTypeCode:null,filterConceptId:null,filterRecentDays:null,sortBy:'name_asc',gridSpan:1,isVisible:true,...value,panelId:value.panelId??null});}
   async deleteWorkspacePanel(playerId:string,workspaceId:string,panelId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspacePanel,{playerId,workspaceId,panelId});}
   async setPresentationPreference(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'|'sortOrder'|'isPinned'|'isCollapsed'|'variant'|'density'>):Promise<PresentationPreference>{return this.invoke<PresentationPreference>(COMMANDS.setPresentationPreference,value);}
   async setPresentationVisibility(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'>):Promise<void>{return this.invoke<void>(COMMANDS.setPresentationVisibility,value);}

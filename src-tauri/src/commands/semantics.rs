@@ -422,6 +422,17 @@ pub fn list_workspaces(
         .map_err(Into::into)
 }
 #[tauri::command]
+pub fn set_default_workspace(
+    state: State<'_, AppState>,
+    player_id: String,
+    workspace_id: String,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .set_default_workspace(&player_id, &workspace_id)
+        .map_err(Into::into)
+}
+#[tauri::command]
 pub fn rename_workspace(
     state: State<'_, AppState>,
     player_id: String,
@@ -467,8 +478,15 @@ pub fn save_workspace_panel(
     variant: String,
     density: String,
     filter_status: Option<String>,
+    filter_active: Option<bool>,
+    filter_type_code: Option<String>,
+    filter_concept_id: Option<String>,
+    filter_recent_days: Option<i32>,
+    sort_by: String,
     item_limit: i32,
     sort_order: i32,
+    grid_span: i32,
+    is_visible: bool,
     is_pinned: bool,
     is_collapsed: bool,
 ) -> Result<WorkspacePanelDto, CommandErrorDto> {
@@ -483,8 +501,15 @@ pub fn save_workspace_panel(
             &variant,
             &density,
             filter_status.as_deref(),
+            filter_active,
+            filter_type_code.as_deref(),
+            filter_concept_id.as_deref(),
+            filter_recent_days,
+            &sort_by,
             item_limit,
             sort_order,
+            grid_span,
+            is_visible,
             is_pinned,
             is_collapsed,
         )

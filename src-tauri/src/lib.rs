@@ -145,6 +145,7 @@ pub fn run() {
             commands::semantics::list_presentation_preferences,
             commands::semantics::create_workspace,
             commands::semantics::list_workspaces,
+            commands::semantics::set_default_workspace,
             commands::semantics::rename_workspace,
             commands::semantics::delete_workspace,
             commands::semantics::list_workspace_panels,

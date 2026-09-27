@@ -120,3 +120,19 @@ The intended flow remains **React + TypeScript → typed Tauri IPC → applicati
 - Cloud synchronization, accounts, authentication, HTTP API, and multiplayer.
 
 Do not implement future concepts merely because they appear in the roadmap.
+
+
+## Phase 5.1 — workspace presentation configuration
+
+A **Workspace** belongs to exactly one Player world and stores only an interface name/template/default choice. A **Workspace Panel** is a reusable presentation instance inside one Workspace—not a canonical aggregate, relation, quest, or duplicate world record. Multiple instances may use the same source and carry distinct titles, filters, sort order and layout. The schema migration history ends at version 10; migration 10 preserves Phase 5/version 9 panels while removing source-type uniqueness.
+
+Panel source codes are closed (`player`, `quests`, `skills`, `concepts`, `progress`, `effects`, `activity`, `transactions`, `journal`). Per-source variants, status codes, sort choices and filter capabilities are validated in typed registries plus Rust domain validation and SQLite constraints. A Concept selector narrows the bounded global-search projection via the existing explicit Concept links/associations; it never converts the referenced Quest, Skill, session, ledger entry, or Narrative into a Concept. Export/import is versioned declarative JSON with an exact field allowlist.
+
+Keep these independent axes explicit:
+
+- **Entity lifecycle:** active / archived / trashed and recovery.
+- **Entity contextual visibility:** per Player, record, and context (for example, Dashboard), without changing the record.
+- **Panel visibility:** whether one panel instance renders in its workspace.
+- **Workspace membership:** which presentation instances make up a saved view.
+
+Moving, configuring, hiding, pinning, collapsing, importing, duplicating, or deleting a workspace/panel changes presentation settings only. The final workspace is protected and Player ownership is checked through application and SQLite boundaries. This customization layer has no XP-to-level derivation, no inferred activity, and no world-write side effects.

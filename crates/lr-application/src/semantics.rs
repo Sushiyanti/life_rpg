@@ -86,6 +86,12 @@ pub trait SemanticsStore: Send + Sync {
     ) -> Result<Vec<PresentationPreference>, StorageError>;
     fn create_workspace(&self, value: &Workspace) -> Result<(), StorageError>;
     fn list_workspaces(&self, player_id: &EntityId) -> Result<Vec<Workspace>, StorageError>;
+    fn set_default_workspace(
+        &self,
+        player_id: &EntityId,
+        workspace_id: &EntityId,
+        updated_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError>;
     fn rename_workspace(
         &self,
         player_id: &EntityId,
@@ -269,6 +275,14 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
     }
     fn list_workspaces(&self, p: &EntityId) -> Result<Vec<Workspace>, StorageError> {
         (**self).list_workspaces(p)
+    }
+    fn set_default_workspace(
+        &self,
+        p: &EntityId,
+        w: &EntityId,
+        at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        (**self).set_default_workspace(p, w, at)
     }
     fn rename_workspace(
         &self,

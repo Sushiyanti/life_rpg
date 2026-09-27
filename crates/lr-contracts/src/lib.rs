@@ -357,6 +357,68 @@ mod tests {
     }
 
     #[test]
+    fn workspace_panel_contract_contains_only_explicit_declarative_fields() {
+        use lr_domain::{EntityId, Iso8601Timestamp, WorkspacePanel};
+        let at = Iso8601Timestamp::parse("2026-09-27T00:00:00Z").unwrap();
+        let panel = WorkspacePanel {
+            id: EntityId::new("panel-1").unwrap(),
+            workspace_id: EntityId::new("workspace-1").unwrap(),
+            panel_type: "quests".into(),
+            title: Some("Open goals".into()),
+            variant: "cards".into(),
+            density: "cozy".into(),
+            filter_status: Some("in_progress".into()),
+            filter_active: None,
+            filter_type_code: Some("main".into()),
+            filter_concept_id: Some(EntityId::new("concept-1").unwrap()),
+            filter_recent_days: Some(30),
+            sort_by: "updated_desc".into(),
+            item_limit: 8,
+            sort_order: 2,
+            grid_span: 2,
+            is_visible: true,
+            is_pinned: true,
+            is_collapsed: false,
+            created_at: at.clone(),
+            updated_at: at,
+        };
+        let json = serde_json::to_value(semantics::WorkspacePanelDto::from(panel)).unwrap();
+        let keys: Vec<_> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        for key in [
+            "id",
+            "workspaceId",
+            "panelType",
+            "title",
+            "variant",
+            "density",
+            "filterStatus",
+            "filterActive",
+            "filterTypeCode",
+            "filterConceptId",
+            "filterRecentDays",
+            "sortBy",
+            "itemLimit",
+            "sortOrder",
+            "gridSpan",
+            "isVisible",
+            "isPinned",
+            "isCollapsed",
+            "createdAt",
+            "updatedAt",
+        ] {
+            assert!(keys.contains(&key), "workspace panel DTO missing `{key}`");
+        }
+        assert_eq!(json["filterConceptId"], "concept-1");
+        assert_eq!(json["gridSpan"], 2);
+        assert!(json.get("executable").is_none());
+    }
+
+    #[test]
     fn phase21_history_and_xp_fields_serialize_camel_case() {
         use lr_domain::{DateValue, EntityId, Iso8601Timestamp, PlayerStateSnapshot, Transaction};
         let player = EntityId::new("p1").unwrap();

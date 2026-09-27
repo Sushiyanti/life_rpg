@@ -85,6 +85,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0009_phase5_workspaces",
         sql: include_str!("migrations/0009_phase5_workspaces.sql"),
     },
+    Migration {
+        version: 10,
+        name: "0010_phase51_workspace_capabilities",
+        sql: include_str!("migrations/0010_phase51_workspace_capabilities.sql"),
+    },
 ];
 
 /// Highest version this build ships.
@@ -235,7 +240,7 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -243,7 +248,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 9);
+        assert_eq!(first.len(), 10);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -251,7 +256,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 9, "ledger must not accumulate duplicates");
+        assert_eq!(count, 10, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -261,7 +266,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 9);
+        assert_eq!(report.migrations.len(), 10);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -287,7 +292,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).unwrap();
         assert_eq!(
             applied,
-            vec![2, 3, 4, 5, 6, 7, 8, 9],
+            vec![2, 3, 4, 5, 6, 7, 8, 9, 10],
             "must apply only the missing steps"
         );
 
@@ -321,7 +326,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![4, 5, 6, 7, 8, 9]
+            vec![4, 5, 6, 7, 8, 9, 10]
         );
         assert!(schema_report(&conn).unwrap().is_current());
 
@@ -367,7 +372,7 @@ mod tests {
         conn.execute("INSERT INTO rules(id,name,trigger_kind,schema_version,definition_json,created_at,updated_at) VALUES ('rule-legacy','Preserved rule','quest_completed',1,'{\"schemaVersion\":1,\"trigger\":\"quest_completed\",\"condition\":{\"op\":\"always\"},\"actions\":[{\"action\":\"award_xp\",\"amount\":10}]}',?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO rule_execution_history(id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,depth,executed_at) VALUES ('audit-legacy','chain-legacy','rule-legacy','quest_completed','{}',1,'[]','succeeded',0,?1)",[T0]).unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![7, 8, 9]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![7, 8, 9, 10]);
         assert!(schema_report(&conn).unwrap().is_current());
         let player: (i64, i32) = conn
             .query_row(
@@ -439,7 +444,10 @@ mod tests {
         }
         conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES ('old-player','Old',1,-35,?1,?1)", [T0]).unwrap();
         conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![5, 6, 7, 8, 9]);
+        assert_eq!(
+            run_migrations(&mut conn, T0).unwrap(),
+            vec![5, 6, 7, 8, 9, 10]
+        );
         let player: (i64, i32) = conn
             .query_row(
                 "SELECT current_xp,level FROM players WHERE id='old-player'",
@@ -453,6 +461,41 @@ mod tests {
         assert!(conn
             .execute("UPDATE players SET current_xp=-1 WHERE id='old-player'", [])
             .is_err());
+    }
+
+    #[test]
+    fn phase5_v9_panels_upgrade_losslessly_and_allow_repeated_sources() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+        for migration in &MIGRATIONS[..9] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES(?1,?2,?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p','Ada',1,0,?1,?1)",[T0]).unwrap();
+        conn.execute("INSERT INTO concepts(id,player_id,concept_type_code,name,created_at,updated_at) VALUES('c','p','subject','Reading',?1,?1)",[T0]).unwrap();
+        conn.execute("INSERT INTO workspaces(id,player_id,name,template,is_default,created_at,updated_at) VALUES('w','p','Learning','learning',1,?1,?1)",[T0]).unwrap();
+        conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,item_limit,sort_order,is_pinned,is_collapsed,created_at,updated_at) VALUES('old-panel','w','quests','In progress','cards','cozy','in_progress',8,3,1,0,?1,?1)",[T0]).unwrap();
+        conn.execute("INSERT INTO quest_sessions(id,player_id,concept_id,started_at,status,is_active,created_at,updated_at) VALUES('old-session','p','c',?1,'in_progress',1,?1,?1)",[T0]).unwrap();
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![10]);
+        let legacy:(String,String,i64,i64,i64)=conn.query_row("SELECT title,filter_status,item_limit,sort_order,is_pinned FROM workspace_panels WHERE id='old-panel'",[],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap();
+        assert_eq!(
+            legacy,
+            ("In progress".into(), "active".into(), 8, 3, 1),
+            "legacy Phase 5 aliases normalize to the actual Quest status without losing layout"
+        );
+        let indexed_session:i64=conn.query_row("SELECT COUNT(*) FROM world_search_fts WHERE kind='quest_session' AND entity_id='old-session'",[],|r|r.get(0)).unwrap();
+        assert_eq!(
+            indexed_session, 1,
+            "existing Session search triggers remain intact after v10"
+        );
+        conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES('second','w','quests','Completed','rows','compact','completed','created_desc',12,4,2,1,0,0,?1,?1)",[T0]).unwrap();
+        let count:i64=conn.query_row("SELECT COUNT(*) FROM workspace_panels WHERE workspace_id='w' AND panel_type='quests'",[],|r|r.get(0)).unwrap();
+        assert_eq!(count, 2);
+        assert!(schema_report(&conn).unwrap().is_current());
     }
 
     #[test]

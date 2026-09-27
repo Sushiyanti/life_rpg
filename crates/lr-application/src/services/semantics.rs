@@ -442,6 +442,18 @@ where
     pub fn list_workspaces(&self, player_id: &str) -> Result<Vec<Workspace>, AppError> {
         Ok(self.store.list_workspaces(&EntityId::new(player_id)?)?)
     }
+    pub fn set_default_workspace(
+        &self,
+        player_id: &str,
+        workspace_id: &str,
+    ) -> Result<(), AppError> {
+        self.store.set_default_workspace(
+            &EntityId::new(player_id)?,
+            &EntityId::new(workspace_id)?,
+            &self.now()?,
+        )?;
+        Ok(())
+    }
     pub fn rename_workspace(
         &self,
         player_id: &str,
@@ -477,8 +489,15 @@ where
         variant: &str,
         density: &str,
         filter_status: Option<&str>,
+        filter_active: Option<bool>,
+        filter_type_code: Option<&str>,
+        filter_concept_id: Option<&str>,
+        filter_recent_days: Option<i32>,
+        sort_by: &str,
         item_limit: i32,
         sort_order: i32,
+        grid_span: i32,
+        is_visible: bool,
         is_pinned: bool,
         is_collapsed: bool,
     ) -> Result<WorkspacePanel, AppError> {
@@ -495,8 +514,15 @@ where
             variant: variant.into(),
             density: density.into(),
             filter_status: filter_status.map(str::to_string),
+            filter_active,
+            filter_type_code: filter_type_code.map(str::to_string),
+            filter_concept_id: filter_concept_id.map(EntityId::new).transpose()?,
+            filter_recent_days,
+            sort_by: sort_by.into(),
             item_limit,
             sort_order,
+            grid_span,
+            is_visible,
             is_pinned,
             is_collapsed,
             created_at: now.clone(),

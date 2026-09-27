@@ -1,37 +1,56 @@
-import type { WorkspacePanelType, WorkspaceTemplate } from '../../domain/world';
+import type { WorkspacePanelSort, WorkspacePanelType, WorkspacePanelVariant, WorkspaceTemplate } from '../../domain/world';
 
-export type TemplatePanel = { panelType: WorkspacePanelType; title: string; variant: 'cards'|'rows'; density: 'cozy'|'compact'; itemLimit: number; isPinned: boolean };
-export const WORKSPACE_TEMPLATES: { id: Exclude<WorkspaceTemplate,'custom'>; name: string; description: string; panels: TemplatePanel[] }[] = [
-  { id:'overview', name:'Overview', description:'A balanced view of your world.', panels:[
-    {panelType:'quests',title:'Quest board',variant:'cards',density:'cozy',itemLimit:6,isPinned:true},
-    {panelType:'activity',title:'Live sessions',variant:'rows',density:'compact',itemLimit:5,isPinned:true},
-    {panelType:'skills',title:'Skill growth',variant:'cards',density:'cozy',itemLimit:6,isPinned:false},
-    {panelType:'concepts',title:'World concepts',variant:'cards',density:'cozy',itemLimit:6,isPinned:false},
-    {panelType:'effects',title:'Current effects',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
-    {panelType:'transactions',title:'Recent ledger',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
-    {panelType:'journal',title:'Recent chronicle',variant:'rows',density:'compact',itemLimit:4,isPinned:false},
+export type TemplatePanel = {
+  panelType: WorkspacePanelType;
+  title: string;
+  variant: WorkspacePanelVariant;
+  density: 'cozy'|'compact';
+  filterStatus?: string|null;
+  filterActive?: boolean|null;
+  filterTypeCode?: string|null;
+  filterRecentDays?: number|null;
+  sortBy: WorkspacePanelSort;
+  itemLimit: number;
+  gridSpan?: 1|2;
+  isPinned: boolean;
+};
+export type WorkspaceTemplateDefinition = {id:Exclude<WorkspaceTemplate,'custom'>;name:string;description:string;panels:TemplatePanel[]};
+const p=(panelType:WorkspacePanelType,title:string,options:Partial<Omit<TemplatePanel,'panelType'|'title'>>={}):TemplatePanel=>({panelType,title,variant:'rows',density:'cozy',filterStatus:null,filterActive:null,filterTypeCode:null,filterRecentDays:null,sortBy:'updated_desc',itemLimit:6,gridSpan:1,isPinned:false,...options});
+export const WORKSPACE_TEMPLATES: WorkspaceTemplateDefinition[] = [
+  {id:'overview',name:'Overview',description:'A balanced, responsive view of your world.',panels:[
+    p('player','Player status',{variant:'metrics',sortBy:'name_asc',isPinned:true}),
+    p('quests','In progress',{variant:'cards',filterStatus:'active',sortBy:'updated_desc',isPinned:true}),
+    p('quests','Up next',{variant:'rows',filterStatus:'open',sortBy:'created_desc'}),
+    p('skills','Skill growth',{variant:'cards',sortBy:'level_desc'}),
+    p('effects','Current effects',{variant:'compact',filterActive:true,sortBy:'updated_desc'}),
+    p('activity','Recent sessions',{variant:'timeline',filterRecentDays:7,sortBy:'started_desc'}),
+    p('journal','Recent chronicle',{variant:'rows',filterRecentDays:14,sortBy:'created_desc'}),
   ]},
-  { id:'focus',name:'Focus',description:'Keep objectives and current work close.',panels:[
-    {panelType:'quests',title:'Current objectives',variant:'cards',density:'cozy',itemLimit:6,isPinned:true},
-    {panelType:'activity',title:'Active sessions',variant:'rows',density:'compact',itemLimit:5,isPinned:true},
-    {panelType:'journal',title:'Notes for today',variant:'rows',density:'compact',itemLimit:4,isPinned:false},
+  {id:'focus',name:'Focus',description:'Keep active objectives and real work close.',panels:[
+    p('quests','In progress',{variant:'detailed',filterStatus:'active',sortBy:'updated_desc',isPinned:true}),
+    p('activity','Active sessions',{variant:'timeline',filterStatus:'in_progress',sortBy:'started_desc',isPinned:true}),
+    p('quests','Waiting for later',{variant:'compact',filterStatus:'open',sortBy:'created_desc'}),
+    p('journal','Recent notes',{variant:'compact',filterRecentDays:7,sortBy:'created_desc'}),
   ]},
-  { id:'learning',name:'Learning',description:'Bring practice, subjects, and learning notes together.',panels:[
-    {panelType:'skills',title:'Skills in practice',variant:'cards',density:'cozy',itemLimit:8,isPinned:true},
-    {panelType:'concepts',title:'Subjects & concepts',variant:'cards',density:'cozy',itemLimit:8,isPinned:true},
-    {panelType:'quests',title:'Learning objectives',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
-    {panelType:'journal',title:'Reading & reflections',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
+  {id:'learning',name:'Learning',description:'Bring practice, subjects, and learning notes together.',panels:[
+    p('skills','Skills in practice',{variant:'tree',filterActive:true,sortBy:'level_desc',isPinned:true}),
+    p('concepts','Subjects & concepts',{variant:'cards',filterActive:true,sortBy:'name_asc',isPinned:true}),
+    p('progress','Concept progress',{variant:'metrics',filterActive:true,sortBy:'progress_desc'}),
+    p('quests','Open learning objectives',{variant:'rows',filterStatus:'active',sortBy:'updated_desc'}),
+    p('journal','Recent reading & reflections',{variant:'detailed',filterRecentDays:14,sortBy:'created_desc'}),
   ]},
-  { id:'health',name:'Health',description:'A calm place for practice, effects, and records.',panels:[
-    {panelType:'skills',title:'Health practices',variant:'cards',density:'cozy',itemLimit:6,isPinned:true},
-    {panelType:'effects',title:'Current conditions',variant:'rows',density:'compact',itemLimit:5,isPinned:true},
-    {panelType:'activity',title:'Recorded sessions',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
-    {panelType:'journal',title:'Health notes',variant:'rows',density:'compact',itemLimit:5,isPinned:false},
+  {id:'health',name:'Health',description:'A calm view of practice, conditions, and records.',panels:[
+    p('player','World attributes',{variant:'metrics',sortBy:'name_asc',isPinned:true}),
+    p('skills','Health practices',{variant:'cards',filterActive:true,sortBy:'level_desc',isPinned:true}),
+    p('effects','Current conditions',{variant:'detailed',filterActive:true,sortBy:'updated_desc'}),
+    p('activity','Recorded sessions',{variant:'timeline',filterRecentDays:14,sortBy:'started_desc'}),
+    p('journal','Health notes',{variant:'rows',filterRecentDays:30,sortBy:'created_desc'}),
   ]},
-  { id:'review',name:'Review',description:'Review your recorded work and authored history.',panels:[
-    {panelType:'transactions',title:'Recent ledger',variant:'rows',density:'compact',itemLimit:10,isPinned:true},
-    {panelType:'journal',title:'Chronicle',variant:'rows',density:'compact',itemLimit:8,isPinned:true},
-    {panelType:'quests',title:'Quest progress',variant:'cards',density:'cozy',itemLimit:6,isPinned:false},
-    {panelType:'concepts',title:'World concepts',variant:'rows',density:'compact',itemLimit:6,isPinned:false},
+  {id:'review',name:'Review',description:'Review recorded work and authored history.',panels:[
+    p('activity','Recent activity',{variant:'timeline',filterRecentDays:30,sortBy:'started_desc',isPinned:true}),
+    p('transactions','Recent ledger',{variant:'detailed',filterRecentDays:30,sortBy:'occurred_desc',isPinned:true}),
+    p('journal','Recent chronicle',{variant:'cards',filterRecentDays:30,sortBy:'created_desc'}),
+    p('quests','Completed quests',{variant:'rows',filterStatus:'completed',sortBy:'updated_desc'}),
+    p('progress','Concept progress',{variant:'metrics',sortBy:'progress_desc'}),
   ]},
 ];

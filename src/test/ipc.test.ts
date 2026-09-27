@@ -37,6 +37,7 @@ describe('COMMANDS', () => {
     expect(COMMANDS.setPresentationVisibility).toBe('set_presentation_visibility');
     expect(COMMANDS.startQuestSession).toBe('start_quest_session');
     expect(COMMANDS.createWorkspace).toBe('create_workspace');
+    expect(COMMANDS.setDefaultWorkspace).toBe('set_default_workspace');
     expect(COMMANDS.listWorkspacePanels).toBe('list_workspace_panels');
     expect(COMMANDS.saveWorkspacePanel).toBe('save_workspace_panel');
   });
@@ -73,8 +74,10 @@ describe('CoreClient', () => {
   it('passes Player-scoped declarative panel settings through the typed boundary', async () => {
     const transport=vi.fn(async()=>({})) as unknown as InvokeTransport;
     const client=new CoreClient(transport);
-    await client.saveWorkspacePanel({playerId:'player-1',workspaceId:'workspace-1',panelId:'panel-1',panelType:'quests',title:'Open objectives',variant:'rows',density:'compact',filterStatus:'in_progress',itemLimit:8,sortOrder:0,isPinned:true,isCollapsed:false});
-    expect(transport).toHaveBeenCalledWith('save_workspace_panel',expect.objectContaining({playerId:'player-1',workspaceId:'workspace-1',panelType:'quests',filterStatus:'in_progress',itemLimit:8}));
+    await client.saveWorkspacePanel({playerId:'player-1',workspaceId:'workspace-1',panelId:'panel-1',panelType:'quests',title:'Open objectives',variant:'rows',density:'compact',filterStatus:'active',filterActive:null,filterTypeCode:'main',filterConceptId:'concept-1',filterRecentDays:30,sortBy:'updated_desc',itemLimit:8,sortOrder:2,gridSpan:2,isVisible:true,isPinned:true,isCollapsed:false});
+    expect(transport).toHaveBeenCalledWith('save_workspace_panel',expect.objectContaining({playerId:'player-1',workspaceId:'workspace-1',panelType:'quests',filterStatus:'active',filterTypeCode:'main',filterConceptId:'concept-1',filterRecentDays:30,sortBy:'updated_desc',itemLimit:8,gridSpan:2,isVisible:true}));
+    await client.setDefaultWorkspace('player-1','workspace-1');
+    expect(transport).toHaveBeenLastCalledWith('set_default_workspace',{playerId:'player-1',workspaceId:'workspace-1'});
   });
   it('returns null for an in-memory world location', async () => {
     const transport = vi.fn(async () => null) as unknown as InvokeTransport;
