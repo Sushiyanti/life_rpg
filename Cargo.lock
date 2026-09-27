@@ -1841,6 +1841,8 @@ name = "lr-application"
 version = "0.1.0"
 dependencies = [
  "lr-domain",
+ "serde",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 

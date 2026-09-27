@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { CoreClient, type InvokeTransport } from '../domain/ipc';
-import { xpProgress, type Player } from '../domain/world';
+import { xpProgress, type Player, type RuleDefinition } from '../domain/world';
 
 const player = (): Player => ({ id: 'p1', name: 'Ada', description: null, level: 1, currentXp: 250, isActive: true, metadataJson: '{}', createdAt: '2026-09-25T00:00:00+00:00', updatedAt: '2026-09-25T00:00:00+00:00' });
 
@@ -30,5 +30,22 @@ describe('Phase 2 world IPC client', () => {
     expect(transport).toHaveBeenLastCalledWith('capture_skill_snapshot', { skillId: 's1' });
     await client.listPlayerSnapshots('p1');
     expect(transport).toHaveBeenLastCalledWith('list_player_snapshots', { playerId: 'p1' });
+  });
+
+  it('sends typed declarative rule definitions and supports execution inspection', async () => {
+    const transport = vi.fn(async (): Promise<unknown> => []);
+    const client = new CoreClient(transport as unknown as InvokeTransport);
+    const definition: RuleDefinition = {
+      schemaVersion: 1,
+      trigger: 'player_xp_changed',
+      condition: { op: 'number_compare', subject: 'current_xp', comparison: 'greater_or_equal', value: 100 },
+      actions: [{ kind: 'award_xp', amount: 10, reason: 'milestone' }],
+    };
+    await client.createRule('Milestone', 5, definition, 'Award a milestone bonus');
+    expect(transport).toHaveBeenCalledWith('create_rule', { name: 'Milestone', description: 'Award a milestone bonus', priority: 5, definition });
+    await client.setRuleEnabled('r1', false);
+    expect(transport).toHaveBeenLastCalledWith('set_rule_enabled', { ruleId: 'r1', enabled: false });
+    await client.listRuleExecutions(20);
+    expect(transport).toHaveBeenLastCalledWith('list_rule_executions', { limit: 20 });
   });
 });

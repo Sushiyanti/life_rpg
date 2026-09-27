@@ -19,8 +19,9 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { CommandError, HealthReport } from '../domain/health';
 import { toCommandError } from '../domain/health';
 import type {
-  AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Skill,
-  SkillSnapshot, SkillTree, StatDefinition, Transaction, WorldOverview,
+  AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Rule,
+  RuleDefinition, RuleExecution, Skill, SkillSnapshot, SkillTree, StatDefinition, Transaction,
+  WorldOverview,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -50,6 +51,10 @@ export const COMMANDS = {
   setPlayerStat: 'set_player_stat',
   listPlayerStats: 'list_player_stats',
   deactivateEffect: 'deactivate_effect',
+  listRules: 'list_rules',
+  createRule: 'create_rule',
+  setRuleEnabled: 'set_rule_enabled',
+  listRuleExecutions: 'list_rule_executions',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -122,6 +127,10 @@ export class CoreClient {
   async setPlayerStat(playerId:string,statCode:string,value:number):Promise<PlayerStat>{return this.invoke<PlayerStat>(COMMANDS.setPlayerStat,{playerId,statCode,value});}
   async listPlayerStats(playerId:string):Promise<PlayerStat[]>{return this.invoke<PlayerStat[]>(COMMANDS.listPlayerStats,{playerId});}
   async deactivateEffect(effectId:string):Promise<Effect>{return this.invoke<Effect>(COMMANDS.deactivateEffect,{effectId});}
+  async listRules():Promise<Rule[]>{return this.invoke<Rule[]>(COMMANDS.listRules);}
+  async createRule(name:string,priority:number,definition:RuleDefinition,description?:string):Promise<Rule>{return this.invoke<Rule>(COMMANDS.createRule,{name,description:description??null,priority,definition});}
+  async setRuleEnabled(ruleId:string,enabled:boolean):Promise<Rule>{return this.invoke<Rule>(COMMANDS.setRuleEnabled,{ruleId,enabled});}
+  async listRuleExecutions(limit=100):Promise<RuleExecution[]>{return this.invoke<RuleExecution[]>(COMMANDS.listRuleExecutions,{limit});}
 
   private async invoke<T>(command: CommandName, args?: Record<string, unknown>): Promise<T> {
     try {

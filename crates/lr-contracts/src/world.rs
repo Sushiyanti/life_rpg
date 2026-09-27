@@ -1,11 +1,75 @@
 //! Serializable Phase 2 DTOs. Domain structs remain serialization-free.
 
-use lr_application::{AwardXpOutcome, WorldOverview};
+use lr_application::{
+    AwardXpOutcome, Rule as AppRule, RuleDefinition, RuleExecutionRecord, WorldOverview,
+};
 use lr_domain::{
     Comment, Effect, NarrativeEntry, Player, PlayerStat, PlayerStateSnapshot, Quest, Skill,
     SkillStateSnapshot, SkillTree, StatDefinition, Transaction,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleDto {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub enabled: bool,
+    pub priority: i32,
+    pub definition: RuleDefinition,
+    pub metadata_json: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<AppRule> for RuleDto {
+    fn from(v: AppRule) -> Self {
+        Self {
+            id: v.id.to_string(),
+            name: v.name,
+            description: v.description,
+            enabled: v.enabled,
+            priority: v.priority,
+            definition: v.definition,
+            metadata_json: v.metadata_json,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuleExecutionDto {
+    pub id: String,
+    pub chain_id: String,
+    pub rule_id: String,
+    pub event_kind: String,
+    pub event_json: String,
+    pub condition_passed: Option<bool>,
+    pub actions_json: String,
+    pub status: String,
+    pub error: Option<String>,
+    pub depth: u16,
+    pub executed_at: String,
+}
+impl From<RuleExecutionRecord> for RuleExecutionDto {
+    fn from(v: RuleExecutionRecord) -> Self {
+        Self {
+            id: v.id,
+            chain_id: v.chain_id,
+            rule_id: v.rule_id,
+            event_kind: v.event_kind.as_str().into(),
+            event_json: v.event_json,
+            condition_passed: v.condition_passed,
+            actions_json: v.actions_json,
+            status: v.status,
+            error: v.error,
+            depth: v.depth,
+            executed_at: v.executed_at.to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

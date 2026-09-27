@@ -1,6 +1,7 @@
 //! Application ports: storage requirements expressed without SQLite or Tauri.
 
 use crate::error::StorageError;
+use crate::rules::{EventKind, Rule, RuleExecutionRecord, RuleOperation};
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
     Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
@@ -69,6 +70,49 @@ pub trait HealthStore: Send + Sync {
 /// Persistent world port. Methods use domain values and application errors only.
 /// Compound mutation methods must be implemented atomically by adapters.
 pub trait WorldStore: Send + Sync {
+    fn create_rule(&self, _: &Rule) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "rules are not supported by this store".into(),
+        ))
+    }
+    fn get_rule(&self, _: &EntityId) -> Result<Option<Rule>, StorageError> {
+        Err(StorageError::Operation(
+            "rules are not supported by this store".into(),
+        ))
+    }
+    fn list_rules(&self) -> Result<Vec<Rule>, StorageError> {
+        Ok(Vec::new())
+    }
+    fn list_rules_for_event(&self, _: EventKind) -> Result<Vec<Rule>, StorageError> {
+        Ok(Vec::new())
+    }
+    fn update_rule(&self, _: &Rule) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "rules are not supported by this store".into(),
+        ))
+    }
+    fn list_rule_executions(&self, _: u32) -> Result<Vec<RuleExecutionRecord>, StorageError> {
+        Ok(Vec::new())
+    }
+    fn record_rule_execution(&self, _: &RuleExecutionRecord) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "rule history is not supported by this store".into(),
+        ))
+    }
+    fn record_rule_executions(&self, _: &[RuleExecutionRecord]) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "rule history is not supported by this store".into(),
+        ))
+    }
+    fn apply_rule_chain(
+        &self,
+        _: &[RuleOperation],
+        _: &[RuleExecutionRecord],
+    ) -> Result<Vec<RuleOperation>, StorageError> {
+        Err(StorageError::Operation(
+            "rule execution is not supported by this store".into(),
+        ))
+    }
     fn list_type_definitions(
         &self,
         namespace: Option<&str>,
@@ -220,6 +264,37 @@ impl<T: HealthStore + ?Sized> HealthStore for std::sync::Arc<T> {
     }
 }
 impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
+    fn create_rule(&self, r: &Rule) -> Result<(), StorageError> {
+        (**self).create_rule(r)
+    }
+    fn get_rule(&self, id: &EntityId) -> Result<Option<Rule>, StorageError> {
+        (**self).get_rule(id)
+    }
+    fn list_rules(&self) -> Result<Vec<Rule>, StorageError> {
+        (**self).list_rules()
+    }
+    fn list_rules_for_event(&self, k: EventKind) -> Result<Vec<Rule>, StorageError> {
+        (**self).list_rules_for_event(k)
+    }
+    fn update_rule(&self, r: &Rule) -> Result<(), StorageError> {
+        (**self).update_rule(r)
+    }
+    fn list_rule_executions(&self, l: u32) -> Result<Vec<RuleExecutionRecord>, StorageError> {
+        (**self).list_rule_executions(l)
+    }
+    fn record_rule_execution(&self, r: &RuleExecutionRecord) -> Result<(), StorageError> {
+        (**self).record_rule_execution(r)
+    }
+    fn record_rule_executions(&self, r: &[RuleExecutionRecord]) -> Result<(), StorageError> {
+        (**self).record_rule_executions(r)
+    }
+    fn apply_rule_chain(
+        &self,
+        o: &[RuleOperation],
+        r: &[RuleExecutionRecord],
+    ) -> Result<Vec<RuleOperation>, StorageError> {
+        (**self).apply_rule_chain(o, r)
+    }
     fn list_type_definitions(&self, n: Option<&str>) -> Result<Vec<TypeDefinition>, StorageError> {
         (**self).list_type_definitions(n)
     }

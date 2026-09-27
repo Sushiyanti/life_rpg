@@ -10,6 +10,7 @@
 //!   the UI can react differently to "your store is corrupted" vs "you typed
 //!   something invalid".
 
+use crate::rules::RuleExecutionError;
 use lr_domain::DomainError;
 use thiserror::Error;
 
@@ -43,6 +44,10 @@ pub enum AppError {
     /// A programming error or unexpected state.
     #[error("internal error: {0}")]
     Internal(String),
+
+    /// A declarative rule chain failed or reached a configured safety limit.
+    #[error(transparent)]
+    RuleExecution(#[from] RuleExecutionError),
 }
 
 impl AppError {
@@ -55,6 +60,7 @@ impl AppError {
             AppError::Storage(StorageError::Schema(_)) => "storage_schema_problem",
             AppError::Domain(_) => "domain_rule_violated",
             AppError::Internal(_) => "internal_error",
+            AppError::RuleExecution(_) => "rule_execution_failed",
         }
     }
 }

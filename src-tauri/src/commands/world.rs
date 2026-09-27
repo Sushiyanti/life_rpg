@@ -1,14 +1,60 @@
 //! Thin IPC adapters for the Phase 2 application world service.
 
 use crate::state::AppState;
-use lr_application::DEFAULT_LEDGER_LIMIT;
+use lr_application::{RuleDefinition, DEFAULT_LEDGER_LIMIT};
 use lr_contracts::world::{
     AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
-    QuestDto, SkillDto, SkillSnapshotDto, SkillTreeDto, StatDefinitionDto, TransactionDto,
-    WorldOverviewDto,
+    QuestDto, RuleDto, RuleExecutionDto, SkillDto, SkillSnapshotDto, SkillTreeDto,
+    StatDefinitionDto, TransactionDto, WorldOverviewDto,
 };
 use lr_contracts::CommandErrorDto;
 use tauri::State;
+
+#[tauri::command]
+pub fn list_rules(state: State<'_, AppState>) -> Result<Vec<RuleDto>, CommandErrorDto> {
+    state
+        .world
+        .list_rules()
+        .map(|rules| rules.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn create_rule(
+    state: State<'_, AppState>,
+    name: String,
+    description: Option<String>,
+    priority: i32,
+    definition: RuleDefinition,
+) -> Result<RuleDto, CommandErrorDto> {
+    state
+        .world
+        .create_rule_definition(&name, description, priority, definition)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn set_rule_enabled(
+    state: State<'_, AppState>,
+    rule_id: String,
+    enabled: bool,
+) -> Result<RuleDto, CommandErrorDto> {
+    state
+        .world
+        .set_rule_enabled(&rule_id, enabled)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_rule_executions(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<RuleExecutionDto>, CommandErrorDto> {
+    state
+        .world
+        .list_rule_executions(limit.unwrap_or(100))
+        .map(|rows| rows.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
 
 #[tauri::command]
 pub fn create_player(

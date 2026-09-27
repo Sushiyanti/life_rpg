@@ -11,15 +11,20 @@
  * The screen owns no knowledge of SQLite and no knowledge of `invoke`.
  */
 
+import { useState } from 'react';
 import { AppShell } from './app/AppShell';
 import { StatusScreen } from './features/status/StatusScreen';
+import { RulePanel } from './features/world/RulePanel';
 import { WorldPanel } from './features/world/WorldPanel';
+import type { Player } from './domain/world';
 
 export function App() {
+  const [player,setPlayer]=useState<Player|null>(null);
   return (
     <AppShell>
       <StatusScreen />
-      <WorldPanel />
+      <WorldPanel onPlayerChanged={setPlayer} />
+      <RulePanel playerId={player?.id} />
     </AppShell>
   );
 }

@@ -1,6 +1,6 @@
 # Life RPG — Domain Design Codex
 
-This is the concise conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation is Phase 2.1; future areas below are boundaries, not features to build early.
+This is the concise conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules; later areas below remain boundaries, not features to build early.
 
 ## Product philosophy
 
@@ -26,7 +26,7 @@ The backend/domain establishes what an entity **is**, its state, and what happen
 | **Transaction** | An append-only historical change/event (XP, time, or another named resource); not current state or a snapshot. | Player and timestamp are structured. XP stores `amount` (requested event) and `applied_amount` (actual state delta). For a penalty that exceeds current XP, requested remains negative while applied is clamped so resulting XP is zero. XP events are written only through atomic state-changing operations. |
 | **Comment** | User-authored annotation attached to a supported entity; not intentional story content or a domain transition. | Historical text. Its polymorphic target is checked for existence in the same insert transaction; target kinds are closed and explicit. |
 | **Narrative Entry** | Intentional journal/story content in the world; not a Comment or automatic ledger. | Player-scoped authored record, separate from progression. Its kind is extensible through the type registry. |
-| **Rule** | A future controlled way to make world transitions automatic; not an ad-hoc callback or persisted user script. | Not implemented in Phase 2.1. Phase 3 may introduce a constrained **Condition → Trigger → Action** model; exact runtime semantics are deliberately unspecified here. |
+| **Rule** | A persistent declarative definition interpreted by trusted application code; never an ad-hoc callback or persisted user script. | Schema version 1; closed event, condition, and action vocabularies; priority ordering; bounded rule chain; metadata remains non-semantic. |
 | **UI State** | Interface-only choices such as current selection or panel arrangement; not Player state. | Frontend/presentation concern unless a later phase deliberately persists it in a separate store. It must not affect domain validity. |
 | **Presentation** | The visual rendering of domain concepts; not the concepts themselves. | Frontend-defined and controlled. Variants, density, and style do not redefine Quest/Skill/Effect semantics. |
 | **Workspace** | A future saved arrangement of views/tools; not a Skill Tree or domain container. | Not persisted in Phase 2.1. If added, it must remain distinct from Player/world entities. |
@@ -54,7 +54,7 @@ Guiding principles: **do not hardcode every future game concept; do not turn the
 ## Lifecycle and integrity decisions
 
 - **Player:** one active/inactive flag; no duplicate status enum. XP is always at least zero.
-- **Quest:** planned/open → active → completed or abandoned. Phase 2.1 does not invent pause/failed states or a rules engine.
+- **Quest:** planned/open → active → completed or abandoned. Phase 3 adds a declarative `complete_quest` action only; it does not invent pause/failed states.
 - **Skill:** explicit current status among active/paused/completed/archived. State changes and invested time do not erase prior Transactions or snapshots.
 - **Skill Tree:** active/inactive flag; archive/delete workflow is not added here.
 - **Effect:** scheduled/active/expired/manual-off is evaluated against timestamps and the deactivation marker. Deactivation is retained rather than deleting the Effect.
@@ -63,6 +63,26 @@ Guiding principles: **do not hardcode every future game concept; do not turn the
 - **Hierarchy:** relational FKs prove referenced rows exist, but not shared ownership or absence of cycles. SQLite triggers additionally check owner/tree consistency and recursive ancestor chains. Application/domain checks reject direct self-parenting early; database checks remain authoritative for the stored graph.
 - **Snapshot:** unique per player/date or skill/date. A second ordinary capture for that day is rejected; historical rows are not overwritten.
 - **Stat:** one current value for each `(player, stat_code)`; definition bounds and active status are enforced in the domain and database. A later value overwrites current state, while daily snapshots preserve observed history.
+
+## Phase 3 — declarative rule engine
+
+The event-driven runtime is an application-layer interpreter over closed, serde-tagged data types. Database rows cannot carry executable Rust, Python, JavaScript, shell, or expression code; there is no `eval` path. Unknown event/condition/action tags and unsupported rule schema versions are rejected. Rules store `schemaVersion: 1`, trigger, condition, and ordered actions in a validated definition; the database separately constrains the version and trigger to match the JSON.
+
+### Events and triggers
+
+Version 1 intentionally supports three typed events: `quest_completed` (Player, Quest, type, progress and XP reward context), `player_xp_changed` (previous/current XP, requested/applied adjustment and level), and `stat_changed` (Player, stat code and previous/current value). A trigger is an event kind, not a polling or scheduled state condition. Source Quest/XP/stat changes and the Quest reward's XP event are placed into the same FIFO rule chain. Actions may enqueue follow-on Quest, XP, and stat events; event semantics are preserved as typed Rust variants rather than unstructured input JSON.
+
+### Conditions and actions
+
+Conditions include `always`, event-kind match, typed numeric and text comparisons, and recursive `all`/`any`/`not`. Comparisons only read fields carried by the matching event; a subject absent from that event does not match, including beneath logical negation. Incompatible condition/event subjects are rejected when the definition is validated. Conditions do not query arbitrary entity state, evaluate strings as expressions, or schedule later work. Nesting is capped at 8, each logical group has at most 16 children, and the full tree has at most 128 nodes.
+
+The action vocabulary is deliberately small: `award_xp` (negative amounts provide the XP-floor penalty behavior), `complete_quest` (only an existing valid completion transition, with its optional reward transaction), `set_player_stat`, and `modify_player_stat`. XP and Stat domain constructors validate requested transitions and stat bounds before persistence. Skill XP/unlock/skill lifecycle, effect activation, Quest start/abandon, narrative actions, and time-based triggers are not implemented because their rule/event semantics are not yet specified.
+
+### Ordering, atomicity, history, and limits
+
+Enabled rules for one event are ordered by descending integer priority, then ascending stable Rule ID. Generated events are processed FIFO in action order. Condition evaluation and action planning are deterministic; all initial source changes and the resulting planned RuleOperations plus their successful/condition-failed audit rows are persisted in one SQLite transaction. Each operation is constructed only after domain transitions; the persistence adapter rechecks expected prior values/ownership and inserts matching XP Transactions in that transaction. Any rule/action/guard failure applies none of the root or derived world writes. A separate append-only audit write records the failure/abort when storage remains available.
+
+`rule_execution_history` records which Rule, chain, event payload/kind, condition result, configured actions, outcome/error, depth, and timestamp. It is an audit/debug layer; Transactions and snapshots remain the authoritative world-state history. Rules are limited to 16 actions each, 32 actions per chain, depth 8, and 64 rule evaluations per chain. The evaluator also rejects a repeated `(Rule ID, canonical event payload)` pair. Execution history is append-only in SQLite.
 
 ## Architecture boundaries
 
@@ -79,7 +99,7 @@ The intended flow remains **React + TypeScript → typed Tauri IPC → applicati
 
 ## Intentionally future work (not implemented here)
 
-- **Phase 3 rules engine:** constrained Condition/Trigger/Action runtime; not in this branch.
+- **Further rules work:** conditions over arbitrary live entity state, skill-XP/unlock actions, effects, additional event sources, and scheduled triggers remain future work.
 - **Dynamic UI state, presentation persistence, workspaces, and Style Sandbox:** separate interface concerns; no schema/runtime here.
 - **Complete character UI, quest board, and skill-tree UI:** beyond the small Phase 2 verification surface.
 - **Cloud synchronization, accounts, authentication, HTTP API, and multiplayer:** outside the local-first single-user architecture.

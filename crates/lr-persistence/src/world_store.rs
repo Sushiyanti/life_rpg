@@ -4,13 +4,15 @@
 //! changes use one SQLite transaction, so current state and append-only history
 //! cannot diverge after a partial failure.
 
-use lr_application::{StorageError, WorldStore};
+use lr_application::{
+    EventKind, Rule, RuleDefinition, RuleExecutionRecord, RuleOperation, StorageError, WorldStore,
+};
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
     Player, PlayerStat, PlayerStateSnapshot, Quest, QuestStatus, Skill, SkillStateSnapshot,
     SkillStatus, SkillTree, StatDefinition, Transaction, TypeDefinition, TypeRef,
 };
-use rusqlite::{params, Row, Transaction as SqlTransaction};
+use rusqlite::{params, OptionalExtension, Row, Transaction as SqlTransaction};
 
 use crate::sqlite_store::SqliteHealthStore;
 
@@ -282,7 +284,153 @@ fn target_exists(
         .map_err(op)
 }
 
+fn event_kind(raw: String) -> Result<EventKind, StorageError> {
+    match raw.as_str() {
+        "quest_completed" => Ok(EventKind::QuestCompleted),
+        "player_xp_changed" => Ok(EventKind::PlayerXpChanged),
+        "stat_changed" => Ok(EventKind::StatChanged),
+        _ => Err(op(format!("unknown stored rule event kind `{raw}`"))),
+    }
+}
+fn rule(row: &Row<'_>) -> Result<Rule, StorageError> {
+    let definition_json: String = row.get(7).map_err(op)?;
+    let definition: RuleDefinition = serde_json::from_str(&definition_json).map_err(op)?;
+    definition.validate().map_err(op)?;
+    let trigger = event_kind(row.get(5).map_err(op)?)?;
+    if trigger != definition.trigger {
+        return Err(op("stored rule trigger disagrees with its definition"));
+    }
+    Ok(Rule {
+        id: id(row.get(0).map_err(op)?)?,
+        name: row.get(1).map_err(op)?,
+        description: row.get(2).map_err(op)?,
+        enabled: b(row.get(3).map_err(op)?),
+        priority: row.get(4).map_err(op)?,
+        definition,
+        metadata_json: row.get(8).map_err(op)?,
+        created_at: timestamp(row.get(9).map_err(op)?)?,
+        updated_at: timestamp(row.get(10).map_err(op)?)?,
+    })
+}
+fn rule_execution(row: &Row<'_>) -> Result<RuleExecutionRecord, StorageError> {
+    Ok(RuleExecutionRecord {
+        id: row.get(0).map_err(op)?,
+        chain_id: row.get(1).map_err(op)?,
+        rule_id: row.get(2).map_err(op)?,
+        event_kind: event_kind(row.get(3).map_err(op)?)?,
+        event_json: row.get(4).map_err(op)?,
+        condition_passed: row.get::<_, Option<i64>>(5).map_err(op)?.map(|v| v != 0),
+        actions_json: row.get(6).map_err(op)?,
+        status: row.get(7).map_err(op)?,
+        error: row.get(8).map_err(op)?,
+        depth: row.get(9).map_err(op)?,
+        executed_at: timestamp(row.get(10).map_err(op)?)?,
+    })
+}
+fn insert_rule_execution(
+    tx: &SqlTransaction<'_>,
+    record: &RuleExecutionRecord,
+) -> Result<(), StorageError> {
+    tx.execute("INSERT INTO rule_execution_history(id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,error,depth,executed_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![record.id,record.chain_id,record.rule_id,record.event_kind.as_str(),record.event_json,record.condition_passed.map(i64::from),record.actions_json,record.status,record.error,record.depth,record.executed_at.as_str()]).map_err(op)?;
+    Ok(())
+}
+const RULE_SQL: &str = "id,name,description,is_enabled,priority,trigger_kind,schema_version,definition_json,metadata_json,created_at,updated_at";
+const RULE_EXECUTION_SQL: &str = "id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,error,depth,executed_at";
+
 impl WorldStore for SqliteHealthStore {
+    fn create_rule(&self, value: &Rule) -> Result<(), StorageError> {
+        value.definition.validate().map_err(op)?;
+        let json = serde_json::to_string(&value.definition).map_err(op)?;
+        self.with_conn(|c|{c.execute("INSERT INTO rules(id,name,description,is_enabled,priority,trigger_kind,schema_version,definition_json,metadata_json,created_at,updated_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![value.id.as_str(),value.name,value.description,value.enabled as i64,value.priority,value.definition.trigger.as_str(),value.definition.schema_version,json,value.metadata_json,value.created_at.as_str(),value.updated_at.as_str()]).map_err(op)?;Ok(())})
+    }
+    fn get_rule(&self, key: &EntityId) -> Result<Option<Rule>, StorageError> {
+        self.with_conn(|c| {
+            let sql = format!("SELECT {RULE_SQL} FROM rules WHERE id=?1");
+            let mut stmt = c.prepare(&sql).map_err(op)?;
+            let mut rows = stmt.query([key.as_str()]).map_err(op)?;
+            match rows.next().map_err(op)? {
+                Some(r) => Ok(Some(rule(r)?)),
+                None => Ok(None),
+            }
+        })
+    }
+    fn list_rules(&self) -> Result<Vec<Rule>, StorageError> {
+        self.with_conn(|c| {
+            let sql = format!("SELECT {RULE_SQL} FROM rules ORDER BY priority DESC,id ASC");
+            let mut stmt = c.prepare(&sql).map_err(op)?;
+            let mut rows = stmt.query([]).map_err(op)?;
+            let mut out = vec![];
+            while let Some(r) = rows.next().map_err(op)? {
+                out.push(rule(r)?);
+            }
+            Ok(out)
+        })
+    }
+    fn list_rules_for_event(&self, kind: EventKind) -> Result<Vec<Rule>, StorageError> {
+        self.with_conn(|c|{let sql=format!("SELECT {RULE_SQL} FROM rules WHERE is_enabled=1 AND trigger_kind=?1 ORDER BY priority DESC,id ASC");let mut stmt=c.prepare(&sql).map_err(op)?;let mut rows=stmt.query([kind.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(rule(r)?);}Ok(out)})
+    }
+    fn update_rule(&self, value: &Rule) -> Result<(), StorageError> {
+        value.definition.validate().map_err(op)?;
+        let json = serde_json::to_string(&value.definition).map_err(op)?;
+        self.with_conn(|c|{let changed=c.execute("UPDATE rules SET name=?2,description=?3,is_enabled=?4,priority=?5,trigger_kind=?6,schema_version=?7,definition_json=?8,metadata_json=?9,updated_at=?10 WHERE id=?1",params![value.id.as_str(),value.name,value.description,value.enabled as i64,value.priority,value.definition.trigger.as_str(),value.definition.schema_version,json,value.metadata_json,value.updated_at.as_str()]).map_err(op)?;if changed==0{Err(op("rule not found"))}else{Ok(())}})
+    }
+    fn list_rule_executions(&self, limit: u32) -> Result<Vec<RuleExecutionRecord>, StorageError> {
+        self.with_conn(|c|{let sql=format!("SELECT {RULE_EXECUTION_SQL} FROM rule_execution_history ORDER BY executed_at DESC,id DESC LIMIT ?1");let mut stmt=c.prepare(&sql).map_err(op)?;let mut rows=stmt.query([limit]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(rule_execution(r)?);}Ok(out)})
+    }
+    fn record_rule_executions(&self, records: &[RuleExecutionRecord]) -> Result<(), StorageError> {
+        self.with_conn_mut(|conn| {
+            let tx = conn.transaction().map_err(op)?;
+            for record in records {
+                insert_rule_execution(&tx, record)?;
+            }
+            tx.commit().map_err(op)?;
+            Ok(())
+        })
+    }
+    fn apply_rule_chain(
+        &self,
+        operations: &[RuleOperation],
+        records: &[RuleExecutionRecord],
+    ) -> Result<Vec<RuleOperation>, StorageError> {
+        self.with_conn_mut(|conn|{
+            let tx=conn.transaction().map_err(op)?;
+            let mut stored_operations=operations.to_vec();
+            for operation in &mut stored_operations {
+                match operation {
+                    RuleOperation::CompleteQuest{quest,expected_status,reward}=>{
+                        let (owner,status,reward_amount):(String,String,i64)=tx.query_row("SELECT player_id,status,xp_reward FROM quests WHERE id=?1",[quest.id.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).map_err(op)?;
+                        if owner!=quest.player_id.as_str()||quest.status!=QuestStatus::Completed||quest.progress!=100||quest.xp_reward!=reward_amount||status!=expected_status.as_str(){return Err(op("rule Quest completion no longer matches persisted state"));}
+                        match reward {
+                            Some((player,transaction))=>{
+                                let current:i64=tx.query_row("SELECT current_xp FROM players WHERE id=?1",[player.id.as_str()],|r|r.get(0)).map_err(op)?;
+                                let applied=transaction.applied_amount.ok_or_else(||op("rule quest reward is missing applied XP"))?;
+                                if player.id!=quest.player_id||transaction.player_id!=player.id||transaction.resource!="xp"||transaction.amount!=quest.xp_reward||current.checked_add(applied)!=Some(player.current_xp){return Err(op("rule Quest reward does not match owner XP transition"));}
+                                let stored=insert_transaction(&tx,transaction)?;transaction.id=stored.id;
+                                if tx.execute("UPDATE players SET level=?2,current_xp=?3,updated_at=?4 WHERE id=?1",params![player.id.as_str(),player.level,player.current_xp,player.updated_at.as_str()]).map_err(op)?!=1{return Err(op("rule reward Player disappeared"));}
+                            }
+                            None if quest.xp_reward==0=>{},
+                            None=>return Err(op("rewarded rule Quest completion must include its XP transaction")),
+                        }
+                        if tx.execute("UPDATE quests SET status='completed',progress=100,completed_at=?2,updated_at=?2 WHERE id=?1",params![quest.id.as_str(),quest.completed_at.as_ref().map(Iso8601Timestamp::as_str)]).map_err(op)?!=1{return Err(op("rule Quest disappeared during completion"));}
+                    }
+                    RuleOperation::PlayerXp{player,previous_xp,transaction}=>{
+                        let current:i64=tx.query_row("SELECT current_xp FROM players WHERE id=?1",[player.id.as_str()],|r|r.get(0)).map_err(op)?;
+                        let applied=transaction.applied_amount.ok_or_else(||op("rule XP action is missing its applied amount"))?;
+                        if current!=*previous_xp||transaction.player_id!=player.id||transaction.resource!="xp"||current.checked_add(applied)!=Some(player.current_xp)||player.current_xp<0||transaction.amount==0||(transaction.amount>0&&applied!=transaction.amount)||(transaction.amount<0&&(applied>0||applied<transaction.amount)){return Err(op("rule XP action no longer matches persisted Player state"));}
+                        let stored=insert_transaction(&tx,transaction)?;transaction.id=stored.id;
+                        if tx.execute("UPDATE players SET level=?2,current_xp=?3,updated_at=?4 WHERE id=?1",params![player.id.as_str(),player.level,player.current_xp,player.updated_at.as_str()]).map_err(op)?!=1{return Err(op("rule Player disappeared during XP action"));}
+                    }
+                    RuleOperation::PlayerStat{stat,expected_previous}=>{
+                        let current:Option<f64>=tx.query_row("SELECT current_value FROM player_stats WHERE player_id=?1 AND stat_code=?2",params![stat.player_id.as_str(),stat.stat_code],|r|r.get(0)).optional().map_err(op)?;
+                        if current!=*expected_previous{return Err(op("rule stat action observed a stale value"));}
+                        tx.execute("INSERT INTO player_stats(player_id,stat_code,current_value,metadata_json,updated_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(player_id,stat_code) DO UPDATE SET current_value=excluded.current_value,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at",params![stat.player_id.as_str(),stat.stat_code,stat.current_value,stat.metadata_json,stat.updated_at.as_str()]).map_err(op)?;
+                    }
+                }
+            }
+            for record in records{insert_rule_execution(&tx,record)?;}
+            tx.commit().map_err(op)?;Ok(stored_operations)
+        })
+    }
     fn list_type_definitions(
         &self,
         namespace: Option<&str>,
@@ -642,7 +790,10 @@ impl WorldStore for SqliteHealthStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lr_application::WorldStore;
+    use lr_application::{
+        Clock, Comparison, EventKind, NumericSubject, RuleAction, RuleCondition, WorldService,
+        WorldStore,
+    };
     use lr_domain::EffectLifecycle;
     const T0: &str = "2026-09-25T00:00:00+00:00";
     fn now() -> Iso8601Timestamp {
@@ -653,6 +804,566 @@ mod tests {
     }
     fn player_value() -> Player {
         Player::new(EntityId::new("p1").unwrap(), "Ada", now()).unwrap()
+    }
+    struct FrozenClock;
+    impl Clock for FrozenClock {
+        fn now_rfc3339(&self) -> String {
+            T0.into()
+        }
+        fn now_unix_nanos(&self) -> u128 {
+            123
+        }
+    }
+
+    #[test]
+    fn declarative_rules_chain_atomically_in_priority_order_and_persist_audit() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let eq = |value| RuleCondition::NumberCompare {
+            subject: NumericSubject::CurrentXp,
+            comparison: Comparison::Equal,
+            value,
+        };
+        service
+            .create_rule(
+                "first",
+                None,
+                20,
+                EventKind::PlayerXpChanged,
+                eq(10.0),
+                vec![RuleAction::AwardXp {
+                    amount: 10,
+                    reason: Some("first_rule".into()),
+                }],
+            )
+            .unwrap();
+        service
+            .create_rule(
+                "second",
+                None,
+                10,
+                EventKind::PlayerXpChanged,
+                eq(20.0),
+                vec![RuleAction::AwardXp {
+                    amount: 5,
+                    reason: Some("second_rule".into()),
+                }],
+            )
+            .unwrap();
+
+        let result = service
+            .award_xp(player.id.as_str(), 10, Some("root".into()), None)
+            .unwrap();
+        assert_eq!(result.player.current_xp, 25);
+        assert_eq!(
+            result.transaction.amount, 10,
+            "the API returns the source ledger entry"
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 25);
+        let ledger = store.list_transactions(&player.id, 20).unwrap();
+        assert_eq!(ledger.len(), 3);
+        assert_eq!(
+            ledger
+                .iter()
+                .map(|t| t.applied_amount.unwrap())
+                .sum::<i64>(),
+            25
+        );
+        let history = service.list_rule_executions(100).unwrap();
+        assert_eq!(
+            history.len(),
+            6,
+            "both active rules are audited for each of three event states"
+        );
+        assert!(history
+            .iter()
+            .all(|r| r.status == "succeeded" || r.status == "condition_failed"));
+        assert!(history.iter().all(|r| r.chain_id == history[0].chain_id));
+        assert_eq!(
+            service
+                .list_rules()
+                .unwrap()
+                .iter()
+                .map(|r| r.priority)
+                .collect::<Vec<_>>(),
+            vec![20, 10]
+        );
+        let disabled = service
+            .set_rule_enabled(&service.list_rules().unwrap()[0].id.to_string(), false)
+            .unwrap();
+        assert!(!disabled.enabled);
+        let before = service.list_rule_executions(100).unwrap().len();
+        service.award_xp(player.id.as_str(), 1, None, None).unwrap();
+        let after = service.list_rule_executions(100).unwrap();
+        assert_eq!(after.len(), before + 1);
+        assert!(after
+            .iter()
+            .filter(|record| record.chain_id != history[0].chain_id)
+            .all(|record| record.rule_id != disabled.id.to_string()));
+    }
+
+    #[test]
+    fn stat_actions_emit_follow_on_events_and_commit_with_the_root_stat_write() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        service
+            .define_stat("focus", "Focus", None, None, Some(0.0), Some(10.0))
+            .unwrap();
+        let stat_eq = |value| RuleCondition::NumberCompare {
+            subject: NumericSubject::StatValue,
+            comparison: Comparison::Equal,
+            value,
+        };
+        service
+            .create_rule(
+                "increase focus",
+                None,
+                10,
+                EventKind::StatChanged,
+                stat_eq(5.0),
+                vec![
+                    RuleAction::ModifyPlayerStat {
+                        stat_code: "focus".into(),
+                        delta: 2.0,
+                    },
+                    RuleAction::AwardXp {
+                        amount: 2,
+                        reason: Some("second action".into()),
+                    },
+                ],
+            )
+            .unwrap();
+        service
+            .create_rule(
+                "reward focus",
+                None,
+                0,
+                EventKind::StatChanged,
+                stat_eq(7.0),
+                vec![RuleAction::AwardXp {
+                    amount: 3,
+                    reason: None,
+                }],
+            )
+            .unwrap();
+        let stat = service
+            .set_player_stat(player.id.as_str(), "focus", 5.0)
+            .unwrap();
+        assert_eq!(stat.current_value, 7.0);
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            5
+        );
+        assert_eq!(
+            store.list_player_stats(&player.id).unwrap()[0].current_value,
+            7.0
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 5);
+        assert_eq!(service.list_rule_executions(100).unwrap().len(), 4);
+    }
+
+    #[test]
+    fn recursive_rules_are_stopped_without_partial_player_or_ledger_writes() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        service
+            .create_rule(
+                "unbounded XP recursion",
+                None,
+                0,
+                EventKind::PlayerXpChanged,
+                RuleCondition::Always,
+                vec![RuleAction::AwardXp {
+                    amount: 1,
+                    reason: None,
+                }],
+            )
+            .unwrap();
+        let error = service
+            .award_xp(player.id.as_str(), 1, None, None)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                lr_application::AppError::RuleExecution(
+                    lr_application::RuleExecutionError::MaxDepth(_)
+                )
+            ),
+            "unexpected rule guard: {error:?}"
+        );
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            0
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 0);
+        let history = service.list_rule_executions(100).unwrap();
+        assert!(history.iter().any(|r| r.status == "guard_aborted"));
+        assert!(history
+            .iter()
+            .filter(|r| r.status == "guard_aborted")
+            .all(|r| r.error.is_some()));
+    }
+
+    #[test]
+    fn completed_quest_reward_and_matching_rule_xp_share_one_audited_chain() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let quest = service
+            .create_quest(
+                player.id.as_str(),
+                "main",
+                "Ship",
+                None,
+                None,
+                None,
+                Some(5),
+            )
+            .unwrap();
+        service
+            .create_rule(
+                "main quest bonus",
+                None,
+                0,
+                EventKind::QuestCompleted,
+                RuleCondition::TextCompare {
+                    subject: lr_application::TextSubject::QuestType,
+                    comparison: lr_application::TextComparison::Equal,
+                    value: "main".into(),
+                },
+                vec![RuleAction::AwardXp {
+                    amount: 100,
+                    reason: None,
+                }],
+            )
+            .unwrap();
+        service
+            .create_rule(
+                "large XP follow-up",
+                None,
+                0,
+                EventKind::PlayerXpChanged,
+                RuleCondition::NumberCompare {
+                    subject: NumericSubject::AppliedAmount,
+                    comparison: Comparison::GreaterOrEqual,
+                    value: 100.0,
+                },
+                vec![RuleAction::AwardXp {
+                    amount: 20,
+                    reason: None,
+                }],
+            )
+            .unwrap();
+        let completed = service.complete_quest(quest.id.as_str()).unwrap();
+        assert_eq!(completed.status, QuestStatus::Completed);
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            125
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 125);
+        let history = service.list_rule_executions(100).unwrap();
+        assert_eq!(
+            history.len(),
+            4,
+            "Quest completion triggers XP; that XP event triggers another rule and a final nonmatching evaluation"
+        );
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.status == "succeeded")
+                .count(),
+            2
+        );
+        assert_eq!(
+            history
+                .iter()
+                .filter(|record| record.status == "condition_failed")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
+    fn invalid_rule_action_rolls_back_root_state_and_records_failure() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        service
+            .define_stat("focus", "Focus", None, None, Some(0.0), Some(10.0))
+            .unwrap();
+        service
+            .create_rule(
+                "out of bounds",
+                None,
+                0,
+                EventKind::StatChanged,
+                RuleCondition::Always,
+                vec![
+                    RuleAction::AwardXp {
+                        amount: 7,
+                        reason: None,
+                    },
+                    RuleAction::SetPlayerStat {
+                        stat_code: "focus".into(),
+                        value: 20.0,
+                    },
+                ],
+            )
+            .unwrap();
+        let error = service
+            .set_player_stat(player.id.as_str(), "focus", 5.0)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                lr_application::AppError::RuleExecution(
+                    lr_application::RuleExecutionError::ActionFailed { .. }
+                )
+            ),
+            "unexpected rule error: {error:?}"
+        );
+        assert!(
+            store.list_player_stats(&player.id).unwrap().is_empty(),
+            "root and derived state writes roll back together"
+        );
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            0
+        );
+        assert_eq!(
+            store.transaction_total(&player.id, "xp").unwrap(),
+            0,
+            "earlier planned action also rolls back"
+        );
+        let history = service.list_rule_executions(100).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].status, "failed");
+        assert!(history[0].error.is_some());
+    }
+
+    #[test]
+    fn declarative_xp_penalty_respects_floor_and_preserves_requested_amount() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        service
+            .create_rule(
+                "penalize low XP",
+                None,
+                0,
+                EventKind::PlayerXpChanged,
+                RuleCondition::NumberCompare {
+                    subject: NumericSubject::CurrentXp,
+                    comparison: Comparison::Greater,
+                    value: 0.0,
+                },
+                vec![RuleAction::AwardXp {
+                    amount: -10,
+                    reason: Some("penalty".into()),
+                }],
+            )
+            .unwrap();
+        service.award_xp(player.id.as_str(), 5, None, None).unwrap();
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            0
+        );
+        let ledger = store.list_transactions(&player.id, 10).unwrap();
+        let penalty = ledger.iter().find(|tx| tx.amount == -10).unwrap();
+        assert_eq!(penalty.applied_amount, Some(-5));
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 0);
+    }
+
+    #[test]
+    fn action_and_evaluation_budgets_abort_before_any_world_write() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let actions = vec![
+            RuleAction::AwardXp {
+                amount: 1,
+                reason: None
+            };
+            lr_application::MAX_ACTIONS_PER_RULE
+        ];
+        for n in 0..3 {
+            service
+                .create_rule(
+                    &format!("action budget {n}"),
+                    None,
+                    n,
+                    EventKind::PlayerXpChanged,
+                    RuleCondition::Always,
+                    actions.clone(),
+                )
+                .unwrap();
+        }
+        let error = service
+            .award_xp(player.id.as_str(), 1, None, None)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            lr_application::AppError::RuleExecution(
+                lr_application::RuleExecutionError::MaxActions(_)
+            )
+        ));
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            0
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 0);
+
+        let store = std::sync::Arc::new(SqliteHealthStore::open_in_memory(T0));
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Grace", None).unwrap();
+        for n in 0..=lr_application::MAX_RULE_EVALUATIONS_PER_CHAIN {
+            service
+                .create_rule(
+                    &format!("evaluation budget {n}"),
+                    None,
+                    n as i32,
+                    EventKind::PlayerXpChanged,
+                    RuleCondition::NumberCompare {
+                        subject: NumericSubject::CurrentXp,
+                        comparison: Comparison::Less,
+                        value: 0.0,
+                    },
+                    vec![RuleAction::AwardXp {
+                        amount: 1,
+                        reason: None,
+                    }],
+                )
+                .unwrap();
+        }
+        let error = service
+            .award_xp(player.id.as_str(), 1, None, None)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            lr_application::AppError::RuleExecution(
+                lr_application::RuleExecutionError::MaxEvaluations(_)
+            )
+        ));
+        assert_eq!(
+            service
+                .get_player(player.id.as_str())
+                .unwrap()
+                .unwrap()
+                .current_xp,
+            0
+        );
+        assert_eq!(store.transaction_total(&player.id, "xp").unwrap(), 0);
+        assert_eq!(
+            service.list_rule_executions(100).unwrap().len(),
+            lr_application::MAX_RULE_EVALUATIONS_PER_CHAIN + 1
+        );
+    }
+
+    #[test]
+    fn rules_and_execution_history_survive_database_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rules.sqlite3");
+        let player_id;
+        {
+            let store = std::sync::Arc::new(SqliteHealthStore::open_file(&path, T0));
+            let service = WorldService::new(store, FrozenClock);
+            let player = service.create_player("Ada", None).unwrap();
+            player_id = player.id.to_string();
+            service
+                .create_rule(
+                    "small bonus",
+                    None,
+                    0,
+                    EventKind::PlayerXpChanged,
+                    RuleCondition::NumberCompare {
+                        subject: NumericSubject::CurrentXp,
+                        comparison: Comparison::Equal,
+                        value: 1.0,
+                    },
+                    vec![RuleAction::AwardXp {
+                        amount: 2,
+                        reason: None,
+                    }],
+                )
+                .unwrap();
+            service.award_xp(&player_id, 1, None, None).unwrap();
+        }
+        let reopened = std::sync::Arc::new(SqliteHealthStore::open_file(&path, T0));
+        let service = WorldService::new(reopened, FrozenClock);
+        assert_eq!(
+            service.get_player(&player_id).unwrap().unwrap().current_xp,
+            3
+        );
+        assert_eq!(service.list_rules().unwrap().len(), 1);
+        assert_eq!(service.list_rule_executions(100).unwrap().len(), 2);
+    }
+
+    #[test]
+    fn repeated_rule_event_fingerprint_is_detected_and_rolled_back() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        service
+            .define_stat("focus", "Focus", None, None, Some(0.0), Some(10.0))
+            .unwrap();
+        service
+            .create_rule(
+                "repeat same stat value",
+                None,
+                0,
+                EventKind::StatChanged,
+                RuleCondition::Always,
+                vec![RuleAction::SetPlayerStat {
+                    stat_code: "focus".into(),
+                    value: 5.0,
+                }],
+            )
+            .unwrap();
+        let error = service
+            .set_player_stat(player.id.as_str(), "focus", 5.0)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                lr_application::AppError::RuleExecution(
+                    lr_application::RuleExecutionError::LoopDetected(_, _)
+                )
+            ),
+            "unexpected rule guard: {error:?}"
+        );
+        assert!(store.list_player_stats(&player.id).unwrap().is_empty());
+        assert!(service
+            .list_rule_executions(100)
+            .unwrap()
+            .iter()
+            .any(|r| r.status == "guard_aborted"));
     }
     #[test]
     fn persists_the_world_and_keeps_history_atomic() {

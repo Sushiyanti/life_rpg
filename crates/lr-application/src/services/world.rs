@@ -1,7 +1,10 @@
 //! Phase 2 world use cases. This layer orchestrates domain values through ports;
 //! it never imports SQLite, SQL, Tauri, or frontend types.
 
-use crate::{AppError, Clock, WorldStore};
+use crate::{
+    AppError, Clock, EventKind, Rule, RuleAction, RuleCondition, RuleEvent, RuleExecutionRecord,
+    RuleOperation, WorldStore,
+};
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
     Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
@@ -80,6 +83,86 @@ where
     pub fn get_player(&self, id: &str) -> Result<Option<Player>, AppError> {
         Ok(self.store.get_player(&EntityId::new(id)?)?)
     }
+    fn execute_rule_events(
+        &self,
+        events: Vec<RuleEvent>,
+        operations: Vec<RuleOperation>,
+        now: Iso8601Timestamp,
+    ) -> Result<Vec<RuleOperation>, AppError> {
+        let chain_id = self.new_id("rule-chain")?.to_string();
+        crate::services::rule_engine::execute(
+            &self.store,
+            events,
+            operations,
+            chain_id,
+            now,
+            || self.new_id("rule-exec").map(|id| id.to_string()),
+        )
+    }
+    pub fn create_rule(
+        &self,
+        name: &str,
+        description: Option<String>,
+        priority: i32,
+        trigger: EventKind,
+        condition: RuleCondition,
+        actions: Vec<RuleAction>,
+    ) -> Result<Rule, AppError> {
+        let now = self.now()?;
+        let rule = Rule::new(
+            self.new_id("rule")?,
+            name,
+            description,
+            priority,
+            trigger,
+            condition,
+            actions,
+            now,
+        )?;
+        self.store.create_rule(&rule)?;
+        Ok(rule)
+    }
+    pub fn create_rule_definition(
+        &self,
+        name: &str,
+        description: Option<String>,
+        priority: i32,
+        definition: crate::RuleDefinition,
+    ) -> Result<Rule, AppError> {
+        definition.validate()?;
+        let now = self.now()?;
+        let mut rule = Rule::new(
+            self.new_id("rule")?,
+            name,
+            description,
+            priority,
+            definition.trigger,
+            definition.condition.clone(),
+            definition.actions.clone(),
+            now.clone(),
+        )?;
+        rule.definition = definition;
+        rule.updated_at = now;
+        self.store.create_rule(&rule)?;
+        Ok(rule)
+    }
+    pub fn list_rules(&self) -> Result<Vec<Rule>, AppError> {
+        Ok(self.store.list_rules()?)
+    }
+    pub fn set_rule_enabled(&self, rule_id: &str, enabled: bool) -> Result<Rule, AppError> {
+        let id = EntityId::new(rule_id)?;
+        let mut rule = self
+            .store
+            .get_rule(&id)?
+            .ok_or_else(|| AppError::Internal("rule not found".into()))?;
+        rule.enabled = enabled;
+        rule.updated_at = self.now()?;
+        self.store.update_rule(&rule)?;
+        Ok(rule)
+    }
+    pub fn list_rule_executions(&self, limit: u32) -> Result<Vec<RuleExecutionRecord>, AppError> {
+        Ok(self.store.list_rule_executions(limit.min(1000))?)
+    }
     pub fn award_xp(
         &self,
         player_id: &str,
@@ -99,7 +182,46 @@ where
         )?;
         tx.reason = reason;
         tx.description = description;
-        let transaction = self.store.award_xp(&player, &tx)?;
+        let event = RuleEvent::PlayerXpChanged {
+            player_id: player.id.to_string(),
+            previous_xp: prior_xp,
+            current_xp: player.current_xp,
+            requested_amount: amount,
+            applied_amount: player.current_xp - prior_xp,
+            player_level: player.level,
+        };
+        let stored = self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::PlayerXp {
+                player: player.clone(),
+                previous_xp: prior_xp,
+                transaction: tx,
+            }],
+            player.updated_at.clone(),
+        )?;
+        let transaction = stored
+            .iter()
+            .find_map(|op| {
+                if let RuleOperation::PlayerXp { transaction, .. } = op {
+                    Some(transaction.clone())
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| AppError::Internal("root XP event was not persisted".into()))?;
+        if let Some(final_player) = stored.iter().rev().find_map(|op| {
+            if let RuleOperation::PlayerXp { player, .. } = op {
+                if player.id == transaction.player_id {
+                    Some(player.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }) {
+            player = final_player;
+        }
         Ok(AwardXpOutcome {
             player,
             transaction,
@@ -154,9 +276,17 @@ where
             .get_quest(&id)?
             .ok_or_else(|| AppError::Internal("quest not found".into()))?;
         let now = self.now()?;
+        let expected_status = q.status;
         q.complete(now.clone())?;
-        if q.xp_reward == 0 {
-            self.store.complete_quest(&q, None, None)?;
+        let mut source_events = vec![RuleEvent::QuestCompleted {
+            player_id: q.player_id.to_string(),
+            quest_id: q.id.to_string(),
+            quest_type: q.quest_type.code.clone(),
+            progress: q.progress,
+            xp_reward: q.xp_reward,
+        }];
+        let reward = if q.xp_reward == 0 {
+            None
         } else {
             let mut p = self.required_player(q.player_id.as_str())?;
             let prior_xp = p.current_xp;
@@ -165,14 +295,44 @@ where
                 p.id.clone(),
                 q.xp_reward,
                 p.current_xp - prior_xp,
-                now,
+                now.clone(),
             )?;
             reward.reason = Some("quest_reward".into());
             reward.source_kind = Some("quest".into());
             reward.source_id = Some(q.id.to_string());
-            self.store.complete_quest(&q, Some(&p), Some(&reward))?;
+            source_events.push(RuleEvent::PlayerXpChanged {
+                player_id: p.id.to_string(),
+                previous_xp: prior_xp,
+                current_xp: p.current_xp,
+                requested_amount: q.xp_reward,
+                applied_amount: p.current_xp - prior_xp,
+                player_level: p.level,
+            });
+            Some((p, reward))
         };
-        Ok(q)
+        let stored = self.execute_rule_events(
+            source_events,
+            vec![RuleOperation::CompleteQuest {
+                quest: q.clone(),
+                expected_status,
+                reward,
+            }],
+            now,
+        )?;
+        stored
+            .iter()
+            .find_map(|op| {
+                if let RuleOperation::CompleteQuest { quest, .. } = op {
+                    if quest.id == q.id {
+                        Some(quest.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| AppError::Internal("root Quest completion was not persisted".into()))
     }
     pub fn create_skill_tree(
         &self,
@@ -344,9 +504,42 @@ where
                     format!("no definition for `{stat_code}`"),
                 ))
             })?;
-        let stat = PlayerStat::new(player.id, &definition, value, self.now()?)?;
-        self.store.set_player_stat(&stat)?;
-        Ok(stat)
+        let previous = self
+            .store
+            .list_player_stats(&player.id)?
+            .into_iter()
+            .find(|s| s.stat_code == stat_code);
+        let now = self.now()?;
+        let stat = PlayerStat::new(player.id.clone(), &definition, value, now.clone())?;
+        let event = RuleEvent::StatChanged {
+            player_id: player.id.to_string(),
+            stat_code: stat_code.to_owned(),
+            previous_value: previous.as_ref().map(|s| s.current_value),
+            current_value: value,
+        };
+        let stored = self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::PlayerStat {
+                stat: stat.clone(),
+                expected_previous: previous.map(|s| s.current_value),
+            }],
+            now,
+        )?;
+        stored
+            .iter()
+            .rev()
+            .find_map(|op| {
+                if let RuleOperation::PlayerStat { stat, .. } = op {
+                    if stat.player_id == player.id && stat.stat_code == stat_code {
+                        Some(stat.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .ok_or_else(|| AppError::Internal("root stat change was not persisted".into()))
     }
     pub fn deactivate_effect(&self, effect_id: &str) -> Result<Effect, AppError> {
         let now = self.now()?;
@@ -415,7 +608,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{StorageError, WorldStore};
+    use crate::{RuleOperation, StorageError, WorldStore};
     use std::sync::Mutex;
     struct Clock;
     impl crate::Clock for Clock {
@@ -441,6 +634,32 @@ mod tests {
         }
     }
     impl WorldStore for Memory {
+        fn apply_rule_chain(
+            &self,
+            operations: &[RuleOperation],
+            _: &[RuleExecutionRecord],
+        ) -> Result<Vec<RuleOperation>, StorageError> {
+            for operation in operations {
+                match operation {
+                    RuleOperation::PlayerXp {
+                        player,
+                        transaction,
+                        ..
+                    } => {
+                        self.award_xp(player, transaction)?;
+                    }
+                    RuleOperation::CompleteQuest { quest, reward, .. } => {
+                        let (player, tx) = reward
+                            .as_ref()
+                            .map(|(p, t)| (Some(p), Some(t)))
+                            .unwrap_or((None, None));
+                        self.complete_quest(quest, player, tx)?;
+                    }
+                    RuleOperation::PlayerStat { .. } => {}
+                }
+            }
+            Ok(operations.to_vec())
+        }
         fn list_type_definitions(
             &self,
             _: Option<&str>,

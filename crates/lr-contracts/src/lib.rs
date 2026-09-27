@@ -387,6 +387,38 @@ mod tests {
     }
 
     #[test]
+    fn phase3_rule_contract_uses_closed_tagged_variants_and_camel_case_fields() {
+        use lr_application::{
+            Comparison, EventKind, NumericSubject, RuleAction, RuleCondition, RuleDefinition,
+        };
+        let definition = RuleDefinition {
+            schema_version: 1,
+            trigger: EventKind::StatChanged,
+            condition: RuleCondition::NumberCompare {
+                subject: NumericSubject::StatValue,
+                comparison: Comparison::GreaterOrEqual,
+                value: 5.0,
+            },
+            actions: vec![RuleAction::SetPlayerStat {
+                stat_code: "focus".into(),
+                value: 7.0,
+            }],
+        };
+        let json = serde_json::to_value(&definition).unwrap();
+        assert_eq!(json["schemaVersion"], 1);
+        assert_eq!(json["trigger"], "stat_changed");
+        assert_eq!(json["condition"]["op"], "number_compare");
+        assert_eq!(json["condition"]["subject"], "stat_value");
+        assert_eq!(json["actions"][0]["kind"], "set_player_stat");
+        assert_eq!(json["actions"][0]["statCode"], "focus");
+        assert!(json["actions"][0].get("stat_code").is_none());
+        let round_trip: RuleDefinition = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(round_trip, definition);
+        let unknown = serde_json::json!({"schemaVersion":1,"trigger":"stat_changed","condition":{"op":"run_code","source":"x"},"actions":[{"kind":"set_player_stat","statCode":"focus","value":5}]});
+        assert!(serde_json::from_value::<RuleDefinition>(unknown).is_err());
+    }
+
+    #[test]
     fn app_error_maps_to_a_stable_code() {
         let err = lr_application::AppError::Storage(lr_application::StorageError::Unreachable(
             "gone".into(),

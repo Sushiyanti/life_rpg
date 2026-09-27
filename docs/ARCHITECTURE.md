@@ -5,7 +5,8 @@ describes how to use it; this describes the reasoning, the boundaries, and the
 decisions that will matter in later phases.
 
 For the product-specific vocabulary and current invariants, see the [Domain
-Design Codex](DOMAIN-DESIGN-CODEX.md) and [Phase 2.1 report](PHASE-2.1-REPORT.md).
+Design Codex](DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](PHASE-2.1-REPORT.md),
+and [Phase 3 report](PHASE-3-REPORT.md).
 
 ---
 
@@ -19,7 +20,7 @@ allowed to answer it:
 | 1 | **Domain** | What exists in the world? | `crates/lr-domain` — value objects, error vocabulary |
 | 2 | **State** | What condition is it in? | *(Phase 2)* — cached fields on aggregates |
 | 3 | **History** | What happened in the past? | *(Phase 2)* — append-only ledger; Phase 1 shows the pattern via `health_probe` |
-| 4 | **Rules** | How does the world change? | *(Phase 3)* — condition/trigger/action |
+| 4 | **Rules** | How does the world change? | `lr-application` — closed declarative event/condition/action interpreter |
 | 5 | **Application** | What commands/queries operate on the world? | `crates/lr-application` — ports + `HealthService` |
 | 6 | **Presentation** | How should a thing look? | `src/presentation/spec.ts` — controlled style schema |
 | 7 | **UI state / Workspace** | How does the user want the interface arranged? | *(Phase 4)* |
@@ -156,9 +157,8 @@ pub fn bootstrap(app_data_dir: &Path, now: &str) -> AppState {
 }
 ```
 
-Commands are three-line adapters: take `State`, call one use case, convert to a
-DTO. If a command grows an `if` that encodes a game rule, that rule is in the
-wrong layer.
+Commands are thin adapters: take `State`, call one use case, convert to a DTO. If
+a command grows an `if` that encodes a game rule, that rule is in the wrong layer.
 
 ### Contract → Application (one-way)
 
@@ -203,6 +203,8 @@ Tests are placed where a regression would be *invisible*:
 | Contract drift | `crates/lr-contracts/src/lib.rs` | The exact JSON key set the TypeScript mirror depends on |
 | IPC boundary | `src/test/ipc.test.ts` | Command names match the Rust registrations; every failure normalizes to one shape |
 | Presentation interpreter | `src/test/presentation-spec.test.ts` | Tokens map to closed values; nothing outside the token set can be emitted |
+| Rule interpreter + SQLite seam | `crates/lr-application/src/rules.rs`, `services/rule_engine.rs`, `crates/lr-persistence/src/world_store.rs` | Closed variants, deterministic ordering, multi-event chaining, bounds, loop guards, rollback, and durable audit |
+| Rule IPC/UI | `crates/lr-contracts`, `src/test/world-ipc.test.ts`, `RulePanel.tsx` | CamelCase DTO parity and typed command payloads |
 | Status screen | `src/test/StatusScreen.test.tsx` | Loading, healthy, pending migration, failed, unreachable — all render |
 
 Two of these are worth singling out.
@@ -237,14 +239,38 @@ blocking on a question. These were chosen during Phase 1:
 
 ---
 
-## 6. Roadmap
+## 6. Phase 3 declarative rule execution
+
+### Vocabulary and trigger semantics
+
+The event is the trusted trigger source, distinct from a scheduled/state-only query. Version 1 emits `quest_completed`, `player_xp_changed`, and `stat_changed`; each Rust event variant has structured semantic fields. The event is serialized only for audit. A Rule definition has a schema version (currently 1), event-kind trigger, typed condition tree, and ordered closed action list. No rule column or payload is interpreted as executable code.
+
+Conditions support event-kind matching, numeric/text comparisons, `ALL`, `ANY`, and `NOT`. Numeric subjects are selected from event fields; asking an event for a subject it does not carry returns no match. This version does not query arbitrary current entity state or schedule evaluations. Actions support XP award/removal, valid Quest completion, and setting/modifying a data-defined Player Stat. The domain constructors/transitions validate XP floor, Quest lifecycle, finite stat values, and configured stat bounds. Other action families remain deferred until their behavior is designed.
+
+### Ordering and atomicity
+
+For a given event, enabled rules are ordered by priority descending, then stable Rule ID ascending. Rules are evaluated in that order. Ordered actions append follow-on typed events, processed FIFO after the current event's rule set. Iteration does not depend on SQL row order, frontend ordering, map iteration, or randomness. IDs/timestamps are supplied by application services, with event source order retained.
+
+The evaluator plans root and derived changes using validated domain values (`Player::apply_xp`, `Quest::complete`, `PlayerStat::new`). It sends typed `RuleOperation`s and successful/condition-failed audit records through `WorldStore::apply_rule_chain`. The SQLite adapter rechecks expected prior state and ownership, inserts related XP Transactions, applies all Player/Quest/Stat state, and appends audit records in one transaction. Failure in a later action therefore commits none of the initiating state change or earlier planned actions. When the batch itself fails, the adapter transaction rolls back; the application attempts a separate failure-audit insert. No SQL or game-rule branches are placed in Tauri commands or React.
+
+The execution audit is debugging history, not a replacement for Transactions or daily snapshots. It records Rule ID, chain ID, typed event kind/payload, condition result, configured actions, status/error, depth, and time; SQLite rejects updates/deletes to those rows.
+
+### Safety boundaries and known omissions
+
+Conditions are nested at most 8 levels, each logical group has at most 16 children and the full tree at most 128 nodes; a Rule has at most 16 actions, a chain at most 32 actions and 64 evaluations, and maximum accepted chain depth is 8. The evaluator also rejects a repeated `(Rule ID, canonical event payload)` pair. A guard abort records its reason and leaves root/domain writes unapplied. These limits also bound malformed or accidental trigger cycles.
+
+There is no evaluator for arbitrary expressions, no script/action plug-in mechanism, no scheduler/daemon, and no distributed event bus. Conditions read only the typed event payload, not arbitrary live entity state. No skill XP/unlock, Effect activation, start/abandon/fail Quest action, or narrative action is exposed yet. Those omissions are deliberate; Phase 4 is not started by this milestone.
+
+---
+
+## 7. Roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
 | **1** | Foundation: workspace, shell, SQLite, migrations, layering, health screen, tests | **complete** |
 | **2** | Persistent world aggregates, type vocabulary, transactions and snapshots | **complete** |
 | **2.1** | Canonical daily state history, dynamic stats, XP policy, lifecycle and hierarchy hardening | **complete in `phase-2.1`** |
-| 3 | Rules engine: condition → trigger → action; reusable penalties | planned, not started |
+| **3** | Typed, declarative event/condition/action engine, bounded chains, rule audit and atomic SQLite execution | **complete in `phase-3`** |
 | 4 | Dynamic presentation: stored presentation records, UI-state persistence, workspace layout | planned |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |

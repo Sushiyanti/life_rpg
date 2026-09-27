@@ -6,12 +6,12 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 2.1 — Persistent core domain, history, and integrity.** Player
-> and Skill daily snapshots preserve canonical state; player stats are data-defined;
-> XP policy, Effect lifecycle, and ownership/hierarchy constraints are explicit.
-> The application remains local-first: typed Tauri IPC connects React to the Rust
-> core, while SQLite stays private to the persistence layer. See the [Domain Design
-> Codex](docs/DOMAIN-DESIGN-CODEX.md) and [Phase 2.1 report](docs/PHASE-2.1-REPORT.md).
+> **Status: Phase 3 — Declarative rules.** The local-first world now supports a
+> versioned, closed event/condition/action vocabulary, bounded deterministic rule
+> chains, atomic SQLite application, and append-only execution audit history. No
+> database-stored source code is executed. See the [Domain Design
+> Codex](docs/DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
+> and [Phase 3 report](docs/PHASE-3-REPORT.md).
 
 ---
 
@@ -41,7 +41,7 @@ exactly one layer is allowed to answer it:
 | **Domain** | What exists in the world? | `crates/lr-domain` |
 | **State** | What condition is it in? | *(Phase 2 — cached fields on aggregates)* |
 | **History** | What happened in the past? | *(Phase 2 — transaction ledger, snapshots)* |
-| **Rules** | How does the world change? | *(Phase 3 — conditions/triggers/actions)* |
+| **Rules** | How does the world change? | `lr-application` — closed declarative conditions, event triggers, and actions |
 | **Application** | What commands/queries operate on the world? | `crates/lr-application` |
 | **Persistence** | How is everything saved? | `crates/lr-persistence` |
 | **Presentation** | How should a thing look? | `src/presentation` |
@@ -72,6 +72,21 @@ convention:
 
 `lr-domain` has no `rusqlite` and no `tauri` in its dependency list — so
 `cargo test -p lr-domain` compiles and runs with zero infrastructure.
+
+### Phase 3 rule flow
+
+```text
+typed domain event → enabled rules (priority DESC, Rule ID ASC)
+  → typed condition evaluation → ordered action planning
+  → domain invariant checks → bounded FIFO follow-on events
+  → one application-port transaction for root changes + XP ledger + audit
+```
+
+The first event set is `quest_completed`, `player_xp_changed`, and `stat_changed`.
+Version 1 conditions are explicit numeric/text comparisons and `ALL`/`ANY`/`NOT`;
+actions are XP award/penalty, valid Quest completion, and bounded Player Stat set/
+modify. Rules are data only—there is no expression parser, `eval`, scripting, or
+scheduler. Chain limits and exact supported fields are documented in the [Codex](docs/DOMAIN-DESIGN-CODEX.md).
 
 ---
 
@@ -108,32 +123,40 @@ life-rpg/
 ├─ crates/
 │  ├─ lr-domain/                  # DOMAIN — what exists in the world
 │  │  └─ src/
-│  │     ├─ lib.rs                #   layer contract + roadmap table
-│  │     ├─ error.rs              #   rule-violation vocabulary
-│  │     └─ value.rs              #   EntityId, SchemaVersion, Iso8601Timestamp
+│  │     ├─ lib.rs                #   domain exports
+│  │     ├─ error.rs              #   domain-violation vocabulary
+│  │     ├─ value.rs              #   validated identity/date/time/version values
+│  │     ├─ player.rs             #   Player progression and XP floor
+│  │     ├─ quest.rs / skill.rs   #   current Quest and Skill lifecycles
+│  │     └─ stat.rs               #   data-defined Player Stat values
 │  │
 │  ├─ lr-application/             # APPLICATION — use cases + ports
 │  │  └─ src/
 │  │     ├─ lib.rs
-│  │     ├─ error.rs              #   StorageError (port) / AppError (command)
-│  │     ├─ ports.rs              #   HealthStore, Clock — traits, no SQL
+│  │     ├─ error.rs              #   storage, domain, and rule-chain errors
+│  │     ├─ ports.rs              #   HealthStore, WorldStore, Clock — no SQL
+│  │     ├─ rules.rs              #   versioned event/condition/action data model
 │  │     └─ services/
-│  │        └─ health.rs          #   HealthService + 7 unit tests
+│  │        ├─ health.rs          #   operational health use case
+│  │        ├─ world.rs           #   Player/world use cases
+│  │        └─ rule_engine.rs     #   trusted, bounded deterministic interpreter
 │  │
 │  ├─ lr-persistence/             # PERSISTENCE — the only SQLite-aware crate
 │  │  └─ src/
 │  │     ├─ lib.rs
 │  │     ├─ error.rs             #   PersistenceError -> StorageError translation
 │  │     ├─ pragma.rs            #   WAL / foreign_keys / synchronous / busy_timeout
-│  │     ├─ migrations.rs        #   versioned runner + ledger + 8 tests
-│  │     ├─ sqlite_store.rs      #   SqliteHealthStore + 7 tests
+│  │     ├─ migrations.rs        #   schema versions 1–6 + upgrade tests
+│  │     ├─ sqlite_store.rs      #   health/connection adapter
+│  │     ├─ world_store.rs       #   atomic world/rule persistence + tests
 │  │     └─ migrations/
-│  │        ├─ 0001_core_ledger.sql
-│  │        ├─ 0002_health_probe.sql
-│  │        └─ 0003_type_definition_registry.sql
+│  │        ├─ 0001_core_ledger.sql … 0003_type_definition_registry.sql
+│  │        ├─ 0004_phase2_domain.sql
+│  │        ├─ 0005_phase21_integrity.sql
+│  │        └─ 0006_phase3_rules.sql
 │  │
 │  └─ lr-contracts/               # IPC BOUNDARY — DTOs shared with the frontend
-│     └─ src/lib.rs               #   + contract-drift test pinning JSON keys
+│     └─ src/world.rs             #   world and Rule DTOs; lib.rs pins wire contracts
 │
 ├─ src-tauri/                     # DESKTOP SHELL — the composition root
 │  ├─ Cargo.toml
@@ -142,15 +165,16 @@ life-rpg/
 │  ├─ capabilities/default.json   # Phase 1 permissions: core:default only
 │  └─ src/
 │     ├─ main.rs                  # thin entry point
-│     ├─ lib.rs                   # bootstrap + run() + 5 tests
+│     ├─ lib.rs                   # bootstrap + invoke-handler registration
 │     ├─ state.rs                 # AppState (DI container)
 │     └─ commands/
 │        ├─ mod.rs
-│        └─ status.rs             # get_status / get_world_location / ping
+│        ├─ status.rs             # health/location/liveness adapters
+│        └─ world.rs              # thin world and Rule command adapters
 │
 ├─ src/                           # FRONTEND (React + TS)
 │  ├─ main.tsx                    # entry: imports tokens.css then global.css
-│  ├─ App.tsx                     # renders one screen: the status screen
+│  ├─ App.tsx                     # composes status, world, and Rules surfaces
 │  ├─ app/
 │  │  ├─ AppShell.tsx             # outer chrome (title band + content slot)
 │  │  └─ AppShell.css
@@ -160,16 +184,19 @@ life-rpg/
 │  ├─ presentation/
 │  │  └─ spec.ts                  # controlled style schema + its interpreter
 │  ├─ features/status/
-│  │  ├─ StatusScreen.tsx         # the Phase 1 screen
+│  │  ├─ StatusScreen.tsx         # storage/core health
 │  │  ├─ StatusScreen.css
 │  │  ├─ StatusPill.tsx
 │  │  ├─ InfoCard.tsx
 │  │  ├─ MigrationLedger.tsx
 │  │  └─ useHealthReport.ts       # use-case hook (loading/error/refresh)
+│  ├─ features/world/
+│  │  ├─ WorldPanel.tsx           # small persistent Player proof surface
+│  │  └─ RulePanel.tsx            # typed Rule authoring and audit view
 │  ├─ styles/
 │  │  ├─ tokens.css               # design tokens (the only place colors exist)
 │  │  └─ global.css
-│  └─ test/                       # setup, fixtures, 3 test suites
+│  └─ test/                       # Rust/IPC/UI regression coverage
 │
 ├─ scripts/gen_icons.py           # regenerates src-tauri/icons (stdlib only)
 └─ docs/
