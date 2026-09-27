@@ -1,10 +1,63 @@
 //! Serializable IPC mirrors for Phase 3.6 world semantics.
 use lr_application::{SearchHit, SearchQuery};
 use lr_domain::{
-    ConceptAssociation, ContentAttachment, EntityRevision, LifecycleState, PresentationPreference,
-    ProgressSuggestion, QuestBranch, QuestSession, QuestStage, Workspace, WorkspacePanel,
+    ConceptAssociation, ContentAttachment, EffectHistoryEntry, EntityRevision, LifecycleState,
+    PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession, QuestStage,
+    SessionEffect, Workspace, WorkspacePanel,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectHistoryDto {
+    pub id: String,
+    pub player_id: String,
+    pub effect_id: String,
+    pub session_id: Option<String>,
+    pub event_kind: String,
+    pub recorded_at: String,
+    pub previous_state_json: Option<String>,
+    pub current_state_json: String,
+}
+impl From<EffectHistoryEntry> for EffectHistoryDto {
+    fn from(value: EffectHistoryEntry) -> Self {
+        Self {
+            id: value.id.to_string(),
+            player_id: value.player_id.to_string(),
+            effect_id: value.effect_id.to_string(),
+            session_id: value.session_id.map(|id| id.to_string()),
+            event_kind: value.kind.as_str().into(),
+            recorded_at: value.recorded_at.to_string(),
+            previous_state_json: value.previous_state_json,
+            current_state_json: value.current_state_json,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionEffectDto {
+    pub id: String,
+    pub player_id: String,
+    pub session_id: String,
+    pub effect_id: String,
+    pub role: String,
+    pub added_at: String,
+    pub removed_at: Option<String>,
+}
+impl From<SessionEffect> for SessionEffectDto {
+    fn from(value: SessionEffect) -> Self {
+        Self {
+            id: value.id.to_string(),
+            player_id: value.player_id.to_string(),
+            session_id: value.session_id.to_string(),
+            effect_id: value.effect_id.to_string(),
+            role: value.role.as_str().into(),
+            added_at: value.added_at.to_string(),
+            removed_at: value.removed_at.map(|at| at.to_string()),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

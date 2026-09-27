@@ -33,7 +33,7 @@ export const WORKSPACE_TEMPLATES: WorkspaceTemplateDefinition[] = [
     p('journal','Recent notes',{variant:'compact',filterRecentDays:7,sortBy:'created_desc'}),
   ]},
   {id:'learning',name:'Learning',description:'Bring practice, subjects, and learning notes together.',panels:[
-    p('skills','Skills in practice',{variant:'tree',filterActive:true,sortBy:'level_desc',isPinned:true}),
+    p('skills','Skills tracked',{variant:'tree',filterActive:true,sortBy:'level_desc',isPinned:true}),
     p('concepts','Subjects & concepts',{variant:'cards',filterActive:true,sortBy:'name_asc',isPinned:true}),
     p('progress','Concept progress',{variant:'metrics',filterActive:true,sortBy:'progress_desc'}),
     p('quests','Open learning objectives',{variant:'rows',filterStatus:'active',sortBy:'updated_desc'}),

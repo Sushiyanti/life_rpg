@@ -21,7 +21,7 @@ export function AppShell({children,route,onNavigate,player,players,onPlayerChang
         <div className="app-topbar__actions">{players.length>0&&<label className="world-switch"><span>Active world</span><select aria-label="Active player world" value={player?.id??''} onChange={e=>onPlayerChange(e.target.value)}>{players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}{(route==='dashboard'||route==='player')&&player&&workspaces.length>0&&<label className="world-switch"><span>Workspace</span><select aria-label="Active workspace" value={workspace?.id??''} onChange={e=>onWorkspaceChange(e.target.value)}>{workspaces.map(w=><option key={w.id} value={w.id}>{w.name}</option>)}</select></label>}{player&&<div className="top-player"><span className="avatar">{player.name.slice(0,1).toUpperCase()}</span><div><strong>{player.name}</strong><small>Level {player.level}{player.levelName?` · ${player.levelName}`:''}</small></div></div>}{player&&<button className="button button--quiet button--compact" onClick={onQuickCapture} aria-label="Quick capture">✎ Capture</button>}<button className="button button--primary button--compact" onClick={onCreate} disabled={!player} aria-label="Create new item">＋ New</button></div>
       </header>
       <main className="app-shell__content" key={route}>{children}</main>
-      <footer className="app-footer"><span>Life RPG <b>3.6 · world semantics</b></span><span>Progress is player-authored · history stays recoverable</span></footer>
+      <footer className="app-footer"><span>Life RPG</span><span>Progress is player-authored · history stays recoverable</span></footer>
     </div>
   </div>;
 }

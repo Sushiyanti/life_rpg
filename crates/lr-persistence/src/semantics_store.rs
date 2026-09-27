@@ -2,7 +2,7 @@
 use crate::sqlite_store::SqliteHealthStore;
 use lr_application::{SemanticsStore, StorageError};
 use lr_domain::*;
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, OptionalExtension, Row, Transaction};
 fn op(e: impl std::fmt::Display) -> StorageError {
     StorageError::Operation(e.to_string())
 }
@@ -76,6 +76,71 @@ fn session(r: &Row<'_>) -> Result<QuestSession, StorageError> {
 const STAGE_SQL:&str="id,player_id,quest_id,title,description,story,instructions,status,sort_order,is_active,metadata_json,created_at,updated_at";
 const BRANCH_SQL:&str="id,player_id,quest_id,stage_id,title,description,status,sort_order,is_active,metadata_json,created_at,updated_at";
 const SESSION_SQL:&str="id,player_id,quest_id,stage_id,branch_id,skill_id,concept_id,started_at,ended_at,status,progress_before,progress_after,result,notes,is_active,metadata_json,created_at,updated_at";
+fn effect_history(r: &Row<'_>) -> Result<EffectHistoryEntry, StorageError> {
+    Ok(EffectHistoryEntry {
+        id: eid(r.get(0).map_err(op)?)?,
+        player_id: eid(r.get(1).map_err(op)?)?,
+        effect_id: eid(r.get(2).map_err(op)?)?,
+        session_id: opt_id(r.get(3).map_err(op)?)?,
+        kind: EffectHistoryKind::parse(&r.get::<_, String>(4).map_err(op)?).map_err(op)?,
+        recorded_at: ts(r.get(5).map_err(op)?)?,
+        previous_state_json: r.get(6).map_err(op)?,
+        current_state_json: r.get(7).map_err(op)?,
+    })
+}
+fn session_effect(r: &Row<'_>) -> Result<SessionEffect, StorageError> {
+    Ok(SessionEffect {
+        id: eid(r.get(0).map_err(op)?)?,
+        player_id: eid(r.get(1).map_err(op)?)?,
+        session_id: eid(r.get(2).map_err(op)?)?,
+        effect_id: eid(r.get(3).map_err(op)?)?,
+        role: SessionEffectRole::parse(&r.get::<_, String>(4).map_err(op)?).map_err(op)?,
+        added_at: ts(r.get(5).map_err(op)?)?,
+        removed_at: opt_ts(r.get(6).map_err(op)?)?,
+    })
+}
+fn insert_history(tx: &Transaction<'_>, value: &EffectHistoryEntry) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO effect_history(id,player_id,effect_id,session_id,event_kind,recorded_at,previous_state_json,current_state_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![value.id.as_str(), value.player_id.as_str(), value.effect_id.as_str(), value.session_id.as_ref().map(EntityId::as_str), value.kind.as_str(), value.recorded_at.as_str(), value.previous_state_json, value.current_state_json],
+    ).map_err(op)?;
+    Ok(())
+}
+fn insert_session_effect(tx: &Transaction<'_>, value: &SessionEffect) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO session_effects(id,player_id,session_id,effect_id,role,added_at,removed_at) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(session_id,effect_id,role) DO UPDATE SET id=excluded.id,player_id=excluded.player_id,added_at=excluded.added_at,removed_at=NULL",
+        params![value.id.as_str(), value.player_id.as_str(), value.session_id.as_str(), value.effect_id.as_str(), value.role.as_str(), value.added_at.as_str(), value.removed_at.as_ref().map(Iso8601Timestamp::as_str)],
+    ).map_err(op)?;
+    Ok(())
+}
+fn insert_effect(tx: &Transaction<'_>, value: &Effect) -> Result<(), StorageError> {
+    let target_kind = if value.target_concept_id.is_some() {
+        "concept"
+    } else {
+        "player"
+    };
+    tx.execute(
+        "INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",
+        params![value.id.as_str(), value.player_id.as_str(), value.effect_type.namespace, value.effect_type.code, value.name, value.description, value.started_at.as_str(), value.expires_at.as_ref().map(Iso8601Timestamp::as_str), value.deactivated_at.as_ref().map(Iso8601Timestamp::as_str), value.intensity, value.source_kind, value.source_id, value.metadata_json, value.created_at.as_str(), value.updated_at.as_str(), target_kind, value.target_concept_id.as_ref().map(EntityId::as_str)],
+    ).map_err(op)?;
+    Ok(())
+}
+fn update_effect(tx: &Transaction<'_>, value: &Effect) -> Result<(), StorageError> {
+    let target_kind = if value.target_concept_id.is_some() {
+        "concept"
+    } else {
+        "player"
+    };
+    let changed = tx.execute(
+        "UPDATE effects SET effect_type_namespace=?2,effect_type_code=?3,name=?4,description=?5,started_at=?6,expires_at=?7,deactivated_at=?8,intensity=?9,source_kind=?10,source_id=?11,metadata_json=?12,updated_at=?13,target_kind=?14,target_concept_id=?15 WHERE id=?1 AND player_id=?16",
+        params![value.id.as_str(), value.effect_type.namespace, value.effect_type.code, value.name, value.description, value.started_at.as_str(), value.expires_at.as_ref().map(Iso8601Timestamp::as_str), value.deactivated_at.as_ref().map(Iso8601Timestamp::as_str), value.intensity, value.source_kind, value.source_id, value.metadata_json, value.updated_at.as_str(), target_kind, value.target_concept_id.as_ref().map(EntityId::as_str), value.player_id.as_str()],
+    ).map_err(op)?;
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(op("Effect not found in Player world"))
+    }
+}
 fn attachment(r: &Row<'_>) -> Result<ContentAttachment, StorageError> {
     Ok(ContentAttachment {
         content_id: eid(r.get(0).map_err(op)?)?,
@@ -196,6 +261,17 @@ impl SemanticsStore for SqliteHealthStore {
             Ok(out)
         })
     }
+    fn get_branch(&self, id: &EntityId) -> Result<Option<QuestBranch>, StorageError> {
+        self.with_conn(|d| {
+            let sql = format!("SELECT {BRANCH_SQL} FROM quest_branches WHERE id=?1");
+            let mut stmt = d.prepare(&sql).map_err(op)?;
+            let mut rows = stmt.query([id.as_str()]).map_err(op)?;
+            match rows.next().map_err(op)? {
+                Some(row) => Ok(Some(branch(row)?)),
+                None => Ok(None),
+            }
+        })
+    }
     fn insert_session(&self, v: &QuestSession) -> Result<(), StorageError> {
         self.with_conn(|d|{d.execute("INSERT INTO quest_sessions(id,player_id,quest_id,stage_id,branch_id,skill_id,concept_id,started_at,ended_at,status,progress_before,progress_after,result,notes,is_active,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",params![v.id.as_str(),v.player_id.as_str(),v.quest_id.as_ref().map(EntityId::as_str),v.stage_id.as_ref().map(EntityId::as_str),v.branch_id.as_ref().map(EntityId::as_str),v.skill_id.as_ref().map(EntityId::as_str),v.concept_id.as_ref().map(EntityId::as_str),v.started_at.as_str(),v.ended_at.as_ref().map(Iso8601Timestamp::as_str),v.status.as_str(),v.progress_before,v.progress_after,v.result,v.notes,v.is_active as i64,v.metadata_json,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
     }
@@ -220,6 +296,113 @@ impl SemanticsStore for SqliteHealthStore {
         st: Option<&EntityId>,
     ) -> Result<Vec<QuestSession>, StorageError> {
         self.with_conn(|d|{let sql=format!("SELECT {SESSION_SQL} FROM quest_sessions WHERE player_id=?1 AND (?2 IS NULL OR quest_id=?2) AND (?3 IS NULL OR stage_id=?3) ORDER BY started_at,id");let mut s=d.prepare(&sql).map_err(op)?;let mut rows=s.query(params![p.as_str(),q.map(EntityId::as_str),st.map(EntityId::as_str)]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(session(r)?)}Ok(out)})
+    }
+    fn create_effect_with_history(
+        &self,
+        value: &Effect,
+        history: &[EffectHistoryEntry],
+        session_link: Option<&SessionEffect>,
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            insert_effect(&tx, value)?;
+            if let Some(link) = session_link {
+                insert_session_effect(&tx, link)?;
+            }
+            for event in history {
+                insert_history(&tx, event)?;
+            }
+            tx.commit().map_err(op)
+        })
+    }
+    fn update_effect_with_history(
+        &self,
+        value: &Effect,
+        history: &[EffectHistoryEntry],
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            update_effect(&tx, value)?;
+            for event in history {
+                insert_history(&tx, event)?;
+            }
+            tx.commit().map_err(op)
+        })
+    }
+    fn deactivate_effect_with_history(
+        &self,
+        value: &Effect,
+        history: &[EffectHistoryEntry],
+        session_link: Option<&SessionEffect>,
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            let changed = tx.execute(
+                "UPDATE effects SET deactivated_at=?2,updated_at=?2 WHERE id=?1 AND player_id=?3 AND deactivated_at IS NULL",
+                params![value.id.as_str(), value.deactivated_at.as_ref().map(Iso8601Timestamp::as_str), value.player_id.as_str()],
+            ).map_err(op)?;
+            if changed != 1 { return Err(op("Effect is missing or already manually deactivated")); }
+            if let Some(link) = session_link { insert_session_effect(&tx, link)?; }
+            for event in history { insert_history(&tx, event)?; }
+            tx.commit().map_err(op)
+        })
+    }
+    fn list_effect_history(
+        &self,
+        player_id: &EntityId,
+        effect_id: &EntityId,
+    ) -> Result<Vec<EffectHistoryEntry>, StorageError> {
+        self.with_conn(|db| {
+            let mut stmt = db.prepare("SELECT id,player_id,effect_id,session_id,event_kind,recorded_at,previous_state_json,current_state_json FROM effect_history WHERE player_id=?1 AND effect_id=?2 ORDER BY recorded_at,id").map_err(op)?;
+            let mut rows = stmt.query(params![player_id.as_str(), effect_id.as_str()]).map_err(op)?;
+            let mut values = Vec::new();
+            while let Some(row) = rows.next().map_err(op)? { values.push(effect_history(row)?); }
+            Ok(values)
+        })
+    }
+    fn link_effect_to_session(
+        &self,
+        link: &SessionEffect,
+        history: &EffectHistoryEntry,
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            insert_session_effect(&tx, link)?;
+            insert_history(&tx, history)?;
+            tx.commit().map_err(op)
+        })
+    }
+    fn unlink_effect_from_session(
+        &self,
+        player_id: &EntityId,
+        link_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+        history: &EffectHistoryEntry,
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            let changed = tx.execute(
+                "UPDATE session_effects SET removed_at=?3 WHERE id=?1 AND player_id=?2 AND removed_at IS NULL",
+                params![link_id.as_str(), player_id.as_str(), removed_at.as_str()],
+            ).map_err(op)?;
+            if changed != 1 { return Err(op("Session–Effect relationship is missing or already removed")); }
+            insert_history(&tx, history)?;
+            tx.commit().map_err(op)
+        })
+    }
+    fn list_session_effects(
+        &self,
+        player_id: &EntityId,
+        session_id: &EntityId,
+        include_removed: bool,
+    ) -> Result<Vec<SessionEffect>, StorageError> {
+        self.with_conn(|db| {
+            let mut stmt = db.prepare("SELECT id,player_id,session_id,effect_id,role,added_at,removed_at FROM session_effects WHERE player_id=?1 AND session_id=?2 AND (?3 OR removed_at IS NULL) ORDER BY added_at,id").map_err(op)?;
+            let mut rows = stmt.query(params![player_id.as_str(), session_id.as_str(), include_removed]).map_err(op)?;
+            let mut values = Vec::new();
+            while let Some(row) = rows.next().map_err(op)? { values.push(session_effect(row)?); }
+            Ok(values)
+        })
     }
     fn attach_content(&self, v: &ContentAttachment) -> Result<(), StorageError> {
         self.with_conn(|d|{d.execute("INSERT INTO content_attachments(content_id,player_id,target_kind,target_id,role_code,is_active,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8)ON CONFLICT(content_id,target_kind,target_id,role_code)DO UPDATE SET is_active=excluded.is_active,updated_at=excluded.updated_at",params![v.content_id.as_str(),v.player_id.as_str(),v.target_kind.as_str(),v.target_id.as_str(),v.role_code,v.is_active as i64,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
@@ -1511,5 +1694,260 @@ mod tests {
         let workspaces = semantics.list_workspaces(owner.id.as_str()).unwrap();
         assert_eq!(workspaces.len(), 1);
         assert_eq!(workspaces[0].id, created.id);
+    }
+
+    #[test]
+    fn effect_lifecycle_history_and_session_relationships_are_durable_and_player_scoped() {
+        use lr_application::EffectWrite;
+        use lr_domain::{SessionEffectRole, SessionStatus};
+
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("effect-lifecycle.sqlite3");
+        let store = Arc::new(SqliteHealthStore::open_file(&database_path, T0));
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store.clone(), Frozen);
+        let ada = world.create_player("Ada", None).unwrap();
+        let grace = world.create_player("Grace", None).unwrap();
+        let ada_quest = world
+            .create_quest(
+                ada.id.as_str(),
+                "main",
+                "Focus practice",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        let grace_quest = world
+            .create_quest(
+                grace.id.as_str(),
+                "main",
+                "Grace practice",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        let session = semantics
+            .start_session(
+                ada.id.as_str(),
+                Some(ada_quest.id.as_str()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let grace_session = semantics
+            .start_session(
+                grace.id.as_str(),
+                Some(grace_quest.id.as_str()),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let write = |name: &str, expires_at: Option<&str>| EffectWrite {
+            type_code: "buff".into(),
+            name: name.into(),
+            description: Some("A player-recorded state".into()),
+            target_concept_id: None,
+            intensity: 2,
+            started_at: None,
+            expires_at: expires_at.map(str::to_owned),
+        };
+
+        let indefinite = semantics
+            .create_effect(
+                ada.id.as_str(),
+                write("Focus", None),
+                Some(session.id.as_str()),
+            )
+            .unwrap();
+        assert_eq!(indefinite.expires_at, None);
+        assert_eq!(
+            store.list_effects(&ada.id, None).unwrap()[0].deactivated_at,
+            None,
+            "reading or saving an indefinite Effect must not synthesize deactivation"
+        );
+        let initial_history = semantics
+            .effect_history(ada.id.as_str(), indefinite.id.as_str())
+            .unwrap();
+        assert_eq!(initial_history.len(), 2);
+        assert_eq!(initial_history[0].kind.as_str(), "created");
+        assert_eq!(initial_history[1].kind.as_str(), "session_linked");
+        let created_link: serde_json::Value =
+            serde_json::from_str(initial_history[1].current_state_json.as_str()).unwrap();
+        assert_eq!(created_link["relationship"]["role"], "applied");
+        assert_eq!(
+            created_link["relationship"]["sessionId"],
+            session.id.as_str()
+        );
+
+        let relevant = semantics
+            .link_effect_to_session(
+                ada.id.as_str(),
+                session.id.as_str(),
+                indefinite.id.as_str(),
+                SessionEffectRole::Removed,
+            )
+            .unwrap();
+        let linked_history = semantics
+            .effect_history(ada.id.as_str(), indefinite.id.as_str())
+            .unwrap();
+        let link_event = linked_history.last().unwrap();
+        assert_eq!(link_event.kind.as_str(), "session_linked");
+        let link_snapshot: serde_json::Value =
+            serde_json::from_str(link_event.current_state_json.as_str()).unwrap();
+        assert_eq!(link_snapshot["relationship"]["role"], "removed");
+        assert_eq!(link_snapshot["relationship"]["id"], relevant.id.as_str());
+
+        semantics
+            .finish_session(
+                session.id.as_str(),
+                Some("2026-09-27T10:15:00Z"),
+                SessionStatus::Completed,
+                None,
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            semantics
+                .session_effects(ada.id.as_str(), session.id.as_str(), false)
+                .unwrap()
+                .len(),
+            2,
+            "finishing a Session must preserve its explicit Effect relationships"
+        );
+        assert!(semantics
+            .link_effect_to_session(
+                grace.id.as_str(),
+                session.id.as_str(),
+                indefinite.id.as_str(),
+                SessionEffectRole::Observed,
+            )
+            .is_err());
+        assert!(semantics
+            .link_effect_to_session(
+                grace.id.as_str(),
+                grace_session.id.as_str(),
+                indefinite.id.as_str(),
+                SessionEffectRole::Observed,
+            )
+            .is_err());
+
+        let removed = semantics
+            .unlink_effect_from_session(ada.id.as_str(), session.id.as_str(), relevant.id.as_str())
+            .unwrap();
+        assert!(removed.removed_at.is_some());
+        assert_eq!(
+            store
+                .list_effects(&ada.id, None)
+                .unwrap()
+                .iter()
+                .filter(|effect| effect.id == indefinite.id)
+                .count(),
+            1,
+            "removing a relationship must not delete the Effect"
+        );
+        let unlink_event = semantics
+            .effect_history(ada.id.as_str(), indefinite.id.as_str())
+            .unwrap()
+            .pop()
+            .unwrap();
+        assert_eq!(unlink_event.kind.as_str(), "session_unlinked");
+        let previous: serde_json::Value =
+            serde_json::from_str(unlink_event.previous_state_json.as_deref().unwrap()).unwrap();
+        let current: serde_json::Value =
+            serde_json::from_str(unlink_event.current_state_json.as_str()).unwrap();
+        assert_eq!(previous["relationship"]["role"], "removed");
+        assert_eq!(
+            previous["relationship"]["removedAt"],
+            serde_json::Value::Null
+        );
+        assert!(current["relationship"]["removedAt"].is_string());
+
+        let temporary = semantics
+            .create_effect(
+                ada.id.as_str(),
+                write("Exam Buff", Some("2026-10-01T18:00:00Z")),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            temporary.expires_at.as_ref().unwrap().as_str(),
+            "2026-10-01T18:00:00+00:00"
+        );
+        semantics
+            .deactivate_effect(
+                ada.id.as_str(),
+                indefinite.id.as_str(),
+                Some(session.id.as_str()),
+            )
+            .unwrap();
+        let final_history = semantics
+            .effect_history(ada.id.as_str(), indefinite.id.as_str())
+            .unwrap();
+        assert!(final_history
+            .iter()
+            .any(|event| event.kind.as_str() == "manually_deactivated"));
+        let deactivation_link = final_history
+            .iter()
+            .find(|event| {
+                event.kind.as_str() == "session_linked"
+                    && event.current_state_json.contains("\"role\":\"removed\"")
+            })
+            .unwrap();
+        assert_eq!(deactivation_link.session_id.as_ref(), Some(&session.id));
+        let persisted = store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == indefinite.id)
+            .unwrap();
+        assert!(persisted.deactivated_at.is_some());
+        assert!(persisted.expires_at.is_none());
+
+        drop(semantics);
+        drop(world);
+        drop(store);
+
+        let reopened_store = Arc::new(SqliteHealthStore::open_file(&database_path, T0));
+        let reopened_semantics = SemanticsService::new(reopened_store.clone(), Frozen);
+        let reopened_effect = reopened_store
+            .list_effects(&ada.id, None)
+            .unwrap()
+            .into_iter()
+            .find(|effect| effect.id == indefinite.id)
+            .unwrap();
+        assert!(reopened_effect.deactivated_at.is_some());
+        assert!(reopened_effect.expires_at.is_none());
+        let reopened_links = reopened_semantics
+            .session_effects(ada.id.as_str(), session.id.as_str(), false)
+            .unwrap();
+        assert_eq!(reopened_links.len(), 2);
+        assert!(reopened_links
+            .iter()
+            .any(|link| link.role == SessionEffectRole::Applied));
+        assert!(reopened_links
+            .iter()
+            .any(|link| link.role == SessionEffectRole::Removed));
+        let reopened_history = reopened_semantics
+            .effect_history(ada.id.as_str(), indefinite.id.as_str())
+            .unwrap();
+        assert!(reopened_history
+            .iter()
+            .any(|event| event.kind.as_str() == "manually_deactivated"));
+        assert!(reopened_history.iter().any(|event| {
+            event.kind.as_str() == "session_linked"
+                && event.current_state_json.contains("\"role\":\"removed\"")
+        }));
     }
 }

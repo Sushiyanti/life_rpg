@@ -1,18 +1,55 @@
 //! Phase 3.6 use cases. This is an application API only; it deliberately adds no UI.
 use crate::{
     rules::{ProgressMutationSource, RuleEvent, RuleOperation},
-    AppError, Clock, ConceptStore, SearchQuery, SearchStore, SemanticsStore, WorldStore,
+    AppError, Clock, ConceptStore, EffectWrite, SearchQuery, SearchStore, SemanticsStore,
+    WorldStore,
 };
 use lr_domain::{
-    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, EntityId,
-    EntityRevision, Iso8601Timestamp, LifecycleState, PresentationPreference, ProgressSuggestion,
-    QuestBranch, QuestSession, QuestStage, RevisionTargetKind, SessionStatus, TypeRef, Workspace,
-    WorkspacePanel,
+    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, Effect,
+    EffectHistoryEntry, EffectHistoryKind, EntityId, EntityRevision, Iso8601Timestamp,
+    LifecycleState, PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession,
+    QuestStage, RevisionTargetKind, SessionEffect, SessionEffectRole, SessionStatus, TypeRef,
+    Workspace, WorkspacePanel,
 };
 use std::{
     collections::HashSet,
     sync::atomic::{AtomicU64, Ordering},
 };
+
+fn effect_snapshot_value(effect: &Effect) -> serde_json::Value {
+    serde_json::json!({
+        "id": effect.id.as_str(),
+        "playerId": effect.player_id.as_str(),
+        "typeCode": effect.effect_type.code,
+        "name": effect.name,
+        "description": effect.description,
+        "targetKind": if effect.target_concept_id.is_some() { "concept" } else { "player" },
+        "targetConceptId": effect.target_concept_id.as_ref().map(EntityId::as_str),
+        "intensity": effect.intensity,
+        "startedAt": effect.started_at.as_str(),
+        "expiresAt": effect.expires_at.as_ref().map(Iso8601Timestamp::as_str),
+        "deactivatedAt": effect.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),
+    })
+}
+
+fn effect_snapshot(effect: &Effect) -> String {
+    effect_snapshot_value(effect).to_string()
+}
+
+fn session_effect_snapshot(effect: &Effect, link: &SessionEffect) -> String {
+    serde_json::json!({
+        "effect": effect_snapshot_value(effect),
+        "relationship": {
+            "id": link.id.as_str(),
+            "sessionId": link.session_id.as_str(),
+            "effectId": link.effect_id.as_str(),
+            "role": link.role.as_str(),
+            "addedAt": link.added_at.as_str(),
+            "removedAt": link.removed_at.as_ref().map(Iso8601Timestamp::as_str),
+        }
+    })
+    .to_string()
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct QuestActivityDetail {
@@ -201,6 +238,427 @@ where
         let q = quest_id.map(EntityId::new).transpose()?;
         let s = stage_id.map(EntityId::new).transpose()?;
         Ok(self.store.list_sessions(&p, q.as_ref(), s.as_ref())?)
+    }
+    pub fn get_stage(&self, stage_id: &str) -> Result<Option<QuestStage>, AppError> {
+        Ok(self.store.get_stage(&EntityId::new(stage_id)?)?)
+    }
+    pub fn get_branch(&self, branch_id: &str) -> Result<Option<QuestBranch>, AppError> {
+        Ok(self.store.get_branch(&EntityId::new(branch_id)?)?)
+    }
+    fn effect_event(
+        &self,
+        effect: &Effect,
+        session_id: Option<EntityId>,
+        kind: EffectHistoryKind,
+        recorded_at: Iso8601Timestamp,
+        previous: Option<String>,
+        current: String,
+    ) -> Result<EffectHistoryEntry, AppError> {
+        Ok(EffectHistoryEntry {
+            id: self.id("effect-history")?,
+            player_id: effect.player_id.clone(),
+            effect_id: effect.id.clone(),
+            session_id,
+            kind,
+            recorded_at,
+            previous_state_json: previous,
+            current_state_json: current,
+        })
+    }
+    fn effect_for_player(
+        &self,
+        player_id: &EntityId,
+        effect_id: &EntityId,
+    ) -> Result<Effect, AppError> {
+        self.store
+            .list_effects(player_id, None)?
+            .into_iter()
+            .find(|item| &item.id == effect_id)
+            .ok_or_else(|| AppError::Internal("Effect not found in Player world".into()))
+    }
+    fn validate_effect_type(&self, code: &str) -> Result<TypeRef, AppError> {
+        let available = self.store.list_type_definitions(Some("effect"))?;
+        if !available
+            .iter()
+            .any(|item| item.is_active && item.type_ref.code == code)
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Effect type",
+                "must be an active registered Effect type",
+            )
+            .into());
+        }
+        Ok(TypeRef::effect(code.to_owned())?)
+    }
+    fn session_for_player(
+        &self,
+        player_id: &EntityId,
+        session_id: &str,
+    ) -> Result<QuestSession, AppError> {
+        let id = EntityId::new(session_id)?;
+        let session = self
+            .store
+            .get_session(&id)?
+            .ok_or_else(|| AppError::Internal("Session not found".into()))?;
+        if &session.player_id != player_id {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Session",
+                "belongs to another Player",
+            )
+            .into());
+        }
+        Ok(session)
+    }
+    pub fn list_effect_types(&self) -> Result<Vec<lr_domain::TypeDefinition>, AppError> {
+        Ok(self
+            .store
+            .list_type_definitions(Some("effect"))?
+            .into_iter()
+            .filter(|item| item.is_active)
+            .collect())
+    }
+    pub fn create_effect(
+        &self,
+        player_id: &str,
+        value: EffectWrite,
+        session_id: Option<&str>,
+    ) -> Result<Effect, AppError> {
+        let player = self
+            .store
+            .get_player(&EntityId::new(player_id)?)?
+            .ok_or_else(|| AppError::Internal("Player not found".into()))?;
+        let effect_type = self.validate_effect_type(&value.type_code)?;
+        let now = self.now()?;
+        let started_at = value
+            .started_at
+            .as_deref()
+            .map(Iso8601Timestamp::parse)
+            .transpose()?
+            .unwrap_or_else(|| now.clone());
+        let mut effect = Effect::new(
+            self.id("effect")?,
+            player.id.clone(),
+            effect_type,
+            value.name,
+            started_at.clone(),
+        )?;
+        effect.description = value.description.filter(|text| !text.trim().is_empty());
+        effect.intensity = value.intensity;
+        effect.expires_at = value
+            .expires_at
+            .as_deref()
+            .map(Iso8601Timestamp::parse)
+            .transpose()?;
+        if effect
+            .expires_at
+            .as_ref()
+            .is_some_and(|end| end < &effect.started_at)
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Effect expiry",
+                "cannot be before the recorded start",
+            )
+            .into());
+        }
+        if let Some(concept_id) = value.target_concept_id {
+            let concept = self.concept(&concept_id)?;
+            if concept.player_id != player.id {
+                return Err(lr_domain::DomainError::invalid_value(
+                    "Effect target",
+                    "Concept belongs to another Player",
+                )
+                .into());
+            }
+            effect.target_concept(concept.id);
+        }
+        let session = session_id
+            .map(|id| self.session_for_player(&player.id, id))
+            .transpose()?;
+        let snapshot = effect_snapshot(&effect);
+        let mut history = vec![self.effect_event(
+            &effect,
+            session.as_ref().map(|s| s.id.clone()),
+            EffectHistoryKind::Created,
+            now.clone(),
+            None,
+            snapshot.clone(),
+        )?];
+        let link = if let Some(s) = session {
+            Some(SessionEffect {
+                id: self.id("session-effect")?,
+                player_id: player.id.clone(),
+                session_id: s.id,
+                effect_id: effect.id.clone(),
+                role: SessionEffectRole::Applied,
+                added_at: now.clone(),
+                removed_at: None,
+            })
+        } else {
+            None
+        };
+        if let Some(link) = &link {
+            let linked_snapshot = session_effect_snapshot(&effect, link);
+            history.push(self.effect_event(
+                &effect,
+                Some(link.session_id.clone()),
+                EffectHistoryKind::SessionLinked,
+                now,
+                None,
+                linked_snapshot,
+            )?);
+        }
+        self.store
+            .create_effect_with_history(&effect, &history, link.as_ref())?;
+        Ok(effect)
+    }
+    pub fn update_effect(
+        &self,
+        player_id: &str,
+        effect_id: &str,
+        value: EffectWrite,
+    ) -> Result<Effect, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let id = EntityId::new(effect_id)?;
+        let old = self.effect_for_player(&player_id, &id)?;
+        let mut changed = old.clone();
+        changed.effect_type = self.validate_effect_type(&value.type_code)?;
+        changed.name = value.name.trim().to_owned();
+        if changed.name.is_empty() {
+            return Err(
+                lr_domain::DomainError::invalid_value("Effect name", "must not be blank").into(),
+            );
+        }
+        changed.description = value.description.filter(|text| !text.trim().is_empty());
+        changed.intensity = value.intensity;
+        changed.target_concept_id = match value.target_concept_id {
+            Some(concept_id) => {
+                let concept = self.concept(&concept_id)?;
+                if concept.player_id != player_id {
+                    return Err(lr_domain::DomainError::invalid_value(
+                        "Effect target",
+                        "Concept belongs to another Player",
+                    )
+                    .into());
+                }
+                Some(concept.id)
+            }
+            None => None,
+        };
+        if let Some(start) = value.started_at.as_deref() {
+            changed.started_at = Iso8601Timestamp::parse(start)?;
+        }
+        changed.expires_at = value
+            .expires_at
+            .as_deref()
+            .map(Iso8601Timestamp::parse)
+            .transpose()?;
+        if changed
+            .expires_at
+            .as_ref()
+            .is_some_and(|end| end < &changed.started_at)
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Effect expiry",
+                "cannot be before the recorded start",
+            )
+            .into());
+        }
+        let details_changed = old.effect_type != changed.effect_type
+            || old.name != changed.name
+            || old.description != changed.description
+            || old.target_concept_id != changed.target_concept_id
+            || old.intensity != changed.intensity
+            || old.started_at != changed.started_at;
+        let expiry_changed = old.expires_at != changed.expires_at;
+        if !details_changed && !expiry_changed {
+            return Err(
+                lr_domain::DomainError::invalid_value("Effect", "no changes to save").into(),
+            );
+        }
+        let now = self.now()?;
+        changed.updated_at = now.clone();
+        let previous = effect_snapshot(&old);
+        let current = effect_snapshot(&changed);
+        let mut events = Vec::new();
+        if details_changed {
+            events.push(self.effect_event(
+                &changed,
+                None,
+                EffectHistoryKind::DetailsChanged,
+                now.clone(),
+                Some(previous.clone()),
+                current.clone(),
+            )?);
+        }
+        if expiry_changed {
+            events.push(self.effect_event(
+                &changed,
+                None,
+                EffectHistoryKind::ExpiryChanged,
+                now,
+                Some(previous),
+                current,
+            )?);
+        }
+        self.store.update_effect_with_history(&changed, &events)?;
+        Ok(changed)
+    }
+    pub fn deactivate_effect(
+        &self,
+        player_id: &str,
+        effect_id: &str,
+        session_id: Option<&str>,
+    ) -> Result<Effect, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let id = EntityId::new(effect_id)?;
+        let old = self.effect_for_player(&player_id, &id)?;
+        let session = session_id
+            .map(|sid| self.session_for_player(&player_id, sid))
+            .transpose()?;
+        let now = self.now()?;
+        let mut changed = old.clone();
+        changed.deactivate(now.clone())?;
+        let previous = effect_snapshot(&old);
+        let current = effect_snapshot(&changed);
+        let mut history = vec![self.effect_event(
+            &changed,
+            session.as_ref().map(|s| s.id.clone()),
+            EffectHistoryKind::ManuallyDeactivated,
+            now.clone(),
+            Some(previous.clone()),
+            current.clone(),
+        )?];
+        let link = if let Some(s) = session {
+            Some(SessionEffect {
+                id: self.id("session-effect")?,
+                player_id: player_id.clone(),
+                session_id: s.id,
+                effect_id: id.clone(),
+                role: SessionEffectRole::Removed,
+                added_at: now.clone(),
+                removed_at: None,
+            })
+        } else {
+            None
+        };
+        if let Some(link) = &link {
+            let linked_snapshot = session_effect_snapshot(&changed, link);
+            history.push(self.effect_event(
+                &changed,
+                Some(link.session_id.clone()),
+                EffectHistoryKind::SessionLinked,
+                now,
+                None,
+                linked_snapshot,
+            )?);
+        }
+        self.store
+            .deactivate_effect_with_history(&changed, &history, link.as_ref())?;
+        Ok(changed)
+    }
+    pub fn effect_history(
+        &self,
+        player_id: &str,
+        effect_id: &str,
+    ) -> Result<Vec<EffectHistoryEntry>, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let effect_id = EntityId::new(effect_id)?;
+        self.effect_for_player(&player_id, &effect_id)?;
+        Ok(self.store.list_effect_history(&player_id, &effect_id)?)
+    }
+    pub fn link_effect_to_session(
+        &self,
+        player_id: &str,
+        session_id: &str,
+        effect_id: &str,
+        role: SessionEffectRole,
+    ) -> Result<SessionEffect, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let session = self.session_for_player(&player_id, session_id)?;
+        let effect_id = EntityId::new(effect_id)?;
+        let effect = self.effect_for_player(&player_id, &effect_id)?;
+        if self
+            .store
+            .list_session_effects(&player_id, &session.id, false)?
+            .iter()
+            .any(|link| link.effect_id == effect_id && link.role == role)
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Session Effect",
+                "this role is already linked to the Session",
+            )
+            .into());
+        }
+        let now = self.now()?;
+        let link = SessionEffect {
+            id: self.id("session-effect")?,
+            player_id: player_id.clone(),
+            session_id: session.id.clone(),
+            effect_id: effect.id.clone(),
+            role,
+            added_at: now.clone(),
+            removed_at: None,
+        };
+        let snapshot = session_effect_snapshot(&effect, &link);
+        let history = self.effect_event(
+            &effect,
+            Some(session.id),
+            EffectHistoryKind::SessionLinked,
+            now,
+            None,
+            snapshot,
+        )?;
+        self.store.link_effect_to_session(&link, &history)?;
+        Ok(link)
+    }
+    pub fn unlink_effect_from_session(
+        &self,
+        player_id: &str,
+        session_id: &str,
+        link_id: &str,
+    ) -> Result<SessionEffect, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let session = self.session_for_player(&player_id, session_id)?;
+        let link_id = EntityId::new(link_id)?;
+        let link = self
+            .store
+            .list_session_effects(&player_id, &session.id, true)?
+            .into_iter()
+            .find(|item| item.id == link_id && item.removed_at.is_none())
+            .ok_or_else(|| {
+                AppError::Internal("Active Session–Effect relationship not found".into())
+            })?;
+        let effect = self.effect_for_player(&player_id, &link.effect_id)?;
+        let now = self.now()?;
+        let previous_relation = session_effect_snapshot(&effect, &link);
+        let mut removed_link = link.clone();
+        removed_link.removed_at = Some(now.clone());
+        let current_relation = session_effect_snapshot(&effect, &removed_link);
+        let history = self.effect_event(
+            &effect,
+            Some(session.id.clone()),
+            EffectHistoryKind::SessionUnlinked,
+            now.clone(),
+            Some(previous_relation),
+            current_relation,
+        )?;
+        self.store
+            .unlink_effect_from_session(&player_id, &link_id, &now, &history)?;
+        let mut removed = link;
+        removed.removed_at = Some(now);
+        Ok(removed)
+    }
+    pub fn session_effects(
+        &self,
+        player_id: &str,
+        session_id: &str,
+        include_removed: bool,
+    ) -> Result<Vec<SessionEffect>, AppError> {
+        let player_id = EntityId::new(player_id)?;
+        let session = self.session_for_player(&player_id, session_id)?;
+        Ok(self
+            .store
+            .list_session_effects(&player_id, &session.id, include_removed)?)
     }
     pub fn attach_content(
         &self,

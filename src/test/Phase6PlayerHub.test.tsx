@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { CoreClient } from '../domain/ipc';
-import type { Concept, ConceptProgressTrack, Effect, Player, PlayerStat, Quest, QuestSession, Skill, SkillTree, Workspace, WorkspacePanel, WorldOverview } from '../domain/world';
+import type { Concept, ConceptProgressTrack, Effect, Player, PlayerStat, Quest, QuestBranch, QuestSession, QuestStage, Skill, SkillTree, Workspace, WorkspacePanel, WorldOverview } from '../domain/world';
 import { PlayerCharacter } from '../features/world/PlayerCharacter';
 import { WorldWorkspace } from '../features/world/WorldWorkspace';
 import { buildWorldTimeline, formatSessionDuration } from '../features/world/worldTimeline';
@@ -108,13 +108,31 @@ describe('Phase 6 current state and contextual actions', () => {
   });
 
   it('shows an actually active Effect, distinguishes a past expiry without changing it, and supports explicit deactivation', async () => {
-    const effect: Effect = { id: 'effect-1', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'condition', name: 'Rested', description: null, startedAt: '2001-01-01T10:00:00Z', expiresAt: '2001-01-01T11:00:00Z', deactivatedAt: null, intensity: 1 };
+    const effect: Effect = { id: 'effect-1', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'condition', name: 'Rested', description: null, startedAt: '2001-01-01T10:00:00Z', expiresAt: null, deactivatedAt: null, intensity: 1 };
     const deactivateEffect = vi.fn(async () => ({ ...effect, deactivatedAt: '2026-09-27T12:00:00Z' }));
     render(<PlayerCharacter {...common} overview={{ ...overview, effects: [effect] }} client={client({ deactivateEffect })} />);
     expect(await screen.findByText('Rested', { selector: 'strong' })).toBeInTheDocument();
-    expect(screen.getByText('Past recorded expiry · no automatic mutation')).toBeInTheDocument();
+    expect(document.querySelector('.effect-state--active')).toHaveTextContent('active');
+    expect(screen.getByText('No expiry recorded · indefinite/manual')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate' }));
-    await waitFor(() => expect(deactivateEffect).toHaveBeenCalledWith(effect.id));
+    await waitFor(() => expect(deactivateEffect).toHaveBeenCalledWith(player.id, effect.id));
+  });
+
+  it('derives active, expired, scheduled and manual-off states without mutating records during display', async () => {
+    const active: Effect = { id: 'indefinite', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'buff', name: 'Indefinite', description: null, startedAt: '2026-09-01T00:00:00Z', expiresAt: null, deactivatedAt: null, intensity: 1 };
+    const expired: Effect = { ...active, id: 'expired', name: 'Expired', startedAt: '2001-01-01T00:00:00Z', expiresAt: '2001-01-02T00:00:00Z' };
+    const scheduled: Effect = { ...active, id: 'scheduled', name: 'Scheduled', startedAt: '2099-01-01T00:00:00Z' };
+    const manual: Effect = { ...active, id: 'manual', name: 'Manual off', deactivatedAt: '2026-09-02T00:00:00Z' };
+    const deactivateEffect = vi.fn();
+    render(<PlayerCharacter {...common} overview={{ ...overview, effects: [active, expired, scheduled, manual] }} client={client({ deactivateEffect })} />);
+    expect(await screen.findByText('Indefinite', { selector: 'strong' })).toBeInTheDocument();
+    expect(document.querySelector('.effect-state--active')).toHaveTextContent('active');
+    expect(document.querySelector('.effect-state--expired')).toHaveTextContent('expired');
+    expect(document.querySelector('.effect-state--scheduled')).toHaveTextContent('scheduled');
+    expect(document.querySelector('.effect-state--manually_deactivated')).toHaveTextContent('manually deactivated');
+    expect(screen.getAllByText('No expiry recorded · indefinite/manual')).toHaveLength(3);
+    expect(deactivateEffect).not.toHaveBeenCalled();
+    expect(expired.deactivatedAt).toBeNull();
   });
 
   it('starts an open Quest explicitly before offering a contextual Session action', async () => {
@@ -150,19 +168,47 @@ describe('Phase 6 Quest workflow', () => {
 describe('Phase 6 Session context navigation', () => {
   it('opens the exact Concept referenced by a Session without issuing a world mutation', async () => {
     const linkedSession: QuestSession = { ...activeSession, conceptId: concept.id };
+    const sessionList = [linkedSession];
     const sessionHit = { kind: 'quest_session', id: linkedSession.id, playerId: player.id, conceptId: concept.id, typeCode: 'session', status: 'in_progress', active: true, lifecycle: 'active' as const, visible: true, occurredAt: linkedSession.startedAt, capturedAt: null, name: 'Quest Session', snippet: 'Recorded activity', progression: null, relevance: null };
     const conceptHit = { kind: 'concept', id: concept.id, playerId: player.id, conceptId: null, typeCode: concept.typeCode, status: null, active: true, lifecycle: 'active' as const, visible: true, occurredAt: concept.createdAt, capturedAt: null, name: concept.name, snippet: concept.description ?? '', progression: null, relevance: null };
     const searchWorld = vi.fn(async (query: { kind?: string | null }) => query.kind === 'quest_session' ? [sessionHit] : query.kind === 'concept' ? [conceptHit] : []);
     const setEntityLifecycle = vi.fn();
     const associateConcept = vi.fn();
-    const explorerClient = client({ searchWorld, getEntityLifecycle: vi.fn(async () => ({ state: 'active' as const })), listEntityRevisions: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listConceptAssociations: vi.fn(async () => []), listConceptRelationships: vi.fn(async () => []), listAttachedContent: vi.fn(async () => []), listComments: vi.fn(async () => []), listProgressSuggestions: vi.fn(async () => []), setEntityLifecycle, associateConcept });
+    const explorerClient = client({ searchWorld, getEntityLifecycle: vi.fn(async () => ({ state: 'active' as const })), listEntityRevisions: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listConceptAssociations: vi.fn(async () => []), listConceptRelationships: vi.fn(async () => []), listAttachedContent: vi.fn(async () => []), listComments: vi.fn(async () => []), listProgressSuggestions: vi.fn(async () => []), listSessionEffects: vi.fn(async () => []), listEffectTypes: vi.fn(async () => []), setEntityLifecycle, associateConcept });
     const { WorldExplorer } = await import('../features/world/WorldExplorer');
-    render(<WorldExplorer client={explorerClient} player={player} concepts={[concept]} overview={overview} sessions={[linkedSession]} onRefresh={async () => {}} initialTarget={{ kind: 'quest_session', id: linkedSession.id }} />);
+    render(<WorldExplorer client={explorerClient} player={player} concepts={[concept]} overview={overview} sessions={sessionList} onRefresh={async () => {}} initialTarget={{ kind: 'quest_session', id: linkedSession.id }} />);
     expect(await screen.findByRole('button', { name: 'Concept · Garden' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Concept · Garden' }));
     expect(await screen.findByRole('heading', { name: concept.name })).toBeInTheDocument();
     expect(searchWorld).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'concept', playerId: player.id, includeHidden: true }));
     expect(setEntityLifecycle).not.toHaveBeenCalled();
     expect(associateConcept).not.toHaveBeenCalled();
+  });
+
+  it('resolves and presents recorded Quest, Stage and Branch anchors for a Session', async () => {
+    const stage: QuestStage = { id: 'stage-1', playerId: player.id, questId: quest.id, title: 'Functions', description: null, story: null, instructions: null, status: 'active', sortOrder: 0, isActive: true, metadataJson: '{}', createdAt: '', updatedAt: '' };
+    const branch: QuestBranch = { id: 'branch-1', playerId: player.id, questId: quest.id, stageId: stage.id, title: 'Practice', description: null, status: 'available', sortOrder: 0, isActive: true, metadataJson: '{}', createdAt: '', updatedAt: '' };
+    const linkedSession: QuestSession = { ...activeSession, stageId: stage.id, branchId: branch.id };
+    const sessionList = [linkedSession];
+    const sessionHit = { kind: 'quest_session', id: linkedSession.id, playerId: player.id, conceptId: null, typeCode: 'session', status: 'in_progress', active: true, lifecycle: 'active' as const, visible: true, occurredAt: linkedSession.startedAt, capturedAt: null, name: 'Quest Session', snippet: 'Recorded activity', progression: null, relevance: null };
+    const searchWorld = vi.fn(async (query: { kind?: string | null }) => query.kind === 'quest_session' ? [sessionHit] : []);
+    const explorerClient = client({ searchWorld, getEntityLifecycle: vi.fn(async () => ({ state: 'active' as const })), listEntityRevisions: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listAttachedContent: vi.fn(async () => []), listComments: vi.fn(async () => []), listSessionEffects: vi.fn(async () => []), listEffectTypes: vi.fn(async () => []), getQuestStage: vi.fn(async () => stage), getQuestBranch: vi.fn(async () => branch) });
+    const { WorldExplorer } = await import('../features/world/WorldExplorer');
+    render(<WorldExplorer client={explorerClient} player={player} concepts={[concept]} overview={overview} sessions={sessionList} onRefresh={async () => {}} initialTarget={{ kind: 'quest_session', id: linkedSession.id }} />);
+    expect(await screen.findByRole('button', { name: 'Quest · Prepare the garden' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Stage · Functions' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Branch · Practice' })).toBeInTheDocument();
+    expect(screen.queryByText('This Session has no recorded world-context links.')).not.toBeInTheDocument();
+  });
+});
+
+describe('Phase 6.1 truthful dashboard labels', () => {
+  it('labels the active Skill count as tracked rather than implying an undefined practice metric', async () => {
+    await act(async () => {
+      render(<WorldWorkspace route="dashboard" client={client()} player={player} overview={overview} concepts={[concept]} stats={[]} sessions={[activeSession]} workspace={workspace} workspaces={[workspace]} panels={[panel]} onPanelsChange={() => {}} onCreateWorkspace={async () => {}} onRenameWorkspace={async () => {}} onDefaultWorkspace={async () => {}} onDeleteWorkspace={async () => {}} onDuplicateWorkspace={async () => {}} onImportWorkspace={async () => {}} onRefresh={async () => {}} onCreatePlayer={async () => {}} onNavigate={() => {}} onOpenEntity={() => {}} onQuickCapture={() => {}} />);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    });
+    expect(screen.getByText('Skills tracked')).toBeInTheDocument();
+    expect(screen.queryByText('Skills in practice')).not.toBeInTheDocument();
   });
 });

@@ -1,9 +1,10 @@
 //! Focused persistence contract for Phase 3.6 world semantics.
 use crate::error::StorageError;
 use lr_domain::{
-    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, EntityId,
-    EntityRevision, Iso8601Timestamp, LifecycleState, PresentationPreference, ProgressSuggestion,
-    QuestBranch, QuestSession, QuestStage, RevisionTargetKind, Workspace, WorkspacePanel,
+    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, Effect,
+    EffectHistoryEntry, EntityId, EntityRevision, Iso8601Timestamp, LifecycleState,
+    PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession, QuestStage,
+    RevisionTargetKind, SessionEffect, Workspace, WorkspacePanel,
 };
 
 /// A validated declarative panel requested by a workspace transfer.
@@ -27,6 +28,21 @@ pub struct WorkspacePanelImport {
     pub is_collapsed: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectWrite {
+    pub type_code: String,
+    pub name: String,
+    pub description: Option<String>,
+    /// `None` explicitly targets the Player; otherwise the same-world Concept.
+    pub target_concept_id: Option<String>,
+    pub intensity: i32,
+    /// On creation, omitted means the current recorded time; on edit it keeps
+    /// the existing start time.
+    pub started_at: Option<String>,
+    /// `None` explicitly means that no expiry is recorded.
+    pub expires_at: Option<String>,
+}
+
 pub trait SemanticsStore: Send + Sync {
     fn insert_stage(&self, value: &QuestStage) -> Result<(), StorageError>;
     fn get_stage(&self, id: &EntityId) -> Result<Option<QuestStage>, StorageError>;
@@ -42,6 +58,47 @@ pub trait SemanticsStore: Send + Sync {
         quest_id: Option<&EntityId>,
         stage_id: Option<&EntityId>,
     ) -> Result<Vec<QuestSession>, StorageError>;
+    fn get_branch(&self, id: &EntityId) -> Result<Option<QuestBranch>, StorageError>;
+    fn create_effect_with_history(
+        &self,
+        effect: &Effect,
+        history: &[EffectHistoryEntry],
+        session_link: Option<&SessionEffect>,
+    ) -> Result<(), StorageError>;
+    fn update_effect_with_history(
+        &self,
+        effect: &Effect,
+        history: &[EffectHistoryEntry],
+    ) -> Result<(), StorageError>;
+    fn deactivate_effect_with_history(
+        &self,
+        effect: &Effect,
+        history: &[EffectHistoryEntry],
+        session_link: Option<&SessionEffect>,
+    ) -> Result<(), StorageError>;
+    fn list_effect_history(
+        &self,
+        player_id: &EntityId,
+        effect_id: &EntityId,
+    ) -> Result<Vec<EffectHistoryEntry>, StorageError>;
+    fn link_effect_to_session(
+        &self,
+        link: &SessionEffect,
+        history: &EffectHistoryEntry,
+    ) -> Result<(), StorageError>;
+    fn unlink_effect_from_session(
+        &self,
+        player_id: &EntityId,
+        link_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+        history: &EffectHistoryEntry,
+    ) -> Result<(), StorageError>;
+    fn list_session_effects(
+        &self,
+        player_id: &EntityId,
+        session_id: &EntityId,
+        include_removed: bool,
+    ) -> Result<Vec<SessionEffect>, StorageError>;
     fn attach_content(&self, value: &ContentAttachment) -> Result<(), StorageError>;
     fn list_content_attachments(
         &self,
@@ -193,6 +250,63 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
         s: Option<&EntityId>,
     ) -> Result<Vec<QuestSession>, StorageError> {
         (**self).list_sessions(p, q, s)
+    }
+    fn get_branch(&self, id: &EntityId) -> Result<Option<QuestBranch>, StorageError> {
+        (**self).get_branch(id)
+    }
+    fn create_effect_with_history(
+        &self,
+        e: &Effect,
+        h: &[EffectHistoryEntry],
+        l: Option<&SessionEffect>,
+    ) -> Result<(), StorageError> {
+        (**self).create_effect_with_history(e, h, l)
+    }
+    fn update_effect_with_history(
+        &self,
+        e: &Effect,
+        h: &[EffectHistoryEntry],
+    ) -> Result<(), StorageError> {
+        (**self).update_effect_with_history(e, h)
+    }
+    fn deactivate_effect_with_history(
+        &self,
+        e: &Effect,
+        h: &[EffectHistoryEntry],
+        l: Option<&SessionEffect>,
+    ) -> Result<(), StorageError> {
+        (**self).deactivate_effect_with_history(e, h, l)
+    }
+    fn list_effect_history(
+        &self,
+        p: &EntityId,
+        e: &EntityId,
+    ) -> Result<Vec<EffectHistoryEntry>, StorageError> {
+        (**self).list_effect_history(p, e)
+    }
+    fn link_effect_to_session(
+        &self,
+        l: &SessionEffect,
+        h: &EffectHistoryEntry,
+    ) -> Result<(), StorageError> {
+        (**self).link_effect_to_session(l, h)
+    }
+    fn unlink_effect_from_session(
+        &self,
+        p: &EntityId,
+        l: &EntityId,
+        at: &Iso8601Timestamp,
+        h: &EffectHistoryEntry,
+    ) -> Result<(), StorageError> {
+        (**self).unlink_effect_from_session(p, l, at, h)
+    }
+    fn list_session_effects(
+        &self,
+        p: &EntityId,
+        s: &EntityId,
+        removed: bool,
+    ) -> Result<Vec<SessionEffect>, StorageError> {
+        (**self).list_session_effects(p, s, removed)
     }
     fn attach_content(&self, v: &ContentAttachment) -> Result<(), StorageError> {
         (**self).attach_content(v)

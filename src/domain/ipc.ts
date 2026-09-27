@@ -23,7 +23,8 @@ import type {
   RuleDefinition, RuleExecution, Skill, SkillSnapshot, SkillTree, StatDefinition, Transaction,
   WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
-  ProgressSuggestion, SearchHit, SearchQuery,
+  ProgressSuggestion, SearchHit, SearchQuery, EffectType, EffectHistoryEntry, SessionEffect,
+  SessionEffectRole,
   Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType,
 } from '../domain/world';
 
@@ -55,6 +56,9 @@ export const COMMANDS = {
   setPlayerStat: 'set_player_stat',
   listPlayerStats: 'list_player_stats',
   deactivateEffect: 'deactivate_effect',
+  listEffectTypes: 'list_effect_types', createEffect: 'create_effect', updateEffect: 'update_effect',
+  listEffectHistory: 'list_effect_history', listSessionEffects: 'list_session_effects',
+  linkEffectToSession: 'link_effect_to_session', unlinkEffectFromSession: 'unlink_effect_from_session',
   listRules: 'list_rules',
   createRule: 'create_rule',
   setRuleEnabled: 'set_rule_enabled',
@@ -78,6 +82,7 @@ export const COMMANDS = {
   listQuestStages: 'list_quest_stages',
   createQuestBranch: 'create_quest_branch',
   listQuestBranches: 'list_quest_branches',
+  getQuestStage: 'get_quest_stage', getQuestBranch: 'get_quest_branch',
   startQuestSession: 'start_quest_session',
   finishQuestSession: 'finish_quest_session',
   listQuestSessions: 'list_quest_sessions',
@@ -206,6 +211,16 @@ export class CoreClient {
   async listQuestSessions(playerId:string,questId?:string,stageId?:string):Promise<QuestSession[]>{return this.invoke(COMMANDS.listQuestSessions,{playerId,questId:questId??null,stageId:stageId??null});}
   async startQuestSession(playerId:string,context:QuestSessionContext):Promise<QuestSession>{return this.invoke(COMMANDS.startQuestSession,{playerId,questId:context.questId??null,stageId:context.stageId??null,branchId:context.branchId??null,skillId:context.skillId??null,conceptId:context.conceptId??null,startedAt:null});}
   async finishQuestSession(sessionId:string,status:'completed'|'interrupted',result?:string,notes?:string):Promise<QuestSession>{return this.invoke(COMMANDS.finishQuestSession,{sessionId,endedAt:null,status,result:result??null,notes:notes??null});}
+  async listEffectTypes():Promise<EffectType[]>{return this.invoke(COMMANDS.listEffectTypes);}
+  async createEffect(playerId:string,value:{typeCode:string;name:string;description?:string;targetConceptId?:string|null;intensity:number;startedAt?:string;expiresAt?:string|null},sessionId?:string):Promise<Effect>{return this.invoke(COMMANDS.createEffect,{playerId,...value,description:value.description??null,targetConceptId:value.targetConceptId??null,startedAt:value.startedAt??null,expiresAt:value.expiresAt??null,sessionId:sessionId??null});}
+  async updateEffect(playerId:string,effectId:string,value:{typeCode:string;name:string;description?:string;targetConceptId?:string|null;intensity:number;startedAt?:string;expiresAt?:string|null}):Promise<Effect>{return this.invoke(COMMANDS.updateEffect,{playerId,effectId,...value,description:value.description??null,targetConceptId:value.targetConceptId??null,startedAt:value.startedAt??null,expiresAt:value.expiresAt??null});}
+  async deactivateEffect(playerId:string,effectId:string,sessionId?:string):Promise<Effect>{return this.invoke(COMMANDS.deactivateEffect,{playerId,effectId,sessionId:sessionId??null});}
+  async listEffectHistory(playerId:string,effectId:string):Promise<EffectHistoryEntry[]>{return this.invoke(COMMANDS.listEffectHistory,{playerId,effectId});}
+  async listSessionEffects(playerId:string,sessionId:string,includeRemoved=false):Promise<SessionEffect[]>{return this.invoke(COMMANDS.listSessionEffects,{playerId,sessionId,includeRemoved});}
+  async linkEffectToSession(playerId:string,sessionId:string,effectId:string,role:SessionEffectRole):Promise<SessionEffect>{return this.invoke(COMMANDS.linkEffectToSession,{playerId,sessionId,effectId,role});}
+  async unlinkEffectFromSession(playerId:string,sessionId:string,linkId:string):Promise<SessionEffect>{return this.invoke(COMMANDS.unlinkEffectFromSession,{playerId,sessionId,linkId});}
+  async getQuestStage(stageId:string):Promise<QuestStage|null>{return this.invoke(COMMANDS.getQuestStage,{stageId});}
+  async getQuestBranch(branchId:string):Promise<QuestBranch|null>{return this.invoke(COMMANDS.getQuestBranch,{branchId});}
   async listAttachedContent(targetKind:string,targetId:string):Promise<ContentAttachment[]>{return this.invoke(COMMANDS.listAttachedContent,{targetKind,targetId});}
   async attachContent(playerId:string,contentId:string,targetKind:string,targetId:string,role:string):Promise<ContentAttachment>{return this.invoke(COMMANDS.attachContent,{playerId,contentId,targetKind,targetId,role});}
   async listConceptAssociations(conceptId:string):Promise<ConceptAssociation[]>{return this.invoke(COMMANDS.listConceptAssociations,{conceptId,entityKind:null,entityId:null});}
@@ -223,7 +238,6 @@ export class CoreClient {
   async listStatDefinitions():Promise<StatDefinition[]>{return this.invoke<StatDefinition[]>(COMMANDS.listStatDefinitions);}
   async setPlayerStat(playerId:string,statCode:string,value:number):Promise<PlayerStat>{return this.invoke<PlayerStat>(COMMANDS.setPlayerStat,{playerId,statCode,value});}
   async listPlayerStats(playerId:string):Promise<PlayerStat[]>{return this.invoke<PlayerStat[]>(COMMANDS.listPlayerStats,{playerId});}
-  async deactivateEffect(effectId:string):Promise<Effect>{return this.invoke<Effect>(COMMANDS.deactivateEffect,{effectId});}
   async listRules():Promise<Rule[]>{return this.invoke<Rule[]>(COMMANDS.listRules);}
   async createRule(name:string,priority:number,definition:RuleDefinition,description?:string):Promise<Rule>{return this.invoke<Rule>(COMMANDS.createRule,{name,description:description??null,priority,definition});}
   async setRuleEnabled(ruleId:string,enabled:boolean):Promise<Rule>{return this.invoke<Rule>(COMMANDS.setRuleEnabled,{ruleId,enabled});}

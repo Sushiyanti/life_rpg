@@ -1,5 +1,6 @@
 //! Thin IPC adapters for Phase 3.6 world semantics; presentation remains out of scope.
 use crate::state::AppState;
+use lr_application::EffectWrite;
 use lr_contracts::{semantics::*, CommandErrorDto};
 use lr_domain::{
     AssociatedEntityKind, ContentTargetKind, LifecycleState, RevisionTargetKind, SessionStatus,
@@ -213,6 +214,166 @@ pub fn list_quest_sessions(
         .semantics
         .list_sessions(&player_id, quest_id.as_deref(), stage_id.as_deref())
         .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_effect_types(
+    state: State<'_, AppState>,
+) -> Result<Vec<lr_contracts::world::EffectTypeDto>, CommandErrorDto> {
+    state
+        .semantics
+        .list_effect_types()
+        .map(|items| items.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn create_effect(
+    state: State<'_, AppState>,
+    player_id: String,
+    type_code: String,
+    name: String,
+    description: Option<String>,
+    target_concept_id: Option<String>,
+    intensity: i32,
+    started_at: Option<String>,
+    expires_at: Option<String>,
+    session_id: Option<String>,
+) -> Result<lr_contracts::world::EffectDto, CommandErrorDto> {
+    state
+        .semantics
+        .create_effect(
+            &player_id,
+            EffectWrite {
+                type_code,
+                name,
+                description,
+                target_concept_id,
+                intensity,
+                started_at,
+                expires_at,
+            },
+            session_id.as_deref(),
+        )
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn update_effect(
+    state: State<'_, AppState>,
+    player_id: String,
+    effect_id: String,
+    type_code: String,
+    name: String,
+    description: Option<String>,
+    target_concept_id: Option<String>,
+    intensity: i32,
+    started_at: Option<String>,
+    expires_at: Option<String>,
+) -> Result<lr_contracts::world::EffectDto, CommandErrorDto> {
+    state
+        .semantics
+        .update_effect(
+            &player_id,
+            &effect_id,
+            EffectWrite {
+                type_code,
+                name,
+                description,
+                target_concept_id,
+                intensity,
+                started_at,
+                expires_at,
+            },
+        )
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn deactivate_effect(
+    state: State<'_, AppState>,
+    player_id: String,
+    effect_id: String,
+    session_id: Option<String>,
+) -> Result<lr_contracts::world::EffectDto, CommandErrorDto> {
+    state
+        .semantics
+        .deactivate_effect(&player_id, &effect_id, session_id.as_deref())
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_effect_history(
+    state: State<'_, AppState>,
+    player_id: String,
+    effect_id: String,
+) -> Result<Vec<EffectHistoryDto>, CommandErrorDto> {
+    state
+        .semantics
+        .effect_history(&player_id, &effect_id)
+        .map(|items| items.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_session_effects(
+    state: State<'_, AppState>,
+    player_id: String,
+    session_id: String,
+    include_removed: bool,
+) -> Result<Vec<SessionEffectDto>, CommandErrorDto> {
+    state
+        .semantics
+        .session_effects(&player_id, &session_id, include_removed)
+        .map(|items| items.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn link_effect_to_session(
+    state: State<'_, AppState>,
+    player_id: String,
+    session_id: String,
+    effect_id: String,
+    role: String,
+) -> Result<SessionEffectDto, CommandErrorDto> {
+    let role = lr_domain::SessionEffectRole::parse(&role).map_err(domain_error)?;
+    state
+        .semantics
+        .link_effect_to_session(&player_id, &session_id, &effect_id, role)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn unlink_effect_from_session(
+    state: State<'_, AppState>,
+    player_id: String,
+    session_id: String,
+    link_id: String,
+) -> Result<SessionEffectDto, CommandErrorDto> {
+    state
+        .semantics
+        .unlink_effect_from_session(&player_id, &session_id, &link_id)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn get_quest_stage(
+    state: State<'_, AppState>,
+    stage_id: String,
+) -> Result<Option<QuestStageDto>, CommandErrorDto> {
+    state
+        .semantics
+        .get_stage(&stage_id)
+        .map(|item| item.map(Into::into))
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn get_quest_branch(
+    state: State<'_, AppState>,
+    branch_id: String,
+) -> Result<Option<QuestBranchDto>, CommandErrorDto> {
+    state
+        .semantics
+        .get_branch(&branch_id)
+        .map(|item| item.map(Into::into))
         .map_err(Into::into)
 }
 #[tauri::command]

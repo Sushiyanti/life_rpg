@@ -631,10 +631,11 @@ where
         for tree in &trees {
             skills.extend(self.store.list_skills(&tree.id)?);
         }
-        let now = self.now()?;
         Ok(WorldOverview {
             quests: self.store.list_quests(&player.id)?,
-            effects: self.store.list_effects(&player.id, Some(now.as_str()))?,
+            // Keep historical and scheduled Effects in the read model; clients
+            // derive lifecycle from the recorded timestamps at display time.
+            effects: self.store.list_effects(&player.id, None)?,
             recent_transactions: self
                 .store
                 .list_transactions(&player.id, DEFAULT_LEDGER_LIMIT)?,

@@ -24,6 +24,8 @@ it('boots a fresh Player world without exceeding the native search limit', async
   expect(mocks.searchWorld).toHaveBeenCalledWith(expect.objectContaining({ kind: 'player', limit: 200 }));
   expect(await screen.findByRole('heading', { name: 'Start your first Player world' })).toBeInTheDocument();
   expect(screen.queryByText('World unavailable')).not.toBeInTheDocument();
+  expect(screen.getAllByText('Life RPG').length).toBeGreaterThan(0);
+  expect(screen.queryByText(/3\.6|world semantics/i)).not.toBeInTheDocument();
 });
 
 

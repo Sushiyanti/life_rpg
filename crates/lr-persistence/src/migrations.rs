@@ -38,7 +38,8 @@ pub struct Migration {
 /// persistent world state and integrity improvements. Phase 3 adds declarative
 /// rules; Phase 3.5 adds typed Concepts and history/query structures; Phase 3.6
 /// adds progression authority, activity, recovery, and contextual preferences;
-/// Phase 5.2 adds stable Concept-only workspace-transfer references.
+/// Phase 5.2 adds stable Concept-only workspace-transfer references; Phase 6.1
+/// adds append-only Effect history and explicit Session-to-Effect context.
 /// Applied bodies never change.
 pub const MIGRATIONS: &[Migration] = &[
     Migration {
@@ -95,6 +96,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 11,
         name: "0011_phase52_concept_transfer_keys",
         sql: include_str!("migrations/0011_phase52_concept_transfer_keys.sql"),
+    },
+    Migration {
+        version: 12,
+        name: "0012_phase61_effect_history_sessions",
+        sql: include_str!("migrations/0012_phase61_effect_history_sessions.sql"),
     },
 ];
 
@@ -246,7 +252,7 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -254,7 +260,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 11);
+        assert_eq!(first.len(), 12);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -262,7 +268,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 11, "ledger must not accumulate duplicates");
+        assert_eq!(count, 12, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -272,7 +278,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 11);
+        assert_eq!(report.migrations.len(), 12);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -298,7 +304,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).unwrap();
         assert_eq!(
             applied,
-            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             "must apply only the missing steps"
         );
 
@@ -332,7 +338,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![4, 5, 6, 7, 8, 9, 10, 11]
+            vec![4, 5, 6, 7, 8, 9, 10, 11, 12]
         );
         assert!(schema_report(&conn).unwrap().is_current());
 
@@ -380,7 +386,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![7, 8, 9, 10, 11]
+            vec![7, 8, 9, 10, 11, 12]
         );
         assert!(schema_report(&conn).unwrap().is_current());
         let player: (i64, i32) = conn
@@ -455,7 +461,7 @@ mod tests {
         conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![5, 6, 7, 8, 9, 10, 11]
+            vec![5, 6, 7, 8, 9, 10, 11, 12]
         );
         let player: (i64, i32) = conn
             .query_row(
@@ -489,7 +495,7 @@ mod tests {
         conn.execute("INSERT INTO workspaces(id,player_id,name,template,is_default,created_at,updated_at) VALUES('w','p','Learning','learning',1,?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,item_limit,sort_order,is_pinned,is_collapsed,created_at,updated_at) VALUES('old-panel','w','quests','In progress','cards','cozy','in_progress',8,3,1,0,?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO quest_sessions(id,player_id,concept_id,started_at,status,is_active,created_at,updated_at) VALUES('old-session','p','c',?1,'in_progress',1,?1,?1)",[T0]).unwrap();
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![10, 11]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![10, 11, 12]);
         let legacy_key: String = conn
             .query_row("SELECT transfer_key FROM concepts WHERE id='c'", [], |r| {
                 r.get(0)
@@ -527,7 +533,7 @@ mod tests {
         }
         conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p','Ada',1,0,?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO concepts(id,player_id,concept_type_code,name,created_at,updated_at) VALUES('c1','p','subject','Reading',?1,?1),('c2','p','subject','Reading',?1,?1)",[T0]).unwrap();
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![11]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![11, 12]);
         let keys: Vec<String> = conn
             .prepare("SELECT transfer_key FROM concepts ORDER BY id")
             .unwrap()
@@ -551,7 +557,50 @@ mod tests {
                 []
             )
             .is_err());
-        assert_eq!(applied_version(&conn).unwrap(), 11);
+        assert_eq!(applied_version(&conn).unwrap(), 12);
+    }
+
+    #[test]
+    fn phase12_upgrade_adds_effect_history_without_changing_existing_effects() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+        for migration in &MIGRATIONS[..11] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES(?1,?2,?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p','Ada',1,0,?1,?1)",
+            [T0],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO effects(id,player_id,effect_type_code,name,started_at,expires_at,intensity,created_at,updated_at) VALUES('e','p','buff','Focus',?1,NULL,1,?1,?1)",
+            [T0],
+        ).unwrap();
+
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![12]);
+        let preserved: (String, Option<String>) = conn
+            .query_row(
+                "SELECT name,expires_at FROM effects WHERE id='e'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(preserved, ("Focus".into(), None));
+        for table in ["effect_history", "session_effects"] {
+            let exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(exists, 1, "missing {table}");
+        }
+        assert_eq!(applied_version(&conn).unwrap(), 12);
     }
 
     #[test]
@@ -600,6 +649,8 @@ mod tests {
             "comments",
             "narrative_entries",
             "effects",
+            "effect_history",
+            "session_effects",
         ] {
             assert!(
                 tables.iter().any(|t| t == expected),

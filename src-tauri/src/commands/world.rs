@@ -375,14 +375,3 @@ pub fn list_player_stats(
         .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(Into::into)
 }
-#[tauri::command]
-pub fn deactivate_effect(
-    state: State<'_, AppState>,
-    effect_id: String,
-) -> Result<lr_contracts::world::EffectDto, CommandErrorDto> {
-    state
-        .world
-        .deactivate_effect(&effect_id)
-        .map(Into::into)
-        .map_err(Into::into)
-}

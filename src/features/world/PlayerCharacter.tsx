@@ -12,6 +12,7 @@ import type {
   WorldOverview,
 } from '../../domain/world';
 import { buildWorldTimeline } from './worldTimeline';
+import { effectLifecycleAt } from './effectLifecycle';
 import './PlayerCharacter.css';
 
 type Props = {
@@ -51,6 +52,21 @@ export function PlayerCharacter({
   const [showAllActivity, setShowAllActivity] = useState(false);
   const [finishingSessionId, setFinishingSessionId] = useState<string | null>(null);
   const [sessionDrafts, setSessionDrafts] = useState<Record<string, { result: string; notes: string }>>({});
+  const [sessionAnchorNames, setSessionAnchorNames] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let live = true;
+    const stageIds = [...new Set(sessions.flatMap(session => session.stageId ? [session.stageId] : []))];
+    const branchIds = [...new Set(sessions.flatMap(session => session.branchId ? [session.branchId] : []))];
+    void Promise.all([
+      ...stageIds.map(async id => [id, await client.getQuestStage(id).catch(() => null)] as const),
+      ...branchIds.map(async id => [id, await client.getQuestBranch(id).catch(() => null)] as const),
+    ]).then(rows => {
+      if (!live) return;
+      setSessionAnchorNames(Object.fromEntries(rows.flatMap(([id, value]) => value ? [[id, value.title]] : [])));
+    });
+    return () => { live = false; };
+  }, [client, sessions]);
 
   useEffect(() => {
     let live = true;
@@ -93,7 +109,7 @@ export function PlayerCharacter({
     .filter(event => !hiddenRecords.has(`${event.recordKind}:${event.recordId}`)), [player, overview, concepts, stats, sessions, tracks, hiddenRecords]);
   const currentQuests = overview.quests.filter(quest => (quest.status === 'open' || quest.status === 'active') && !hiddenRecords.has(`quest:${quest.id}`));
   const activeSessions = sessions.filter(session => session.status === 'in_progress' && !hiddenRecords.has(`quest_session:${session.id}`));
-  const currentEffects = overview.effects.filter(effect => !effect.deactivatedAt && !hiddenRecords.has(`effect:${effect.id}`));
+  const visibleEffects = overview.effects.filter(effect => !hiddenRecords.has(`effect:${effect.id}`));
   const activeConceptProgress = concepts.flatMap(concept => (tracks[concept.id] ?? [])
     .filter(track => track.isActive && !hiddenRecords.has(`concept:${concept.id}`))
     .map(track => ({ concept, track })));
@@ -141,13 +157,13 @@ export function PlayerCharacter({
     }
   }
 
-  const contextName = (session: QuestSession) => session.questId
-    ? `Quest · ${overview.quests.find(item => item.id === session.questId)?.title ?? 'work'}`
-    : session.skillId
-      ? `Skill · ${overview.skills.find(item => item.id === session.skillId)?.name ?? 'practice'}`
-      : session.conceptId
-        ? `Concept · ${concepts.find(item => item.id === session.conceptId)?.name ?? 'work'}`
-        : 'Recorded activity';
+  const contextName = (session: QuestSession) => [
+    session.questId && `Quest · ${overview.quests.find(item => item.id === session.questId)?.title ?? session.questId}`,
+    session.stageId && `Stage · ${sessionAnchorNames[session.stageId] ?? session.stageId}`,
+    session.branchId && `Branch · ${sessionAnchorNames[session.branchId] ?? session.branchId}`,
+    session.skillId && `Skill · ${overview.skills.find(item => item.id === session.skillId)?.name ?? session.skillId}`,
+    session.conceptId && `Concept · ${concepts.find(item => item.id === session.conceptId)?.name ?? session.conceptId}`,
+  ].filter((value): value is string => Boolean(value)).join(' · ') || 'Recorded activity';
 
   return <div className="workspace-page player-hub">
     <header className="player-hub__heading">
@@ -223,11 +239,11 @@ export function PlayerCharacter({
       </section>
 
       <section className="surface-card player-hub__card">
-        <div className="surface-card__heading"><div><p className="eyebrow">RECORDED CURRENT STATE</p><h3>Effects</h3></div><button className="text-link" onClick={() => onNavigate('effects')}>View all →</button></div>
-        {currentEffects.length === 0 ? <div className="player-hub__empty"><strong>No active Effects recorded</strong><p>Time does not silently create or deactivate world records.</p></div>
-          : <div className="player-hub__list">{currentEffects.slice(0, 4).map(effect => {
-            const expired = Boolean(effect.expiresAt && Date.parse(effect.expiresAt) < Date.now());
-            return <article className="player-hub__effect" key={effect.id}><span className={`effect-indicator ${expired ? 'is-expired' : ''}`} aria-hidden="true">✦</span><button className="player-hub__open" onClick={() => onOpenEntity('effect', effect.id)}><strong>{effect.name}</strong><small>{effect.targetKind === 'concept' ? `Concept · ${concepts.find(item => item.id === effect.targetConceptId)?.name ?? 'linked'}` : 'Player'} · intensity {effect.intensity}</small><small>{expired ? 'Past recorded expiry · no automatic mutation' : effect.expiresAt ? `Recorded through ${formatDate(effect.expiresAt)}` : 'No expiry recorded'}</small></button><button className="button button--small button--quiet" disabled={saving} onClick={() => void perform(() => client.deactivateEffect(effect.id), 'Effect deactivated explicitly.')}>Deactivate</button></article>;
+        <div className="surface-card__heading"><div><p className="eyebrow">DERIVED FROM RECORDED TIMESTAMPS</p><h3>Effects</h3></div><button className="text-link" onClick={() => onNavigate('effects')}>Manage all →</button></div>
+        {visibleEffects.length === 0 ? <div className="player-hub__empty"><strong>No visible Effects recorded</strong><p>Expiry is displayed from its recorded timestamp. Time passing never writes a deactivation.</p></div>
+          : <div className="player-hub__list">{visibleEffects.slice().sort((a,b)=>Date.parse(b.startedAt)-Date.parse(a.startedAt)).slice(0,6).map(effect => {
+            const lifecycle = effectLifecycleAt(effect);
+            return <article className="player-hub__effect" key={effect.id}><span className={`effect-indicator ${lifecycle==='expired'?'is-expired':''}`} aria-hidden="true">✦</span><button className="player-hub__open" onClick={() => onOpenEntity('effect', effect.id)}><span className={`type-pill effect-state effect-state--${lifecycle}`}>{pretty(lifecycle)}</span><strong>{effect.name}</strong><small>{effect.targetKind === 'concept' ? `Concept · ${concepts.find(item => item.id === effect.targetConceptId)?.name ?? 'linked'}` : 'Player'} · intensity {effect.intensity}</small><small>{effect.expiresAt ? `Recorded expiry ${formatDate(effect.expiresAt)}` : 'No expiry recorded · indefinite/manual'}</small>{effect.deactivatedAt&&<small>Manually deactivated {formatDate(effect.deactivatedAt)}</small>}</button>{!effect.deactivatedAt&&lifecycle!=='expired'&&<button className="button button--small button--quiet" disabled={saving} onClick={() => void perform(() => client.deactivateEffect(player.id,effect.id), 'Effect manually deactivated; the historical event was recorded.')}>Deactivate</button>}</article>;
           })}</div>}
       </section>
 
@@ -268,7 +284,7 @@ export function PlayerCharacter({
       </section>
 
       <section className="surface-card player-hub__card">
-        <div className="surface-card__heading"><div><p className="eyebrow">PLAYER-AUTHORED DEVELOPMENT</p><h3>Skills in practice</h3></div><button className="text-link" onClick={() => onNavigate('skills')}>Skill trees →</button></div>
+        <div className="surface-card__heading"><div><p className="eyebrow">PLAYER-AUTHORED DEVELOPMENT</p><h3>Active Skills</h3></div><button className="text-link" onClick={() => onNavigate('skills')}>Skill trees →</button></div>
         {overview.skills.filter(skill => skill.status === 'active' && !hiddenRecords.has(`skill:${skill.id}`)).length === 0 ? <div className="player-hub__empty"><strong>No active Skills recorded</strong><p>Levels stay player-authored; practice time is recorded activity, not an automatic level formula.</p><button className="button button--small" onClick={() => onNavigate('skills')}>Open Skills</button></div>
           : <div className="player-hub__list">{overview.skills.filter(skill => skill.status === 'active' && !hiddenRecords.has(`skill:${skill.id}`)).slice(0, 5).map(skill => <button className="player-hub__skill" key={skill.id} onClick={() => onOpenEntity('skill', skill.id)}><span><strong>{skill.name}</strong><small>{overview.skillTrees.find(tree => tree.id === skill.skillTreeId)?.name ?? 'Skill Tree'} · {skill.investedMinutes} minutes recorded</small></span><strong>Level {skill.level}{skill.levelName ? ` · ${skill.levelName}` : ''}</strong></button>)}</div>}
       </section>

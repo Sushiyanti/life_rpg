@@ -6,8 +6,28 @@ use lr_application::{
 use lr_domain::{
     Comment, Concept, ConceptRelationship, Effect, NarrativeEntry, Player, PlayerStat,
     PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree, StatDefinition, Transaction,
+    TypeDefinition,
 };
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectTypeDto {
+    pub code: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub sort_order: i32,
+}
+impl From<TypeDefinition> for EffectTypeDto {
+    fn from(value: TypeDefinition) -> Self {
+        Self {
+            code: value.type_ref.code,
+            label: value.label,
+            description: value.description,
+            sort_order: value.sort_order,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

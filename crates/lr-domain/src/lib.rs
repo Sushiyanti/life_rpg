@@ -8,6 +8,7 @@ pub mod association;
 pub mod comment;
 pub mod concept;
 pub mod effect;
+pub mod effect_history;
 pub mod error;
 pub mod narrative;
 pub mod player;
@@ -32,6 +33,7 @@ pub use concept::{
     ProgressTrackDefinition,
 };
 pub use effect::{Effect, EffectLifecycle, EffectTargetKind};
+pub use effect_history::{EffectHistoryEntry, EffectHistoryKind, SessionEffect, SessionEffectRole};
 pub use error::{DomainError, DomainResult};
 pub use narrative::NarrativeEntry;
 pub use player::Player;
