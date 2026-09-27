@@ -528,6 +528,45 @@ pub fn delete_workspace_panel(
         .delete_workspace_panel(&player_id, &workspace_id, &panel_id)
         .map_err(Into::into)
 }
+
+#[tauri::command]
+pub fn import_workspace(
+    state: State<'_, AppState>,
+    player_id: String,
+    request: WorkspaceImportRequestDto,
+) -> Result<WorkspaceImportResultDto, CommandErrorDto> {
+    let panels = request
+        .panels
+        .into_iter()
+        .map(|panel| lr_application::WorkspacePanelImport {
+            panel_type: panel.panel_type,
+            title: panel.title,
+            variant: panel.variant,
+            density: panel.density,
+            filter_status: panel.filter_status,
+            filter_active: panel.filter_active,
+            filter_type_code: panel.filter_type_code,
+            filter_concept_id: panel.filter_concept_id,
+            filter_recent_days: panel.filter_recent_days,
+            sort_by: panel.sort_by,
+            item_limit: panel.item_limit,
+            sort_order: panel.sort_order,
+            grid_span: panel.grid_span,
+            is_visible: panel.is_visible,
+            is_pinned: panel.is_pinned,
+            is_collapsed: panel.is_collapsed,
+        })
+        .collect();
+    let (workspace, panels) = state
+        .semantics
+        .import_workspace(&player_id, &request.name, &request.template, panels)
+        .map_err(CommandErrorDto::from)?;
+    Ok(WorkspaceImportResultDto {
+        workspace: workspace.into(),
+        panels: panels.into_iter().map(Into::into).collect(),
+    })
+}
+
 #[tauri::command]
 pub fn suggest_concept_progress(
     state: State<'_, AppState>,

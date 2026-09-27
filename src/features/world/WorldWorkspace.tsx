@@ -5,12 +5,12 @@ import type { Concept, ConceptProgressTrack, Player, PlayerStat, QuestSession, S
 import { PlayerCharacter } from './PlayerCharacter';
 import { WorkspaceBuilder } from '../workspaces/WorkspaceBuilder';
 import { WorkspacePanelView } from '../workspaces/WorkspacePanels';
-import type { PortableWorkspace } from '../workspaces/workspaceTransfer';
+import type { ResolvedWorkspaceImport } from '../workspaces/workspaceTransfer';
 import { EffectsScreen } from './EffectsScreen';
 import { WorldExplorer } from './WorldExplorer';
 import './WorldWorkspace.css';
 
-type Props={route:AppRoute;client:CoreClient;player:Player|null;overview:WorldOverview|null;concepts:Concept[];stats:PlayerStat[];sessions:QuestSession[];workspace:Workspace|null;workspaces:Workspace[];panels:WorkspacePanel[];onPanelsChange:(panels:WorkspacePanel[])=>void;onCreateWorkspace:(name:string,template:WorkspaceTemplate)=>Promise<void>;onRenameWorkspace:(name:string)=>Promise<void>;onDefaultWorkspace:()=>Promise<void>;onDeleteWorkspace:()=>Promise<void>;onDuplicateWorkspace:(name:string)=>Promise<void>;onImportWorkspace:(value:PortableWorkspace)=>Promise<void>;onRefresh:(message?:string)=>Promise<void>;onCreatePlayer:(name:string,description?:string)=>Promise<void>;onNavigate:(route:AppRoute)=>void};
+type Props={route:AppRoute;client:CoreClient;player:Player|null;overview:WorldOverview|null;concepts:Concept[];stats:PlayerStat[];sessions:QuestSession[];workspace:Workspace|null;workspaces:Workspace[];panels:WorkspacePanel[];onPanelsChange:(panels:WorkspacePanel[])=>void;onCreateWorkspace:(name:string,template:WorkspaceTemplate)=>Promise<void>;onRenameWorkspace:(name:string)=>Promise<void>;onDefaultWorkspace:()=>Promise<void>;onDeleteWorkspace:()=>Promise<void>;onDuplicateWorkspace:(name:string)=>Promise<void>;onImportWorkspace:(value:ResolvedWorkspaceImport)=>Promise<void>;onRefresh:(message?:string)=>Promise<void>;onCreatePlayer:(name:string,description?:string)=>Promise<void>;onNavigate:(route:AppRoute)=>void};
 const title=(v:string)=>v.replaceAll('_',' ');
 const formatDate=(v:string|null|undefined)=>v?new Date(v).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'—';
 const prettyMinutes=(m:number)=>m<60?`${m}m`:`${Math.floor(m/60)}h ${m%60}m`;

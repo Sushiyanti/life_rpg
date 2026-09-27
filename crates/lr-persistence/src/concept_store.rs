@@ -25,6 +25,7 @@ fn concept(r: &Row<'_>) -> Result<Concept, StorageError> {
     Ok(Concept {
         id: id(r.get(0).map_err(op)?)?,
         player_id: id(r.get(1).map_err(op)?)?,
+        transfer_key: r.get(10).map_err(op)?,
         concept_type: TypeRef::new(
             r.get::<_, String>(2).map_err(op)?,
             r.get::<_, String>(3).map_err(op)?,
@@ -109,16 +110,16 @@ fn link(r: &Row<'_>) -> Result<ConceptEntityLink, StorageError> {
 }
 impl ConceptStore for SqliteHealthStore {
     fn insert_concept(&self, c: &Concept) -> Result<(), StorageError> {
-        self.with_conn(|db|{db.execute("INSERT INTO concepts(id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![c.id.as_str(),c.player_id.as_str(),c.concept_type.namespace,c.concept_type.code,c.name,c.description,c.is_active as i64,c.metadata_json,c.created_at.as_str(),c.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|db|{db.execute("INSERT INTO concepts(id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at,transfer_key) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",params![c.id.as_str(),c.player_id.as_str(),c.concept_type.namespace,c.concept_type.code,c.name,c.description,c.is_active as i64,c.metadata_json,c.created_at.as_str(),c.updated_at.as_str(),c.transfer_key]).map_err(op)?;Ok(())})
     }
     fn get_concept(&self, key: &EntityId) -> Result<Option<Concept>, StorageError> {
-        self.with_conn(|db|{let mut s=db.prepare("SELECT id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at FROM concepts WHERE id=?1").map_err(op)?;let mut rows=s.query([key.as_str()]).map_err(op)?;rows.next().map_err(op)?.map(concept).transpose()})
+        self.with_conn(|db|{let mut s=db.prepare("SELECT id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at,transfer_key FROM concepts WHERE id=?1").map_err(op)?;let mut rows=s.query([key.as_str()]).map_err(op)?;rows.next().map_err(op)?.map(concept).transpose()})
     }
     fn update_concept(&self, c: &Concept) -> Result<(), StorageError> {
         self.with_conn(|db|{let n=db.execute("UPDATE concepts SET name=?2,description=?3,is_active=?4,metadata_json=?5,updated_at=?6 WHERE id=?1 AND player_id=?7",params![c.id.as_str(),c.name,c.description,c.is_active as i64,c.metadata_json,c.updated_at.as_str(),c.player_id.as_str()]).map_err(op)?;if n==1{Ok(())}else{Err(op("Concept not found or owner mismatch"))}})
     }
     fn list_concepts(&self, p: &EntityId) -> Result<Vec<Concept>, StorageError> {
-        self.with_conn(|db|{let mut s=db.prepare("SELECT id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at FROM concepts WHERE player_id=?1 ORDER BY is_active DESC,name COLLATE NOCASE,id").map_err(op)?;let mut rows=s.query([p.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(concept(r)?)}Ok(out)})
+        self.with_conn(|db|{let mut s=db.prepare("SELECT id,player_id,concept_type_namespace,concept_type_code,name,description,is_active,metadata_json,created_at,updated_at,transfer_key FROM concepts WHERE player_id=?1 ORDER BY is_active DESC,name COLLATE NOCASE,id").map_err(op)?;let mut rows=s.query([p.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(concept(r)?)}Ok(out)})
     }
     fn list_concept_relationship_types(&self) -> Result<Vec<String>, StorageError> {
         self.with_conn(|db| {

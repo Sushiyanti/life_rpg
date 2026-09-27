@@ -12,7 +12,7 @@ Phase 5.1 extends the SQLite-backed Phase 5 workspace system into a more configu
 
 - **Migration added:** `crates/lr-persistence/src/migrations/0010_phase51_workspace_capabilities.sql`.
 - Migration 10 follows schema version 9, transactionally rebuilds `workspace_panels`, preserves existing panel IDs and presentation state, normalizes legacy filter aliases to canonical per-source values, removes the old `(workspace_id, panel_type)` uniqueness constraint, and adds typed filter/sort/layout fields and indexes. Prior migration files remain untouched.
-- SQLite bounds panel source/variant/status/sort vocabularies, density, booleans, item count (1–50), recent-day filter (1–365), title length, and responsive span (1–2). The Rust domain validates each value against its source before persistence.
+- SQLite bounds panel source/variant/status/sort vocabularies, density, booleans, item count (1–50), recent-day filter (1–365), title length, and responsive span (1–2). The Rust domain validates each value against its source before persistence; Phase 5.2 also bounds panel order to 0–999 at the domain/import boundary.
 - Workspace, panel, and Concept-filter operations are Player-scoped. A panel Concept must belong to that same Player. The last workspace cannot be deleted; deleting a default workspace promotes a replacement atomically.
 - Workspace lists, default choice, and panel definitions/configuration live in SQLite. Browser storage keeps only runtime selection/route hints and supports a one-time safe import of the old Phase 4 dashboard layout.
 
@@ -40,7 +40,7 @@ The active workspace is a per-Player runtime selection and survives restart when
 
 ## Import and export
 
-Implemented as versioned JSON (`format: "life-rpg-workspace", version: 1`). Exports contain only the workspace name/template and explicit portable panel options—no Player, workspace, or panel database IDs, timestamps, or world records. Import strictly rejects missing/unknown fields, unsupported format/version/source/variant/filter combinations, malformed values, and out-of-range values. Export passes through the same validator. Import creates independent workspace and panel records.
+Phase 5.1 initially implemented version 1 JSON (`format: "life-rpg-workspace", version: 1`). That format is now accepted only through the explicit Phase 5.2 migration path: local Concept IDs are discarded and affected filters are surfaced as unresolved, never trusted. Current exports use declarative version 2 semantic Concept references and an atomic preview/resolve/import flow. See [Phase 5.2 report](PHASE-5.2-REPORT.md) for the current contract, ownership rules, and verification.
 
 ## Verification
 

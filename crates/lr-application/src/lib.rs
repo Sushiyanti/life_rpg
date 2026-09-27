@@ -22,7 +22,7 @@ pub use rules::{
     MAX_RULE_CHAIN_DEPTH, MAX_RULE_EVALUATIONS_PER_CHAIN, RULE_SCHEMA_VERSION,
 };
 pub use search::{SearchEntityKind, SearchHit, SearchQuery, SearchSort};
-pub use semantics::SemanticsStore;
+pub use semantics::{SemanticsStore, WorkspacePanelImport};
 pub use services::concepts::{ConceptDetail, ConceptService};
 pub use services::health::{
     ApplicationInfo, DatabaseInfo, HealthReport, HealthService, HealthStatus, RoundTripInfo,

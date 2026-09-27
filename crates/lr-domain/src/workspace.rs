@@ -116,6 +116,12 @@ impl WorkspacePanel {
                 "must be between 1 and 2",
             ));
         }
+        if !(0..=999).contains(&self.sort_order) {
+            return Err(DomainError::invalid_value(
+                "panel sort order",
+                "must be between 0 and 999",
+            ));
+        }
         let statuses: &[&str] = match self.panel_type.as_str() {
             "quests" => &["open", "active", "completed", "abandoned"],
             "skills" => &["active", "paused", "completed", "archived"],
@@ -289,6 +295,9 @@ mod tests {
         value.grid_span = 3;
         assert!(value.validate().is_err());
         value = panel();
+        value.sort_order = 1000;
+        assert!(value.validate().is_err());
+        value = panel();
         value.filter_recent_days = Some(366);
         assert!(value.validate().is_err());
     }
@@ -317,7 +326,10 @@ mod tests {
         value.filter_type_code = None;
         value.panel_type = "quests".into();
         value.variant = "cards".into();
-        value.sort_by = "level_desc".into();
+        value.sort_by = "not_a_sort".into();
+        assert!(value.validate().is_err());
+        value = panel();
+        value.sort_order = 1000;
         assert!(value.validate().is_err());
     }
 }

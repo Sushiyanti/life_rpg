@@ -40,6 +40,7 @@ describe('COMMANDS', () => {
     expect(COMMANDS.setDefaultWorkspace).toBe('set_default_workspace');
     expect(COMMANDS.listWorkspacePanels).toBe('list_workspace_panels');
     expect(COMMANDS.saveWorkspacePanel).toBe('save_workspace_panel');
+    expect(COMMANDS.importWorkspace).toBe('import_workspace');
   });
 });
 
@@ -79,6 +80,15 @@ describe('CoreClient', () => {
     await client.setDefaultWorkspace('player-1','workspace-1');
     expect(transport).toHaveBeenLastCalledWith('set_default_workspace',{playerId:'player-1',workspaceId:'workspace-1'});
   });
+  it('sends resolved workspace panels in one atomic import command', async () => {
+    const transport=vi.fn(async()=>({workspace:{},panels:[]})) as unknown as InvokeTransport;
+    const client=new CoreClient(transport);
+    const panel={panelType:'quests' as const,title:'Open',variant:'cards' as const,density:'cozy' as const,filterStatus:'active',filterActive:null,filterTypeCode:null,filterConceptId:'destination-concept',filterRecentDays:null,sortBy:'updated_desc' as const,itemLimit:8,sortOrder:0,gridSpan:2,isVisible:true,isPinned:false,isCollapsed:false};
+    await client.importWorkspace('destination-player','Learning','learning',[panel]);
+    expect(transport).toHaveBeenCalledTimes(1);
+    expect(transport).toHaveBeenCalledWith('import_workspace',{playerId:'destination-player',request:{name:'Learning',template:'learning',panels:[panel]}});
+  });
+
   it('returns null for an in-memory world location', async () => {
     const transport = vi.fn(async () => null) as unknown as InvokeTransport;
     const client = new CoreClient(transport);

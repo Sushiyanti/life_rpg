@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct ConceptDto {
     pub id: String,
     pub player_id: String,
+    pub transfer_key: String,
     pub type_code: String,
     pub name: String,
     pub description: Option<String>,
@@ -27,6 +28,7 @@ impl From<Concept> for ConceptDto {
         Self {
             id: v.id.to_string(),
             player_id: v.player_id.to_string(),
+            transfer_key: v.transfer_key,
             type_code: v.concept_type.code,
             name: v.name,
             description: v.description,

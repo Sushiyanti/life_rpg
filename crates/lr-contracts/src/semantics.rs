@@ -491,3 +491,40 @@ impl From<SearchHit> for SearchHitDto {
         }
     }
 }
+
+/// One declarative panel sent only after portable Concept references are resolved.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceImportPanelDto {
+    pub panel_type: String,
+    pub title: Option<String>,
+    pub variant: String,
+    pub density: String,
+    pub filter_status: Option<String>,
+    pub filter_active: Option<bool>,
+    pub filter_type_code: Option<String>,
+    pub filter_concept_id: Option<String>,
+    pub filter_recent_days: Option<i32>,
+    pub sort_by: String,
+    pub item_limit: i32,
+    pub sort_order: i32,
+    pub grid_span: i32,
+    pub is_visible: bool,
+    pub is_pinned: bool,
+    pub is_collapsed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WorkspaceImportRequestDto {
+    pub name: String,
+    pub template: String,
+    pub panels: Vec<WorkspaceImportPanelDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceImportResultDto {
+    pub workspace: WorkspaceDto,
+    pub panels: Vec<WorkspacePanelDto>,
+}

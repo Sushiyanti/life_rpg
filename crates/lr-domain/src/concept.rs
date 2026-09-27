@@ -64,6 +64,8 @@ fn non_blank(field: &'static str, value: impl Into<String>) -> DomainResult<Stri
 pub struct Concept {
     pub id: EntityId,
     pub player_id: EntityId,
+    /// Stable, opaque Concept-only identity used by portable presentation references.
+    pub transfer_key: String,
     pub concept_type: TypeRef,
     pub name: String,
     pub description: Option<String>,
@@ -78,6 +80,7 @@ impl Concept {
         player_id: EntityId,
         concept_type: TypeRef,
         name: impl Into<String>,
+        transfer_key: impl Into<String>,
         now: Iso8601Timestamp,
     ) -> DomainResult<Self> {
         if concept_type.namespace != "concept" {
@@ -85,9 +88,17 @@ impl Concept {
                 "concept type must use `concept` namespace".into(),
             ));
         }
+        let transfer_key = transfer_key.into();
+        if transfer_key.trim().is_empty() || transfer_key.chars().count() > 128 {
+            return Err(DomainError::invalid_value(
+                "Concept transfer key",
+                "must contain 1-128 characters",
+            ));
+        }
         Ok(Self {
             id,
             player_id,
+            transfer_key,
             concept_type,
             name: non_blank("concept name", name)?,
             description: None,
@@ -499,6 +510,7 @@ mod tests {
             EntityId::new("p1").unwrap(),
             TypeRef::new("concept", "knowledge").unwrap(),
             "Python",
+            "concept-ref-python",
             at("2026-09-27T09:00:00Z"),
         )
         .unwrap();
@@ -511,6 +523,7 @@ mod tests {
             EntityId::new("p1").unwrap(),
             TypeRef::quest("main").unwrap(),
             "wrong namespace",
+            "concept-ref-invalid",
             at("2026-09-27T09:00:00Z")
         )
         .is_err());

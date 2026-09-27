@@ -265,6 +265,44 @@ mod tests {
     }
 
     #[test]
+    fn concept_dto_transfer_key_matches_the_typescript_mirror() {
+        use lr_domain::{Concept, EntityId, Iso8601Timestamp, TypeRef};
+        let at = Iso8601Timestamp::parse("2026-09-27T00:00:00Z").unwrap();
+        let concept = Concept::new(
+            EntityId::new("concept-local").unwrap(),
+            EntityId::new("player-local").unwrap(),
+            TypeRef::new("concept", "subject").unwrap(),
+            "Python",
+            "concept-ref-v1-12345678",
+            at,
+        )
+        .unwrap();
+        let json = serde_json::to_value(world::ConceptDto::from(concept)).unwrap();
+        let keys: Vec<_> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        for key in [
+            "id",
+            "playerId",
+            "transferKey",
+            "typeCode",
+            "name",
+            "description",
+            "isActive",
+            "metadataJson",
+            "createdAt",
+            "updatedAt",
+        ] {
+            assert!(keys.contains(&key), "Concept DTO missing `{key}`");
+        }
+        assert_eq!(json["transferKey"], "concept-ref-v1-12345678");
+        assert!(json.get("transfer_key").is_none());
+    }
+
+    #[test]
     fn status_verdict_serializes_lowercase() {
         let dto: HealthReportDto = sample_report().into();
         let json = serde_json::to_value(&dto).expect("serialize");
@@ -503,6 +541,22 @@ mod tests {
         assert_eq!(json["includeTrashed"], false);
         assert_eq!(json["sort"], "newest");
         assert!(json.get("include_hidden").is_none());
+    }
+
+    #[test]
+    fn workspace_import_wire_request_rejects_unknown_executable_fields() {
+        let request = serde_json::json!({
+            "name":"Learning", "template":"learning", "script":"alert(1)", "panels":[]
+        });
+        assert!(serde_json::from_value::<semantics::WorkspaceImportRequestDto>(request).is_err());
+        let panel = serde_json::json!({
+            "panelType":"quests", "title":null, "variant":"cards", "density":"cozy",
+            "filterStatus":null, "filterActive":null, "filterTypeCode":null,
+            "filterConceptId":null, "filterRecentDays":null, "sortBy":"name_asc",
+            "itemLimit":6, "sortOrder":0, "gridSpan":1, "isVisible":true,
+            "isPinned":false, "isCollapsed":false, "html":"<script>bad()</script>"
+        });
+        assert!(serde_json::from_value::<semantics::WorkspaceImportPanelDto>(panel).is_err());
     }
 
     #[test]

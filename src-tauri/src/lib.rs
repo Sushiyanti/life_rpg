@@ -151,6 +151,7 @@ pub fn run() {
             commands::semantics::list_workspace_panels,
             commands::semantics::save_workspace_panel,
             commands::semantics::delete_workspace_panel,
+            commands::semantics::import_workspace,
             commands::semantics::suggest_concept_progress,
             commands::semantics::list_progress_suggestions,
             commands::semantics::accept_progress_suggestion,

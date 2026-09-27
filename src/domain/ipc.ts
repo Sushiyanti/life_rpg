@@ -24,7 +24,7 @@ import type {
   WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
   ProgressSuggestion, SearchHit, SearchQuery,
-  Workspace, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType,
+  Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -93,6 +93,7 @@ export const COMMANDS = {
   setConceptProgressControl: 'set_concept_progress_control',
   createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', setDefaultWorkspace: 'set_default_workspace', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
   listWorkspacePanels: 'list_workspace_panels', saveWorkspacePanel: 'save_workspace_panel', deleteWorkspacePanel: 'delete_workspace_panel',
+  importWorkspace: 'import_workspace',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -184,6 +185,7 @@ export class CoreClient {
   async searchWorld(query:SearchQuery):Promise<SearchHit[]>{return this.invoke<SearchHit[]>(COMMANDS.searchWorld,{query});}
   async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
   async createWorkspace(playerId:string,name:string,template:WorkspaceTemplate,isDefault=false):Promise<Workspace>{return this.invoke(COMMANDS.createWorkspace,{playerId,name,template,isDefault});}
+  async importWorkspace(playerId:string,name:string,template:WorkspaceTemplate,panels:WorkspaceImportPanel[]):Promise<{workspace:Workspace;panels:WorkspacePanel[]}>{return this.invoke(COMMANDS.importWorkspace,{playerId,request:{name,template,panels}});}
   async listWorkspaces(playerId:string):Promise<Workspace[]>{return this.invoke(COMMANDS.listWorkspaces,{playerId});}
   async setDefaultWorkspace(playerId:string,workspaceId:string):Promise<void>{return this.invoke(COMMANDS.setDefaultWorkspace,{playerId,workspaceId});}
   async renameWorkspace(playerId:string,workspaceId:string,name:string):Promise<void>{return this.invoke(COMMANDS.renameWorkspace,{playerId,workspaceId,name});}

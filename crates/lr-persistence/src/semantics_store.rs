@@ -349,6 +349,46 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
     fn create_workspace(&self, v: &Workspace) -> Result<(), StorageError> {
         self.with_conn(|d| { d.execute("INSERT INTO workspaces(id,player_id,name,template,sort_order,is_default,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![v.id.as_str(),v.player_id.as_str(),v.name,v.template,v.sort_order,v.is_default as i64,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?; Ok(()) })
     }
+    fn import_workspace(
+        &self,
+        workspace: &Workspace,
+        panels: &[WorkspacePanel],
+    ) -> Result<(), StorageError> {
+        self.with_conn_mut(|db| {
+            let tx = db.transaction().map_err(op)?;
+            tx.execute(
+                "INSERT INTO workspaces(id,player_id,name,template,sort_order,is_default,created_at,updated_at) VALUES(?1,?2,?3,?4,0,0,?5,?5)",
+                params![workspace.id.as_str(),workspace.player_id.as_str(),workspace.name,workspace.template,workspace.created_at.as_str()],
+            ).map_err(op)?;
+            for panel in panels {
+                panel.validate().map_err(op)?;
+                if panel.workspace_id != workspace.id {
+                    return Err(op("imported panel does not belong to the new workspace"));
+                }
+                let owner: i64 = tx.query_row(
+                    "SELECT COUNT(*) FROM workspaces WHERE id=?1 AND player_id=?2",
+                    params![workspace.id.as_str(), workspace.player_id.as_str()],
+                    |r| r.get(0),
+                ).map_err(op)?;
+                if owner != 1 { return Err(op("workspace import owner mismatch")); }
+                if let Some(concept_id) = &panel.filter_concept_id {
+                    let concept_owner: i64 = tx.query_row(
+                        "SELECT COUNT(*) FROM concepts WHERE id=?1 AND player_id=?2",
+                        params![concept_id.as_str(), workspace.player_id.as_str()],
+                        |r| r.get(0),
+                    ).map_err(op)?;
+                    if concept_owner != 1 {
+                        return Err(op("imported Concept filter does not belong to the destination Player world"));
+                    }
+                }
+                tx.execute(
+                    "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?19)",
+                    params![panel.id.as_str(),workspace.id.as_str(),panel.panel_type,panel.title,panel.variant,panel.density,panel.filter_status,panel.filter_active.map(i64::from),panel.filter_type_code,panel.filter_concept_id.as_ref().map(EntityId::as_str),panel.filter_recent_days,panel.sort_by,panel.item_limit,panel.sort_order,panel.grid_span,panel.is_visible as i64,panel.is_pinned as i64,panel.is_collapsed as i64,panel.created_at.as_str()],
+                ).map_err(op)?;
+            }
+            tx.commit().map_err(op)
+        })
+    }
     fn list_workspaces(&self, p: &EntityId) -> Result<Vec<Workspace>, StorageError> {
         self.with_conn(|d| { let mut s=d.prepare("SELECT id,player_id,name,template,sort_order,is_default,created_at,updated_at FROM workspaces WHERE player_id=?1 ORDER BY sort_order,id").map_err(op)?; let mut rows=s.query([p.as_str()]).map_err(op)?; let mut out=vec![]; while let Some(r)=rows.next().map_err(op)? { out.push(Workspace { id:eid(r.get(0).map_err(op)?)?, player_id:eid(r.get(1).map_err(op)?)?, name:r.get(2).map_err(op)?, template:r.get(3).map_err(op)?, sort_order:r.get(4).map_err(op)?, is_default:r.get::<_,i64>(5).map_err(op)?!=0, created_at:ts(r.get(6).map_err(op)?)?, updated_at:ts(r.get(7).map_err(op)?)? }); } Ok(out) })
     }
@@ -797,12 +837,19 @@ mod tests {
         let player_id;
         let workspace_id;
         let panel_id;
+        let concept_key;
         {
             let store = Arc::new(SqliteHealthStore::open_file(&path, T0));
             let world = WorldService::new(store.clone(), Frozen);
-            let semantics = SemanticsService::new(store, Frozen);
+            let semantics = SemanticsService::new(store.clone(), Frozen);
+            let concepts = ConceptService::new(store, Frozen);
             let player = world.create_player("Ada", None).unwrap();
             player_id = player.id.to_string();
+            let concept = concepts
+                .create_concept(&player_id, "subject", "Python", None)
+                .unwrap();
+            concept_key = concept.transfer_key.clone();
+            assert!(concept_key.starts_with("concept-ref-v1-"));
             workspace_id = semantics
                 .create_workspace(&player_id, "Python Learning", "learning", true)
                 .unwrap()
@@ -839,7 +886,10 @@ mod tests {
         }
         {
             let store = Arc::new(SqliteHealthStore::open_file(&path, T0));
-            let semantics = SemanticsService::new(store, Frozen);
+            let semantics = SemanticsService::new(store.clone(), Frozen);
+            let concepts = ConceptService::new(store, Frozen);
+            let reopened_concept = concepts.list_concepts(&player_id).unwrap().remove(0);
+            assert_eq!(reopened_concept.transfer_key, concept_key);
             let workspaces = semantics.list_workspaces(&player_id).unwrap();
             assert_eq!(workspaces.len(), 1);
             assert!(workspaces[0].is_default);
@@ -1321,5 +1371,145 @@ mod tests {
         assert!(detail.related_search_results.iter().any(|h| h.kind
             == lr_application::SearchEntityKind::Skill
             && h.id == skill.id.as_str()));
+    }
+
+    #[test]
+    fn atomic_workspace_import_rolls_back_every_row_on_invalid_or_foreign_panel() {
+        let store = store();
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store.clone(), Frozen);
+        let concepts = ConceptService::new(store.clone(), Frozen);
+        let owner = world.create_player("Owner", None).unwrap();
+        let other = world.create_player("Other", None).unwrap();
+        let own_concept = concepts
+            .create_concept(owner.id.as_str(), "subject", "Reading", None)
+            .unwrap();
+        let foreign_concept = concepts
+            .create_concept(other.id.as_str(), "subject", "Foreign", None)
+            .unwrap();
+        let at = Iso8601Timestamp::parse(T0).unwrap();
+        let imported = Workspace::new(
+            EntityId::new("import-workspace").unwrap(),
+            owner.id.clone(),
+            "Learning",
+            "learning",
+            at.clone(),
+        )
+        .unwrap();
+        let make_panel = |id: &str, concept_id: &EntityId| WorkspacePanel {
+            id: EntityId::new(id).unwrap(),
+            workspace_id: imported.id.clone(),
+            panel_type: "quests".into(),
+            title: Some(id.into()),
+            variant: "cards".into(),
+            density: "cozy".into(),
+            filter_status: Some("active".into()),
+            filter_active: None,
+            filter_type_code: None,
+            filter_concept_id: Some(concept_id.clone()),
+            filter_recent_days: None,
+            sort_by: "updated_desc".into(),
+            item_limit: 8,
+            sort_order: 0,
+            grid_span: 1,
+            is_visible: true,
+            is_pinned: false,
+            is_collapsed: false,
+            created_at: at.clone(),
+            updated_at: at.clone(),
+        };
+        let valid = make_panel("valid-panel", &own_concept.id);
+        let foreign = make_panel("foreign-panel", &foreign_concept.id);
+        assert!(store
+            .import_workspace(&imported, &[valid.clone(), foreign])
+            .is_err());
+        assert!(semantics
+            .list_workspaces(owner.id.as_str())
+            .unwrap()
+            .is_empty());
+        assert!(semantics
+            .list_workspace_panels(owner.id.as_str(), imported.id.as_str())
+            .unwrap()
+            .is_empty());
+
+        // Both panels validate individually. The duplicate panel key fails only
+        // after the transaction has inserted the workspace and first panel.
+        let duplicate = make_panel("valid-panel", &own_concept.id);
+        assert!(store
+            .import_workspace(&imported, &[valid.clone(), duplicate])
+            .is_err());
+        assert!(semantics
+            .list_workspaces(owner.id.as_str())
+            .unwrap()
+            .is_empty());
+        assert!(semantics
+            .list_workspace_panels(owner.id.as_str(), imported.id.as_str())
+            .unwrap()
+            .is_empty());
+
+        store.import_workspace(&imported, &[valid.clone()]).unwrap();
+        let panels = semantics
+            .list_workspace_panels(owner.id.as_str(), imported.id.as_str())
+            .unwrap();
+        assert_eq!(panels, vec![valid]);
+        assert_eq!(
+            semantics.list_workspaces(owner.id.as_str()).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn workspace_import_service_rechecks_destination_concept_ownership() {
+        let store = store();
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store.clone(), Frozen);
+        let concepts = ConceptService::new(store, Frozen);
+        let owner = world.create_player("Owner", None).unwrap();
+        let other = world.create_player("Other", None).unwrap();
+        let own = concepts
+            .create_concept(owner.id.as_str(), "subject", "Reading", None)
+            .unwrap();
+        let foreign = concepts
+            .create_concept(other.id.as_str(), "subject", "Writing", None)
+            .unwrap();
+        let make_panel = |concept_id: &EntityId| lr_application::WorkspacePanelImport {
+            panel_type: "quests".into(),
+            title: Some("Filtered quests".into()),
+            variant: "cards".into(),
+            density: "cozy".into(),
+            filter_status: Some("active".into()),
+            filter_active: None,
+            filter_type_code: None,
+            filter_concept_id: Some(concept_id.to_string()),
+            filter_recent_days: None,
+            sort_by: "name_asc".into(),
+            item_limit: 6,
+            sort_order: 0,
+            grid_span: 1,
+            is_visible: true,
+            is_pinned: false,
+            is_collapsed: false,
+        };
+        let (created, panels) = semantics
+            .import_workspace(
+                owner.id.as_str(),
+                "Learning",
+                "learning",
+                vec![make_panel(&own.id)],
+            )
+            .unwrap();
+        assert_eq!(panels.len(), 1);
+        assert_eq!(panels[0].filter_concept_id.as_ref(), Some(&own.id));
+        assert!(semantics
+            .import_workspace(
+                owner.id.as_str(),
+                "Foreign",
+                "learning",
+                vec![make_panel(&foreign.id)]
+            )
+            .is_err());
+        let workspaces = semantics.list_workspaces(owner.id.as_str()).unwrap();
+        assert_eq!(workspaces.len(), 1);
+        assert_eq!(workspaces[0].id, created.id);
     }
 }

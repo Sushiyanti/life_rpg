@@ -6,6 +6,27 @@ use lr_domain::{
     QuestBranch, QuestSession, QuestStage, RevisionTargetKind, Workspace, WorkspacePanel,
 };
 
+/// A validated declarative panel requested by a workspace transfer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WorkspacePanelImport {
+    pub panel_type: String,
+    pub title: Option<String>,
+    pub variant: String,
+    pub density: String,
+    pub filter_status: Option<String>,
+    pub filter_active: Option<bool>,
+    pub filter_type_code: Option<String>,
+    pub filter_concept_id: Option<String>,
+    pub filter_recent_days: Option<i32>,
+    pub sort_by: String,
+    pub item_limit: i32,
+    pub sort_order: i32,
+    pub grid_span: i32,
+    pub is_visible: bool,
+    pub is_pinned: bool,
+    pub is_collapsed: bool,
+}
+
 pub trait SemanticsStore: Send + Sync {
     fn insert_stage(&self, value: &QuestStage) -> Result<(), StorageError>;
     fn get_stage(&self, id: &EntityId) -> Result<Option<QuestStage>, StorageError>;
@@ -85,6 +106,11 @@ pub trait SemanticsStore: Send + Sync {
         context: &str,
     ) -> Result<Vec<PresentationPreference>, StorageError>;
     fn create_workspace(&self, value: &Workspace) -> Result<(), StorageError>;
+    fn import_workspace(
+        &self,
+        workspace: &Workspace,
+        panels: &[WorkspacePanel],
+    ) -> Result<(), StorageError>;
     fn list_workspaces(&self, player_id: &EntityId) -> Result<Vec<Workspace>, StorageError>;
     fn set_default_workspace(
         &self,
@@ -272,6 +298,13 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
     }
     fn create_workspace(&self, v: &Workspace) -> Result<(), StorageError> {
         (**self).create_workspace(v)
+    }
+    fn import_workspace(
+        &self,
+        workspace: &Workspace,
+        panels: &[WorkspacePanel],
+    ) -> Result<(), StorageError> {
+        (**self).import_workspace(workspace, panels)
     }
     fn list_workspaces(&self, p: &EntityId) -> Result<Vec<Workspace>, StorageError> {
         (**self).list_workspaces(p)

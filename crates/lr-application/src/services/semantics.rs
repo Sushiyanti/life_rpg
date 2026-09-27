@@ -439,6 +439,79 @@ where
         self.store.create_workspace(&workspace)?;
         Ok(workspace)
     }
+    /// Import presentation settings through the same domain validation and owner checks as interactive edits.
+    /// Persistence stores the workspace and every panel in one transaction.
+    pub fn import_workspace(
+        &self,
+        player_id: &str,
+        name: &str,
+        template: &str,
+        imports: Vec<crate::WorkspacePanelImport>,
+    ) -> Result<(Workspace, Vec<WorkspacePanel>), AppError> {
+        if imports.len() > 100 {
+            return Err(lr_domain::DomainError::invalid_value(
+                "workspace import",
+                "a workspace may contain at most 100 panels",
+            )
+            .into());
+        }
+        let player_id = EntityId::new(player_id)?;
+        self.store
+            .get_player(&player_id)?
+            .ok_or_else(|| AppError::Internal("Player not found".into()))?;
+        let now = self.now()?;
+        let workspace = Workspace::new(
+            self.id("workspace")?,
+            player_id.clone(),
+            name,
+            template,
+            now.clone(),
+        )?;
+        let mut panels = Vec::with_capacity(imports.len());
+        for (index, import) in imports.into_iter().enumerate() {
+            let panel = WorkspacePanel {
+                id: self.id("panel")?,
+                workspace_id: workspace.id.clone(),
+                panel_type: import.panel_type,
+                title: import.title,
+                variant: import.variant,
+                density: import.density,
+                filter_status: import.filter_status,
+                filter_active: import.filter_active,
+                filter_type_code: import.filter_type_code,
+                filter_concept_id: import.filter_concept_id.map(EntityId::new).transpose()?,
+                filter_recent_days: import.filter_recent_days,
+                sort_by: import.sort_by,
+                item_limit: import.item_limit,
+                sort_order: import.sort_order,
+                grid_span: import.grid_span,
+                is_visible: import.is_visible,
+                is_pinned: import.is_pinned,
+                is_collapsed: import.is_collapsed,
+                created_at: now.clone(),
+                updated_at: now.clone(),
+            };
+            panel.validate()?;
+            if let Some(concept_id) = panel.filter_concept_id.as_ref() {
+                let concept = self.store.get_concept(concept_id)?.ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "Panel {} references a Concept not found in this world",
+                        index + 1
+                    ))
+                })?;
+                if concept.player_id != player_id {
+                    return Err(lr_domain::DomainError::invalid_value(
+                        "workspace Concept filter",
+                        "Concept must belong to the destination Player world",
+                    )
+                    .into());
+                }
+            }
+            panels.push(panel);
+        }
+        self.store.import_workspace(&workspace, &panels)?;
+        Ok((workspace, panels))
+    }
     pub fn list_workspaces(&self, player_id: &str) -> Result<Vec<Workspace>, AppError> {
         Ok(self.store.list_workspaces(&EntityId::new(player_id)?)?)
     }

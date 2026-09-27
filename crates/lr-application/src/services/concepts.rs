@@ -80,6 +80,7 @@ where
             player_id,
             definition.type_ref,
             name,
+            format!("concept-ref-v1-{}", uuid::Uuid::new_v4()),
             self.now()?,
         )?;
         value.description = description.filter(|s| !s.trim().is_empty());
