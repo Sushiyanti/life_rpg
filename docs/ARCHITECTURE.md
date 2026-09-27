@@ -329,8 +329,8 @@ The first-generation scope intentionally defers unrestricted workspace authoring
 | **3.5** | Typed Concepts, relationships, progress tracks/history, temporal clarity, and global search foundation | **complete in `phase-3.5`** |
 | **3.6** | Manual progression authority, Quest Stages/Branches, real Sessions, recoverable revisions/trash, contextual visibility, and suggestions | **complete in `phase-3.6`** |
 | **4** | Dynamic presentation, workspace/UI-state persistence, specialized views and layout | **complete in `phase-4-ui`; correctness hardening in `phase-4.1-ui-fixes`** |
-| 5 | Style sandbox/editor and workspace customization | planned |
-| 6 | Packaging polish, backup/restore, export | planned |
+| **5** | Player-owned persistent workspaces and safe portable transfer (Phases 5–5.2) | **complete in `phase-5.2-workspace-transfer-integrity`** |
+| **6** | Player Hub, contextual Quest/Session interaction, Quick Capture, recorded activity, Concept/Explorer and workspace navigation | **complete in `phase-6-player-experience`** |
 
 ### Phase 2.1 integrity decisions
 
@@ -360,3 +360,11 @@ Panel membership/visibility is distinct from entity existence, lifecycle (active
 The browser may remember the last-opened workspace ID as runtime selection only. Workspace and panel definitions, including the database default and every display option, are canonical in SQLite. Migration 10 preserves version 9 panel IDs and fields and intentionally drops the old `(workspace_id, panel_type)` uniqueness restriction. Forward-only migration 11 adds an immutable, unique, Concept-only transfer key; it does not add global identity or synchronization to other world entities.
 
 No drag-and-drop/layout library was added: native draggable cards and explicit up/down buttons share persisted ordering, and bounded grid spans collapse at responsive breakpoints. Current transfer files are strict declarative version 2 JSON. Concept filters export a stable Concept-only key plus name/type; local IDs, Player IDs, timestamps and world records are excluded. The preview resolves an exact key within the destination Player automatically, offers same-type/name candidates only for explicit choice, and otherwise leaves the filter neutral with a warning. Version 1 input is migrated after validation while discarding its untrusted local Concept IDs; unknown fields and unsupported versions fail closed. One typed native import command validates the full request and atomically writes the workspace and panels, with Player ownership checked in both application and SQLite layers. See [Phase 5](PHASE-5-REPORT.md), [Phase 5.1](PHASE-5.1-REPORT.md), and [Phase 5.2](PHASE-5.2-REPORT.md) for the contract and verification.
+
+## Phase 6 — Player-facing interaction over the existing world
+
+The Player Hub composes already-persisted Player, Quest, Session, Effect, Concept-progress, Skill, Journal, snapshot and workspace records into a contextual starting point. It is a presentation/query surface, not a new world aggregate. Hub rows and persistent workspace panels navigate to the exact record through the Player-scoped Explorer; explicit return-to-origin state preserves the initiating view. Session detail can follow the Quest, Skill, and Concept IDs already recorded on that Session. Concept associations continue to use the existing typed, Player-owned association service rather than a general graph.
+
+Quest transitions, real Session start/end timestamps and authored outcome/notes use the existing commands. Quick Capture writes an existing Narrative Entry through the application boundary and attaches only to a context the Player selected; a successfully saved entry is reported as saved even if a later refresh fails. Timeline events are derived only from persisted timestamps and real records. Duration appears only when valid start/end timestamps exist. Empty or missing days, levels, stats, activity and progress are never inferred or fabricated. Session result/status and recoverable record lifecycle remain separate concepts.
+
+Workspace panels remain canonical Player-owned configuration in SQLite and unchanged by Hub presentation or navigation. A navigation or visibility-only operation does not mutate domain truth; the existing, explicit presentation-preference command remains separate. No backend/domain behavior or external UI library was introduced in Phase 6. See [Phase 6 report](PHASE-6-REPORT.md) for detail and validation.

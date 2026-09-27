@@ -140,3 +140,11 @@ Moving, configuring, hiding, pinning, collapsing, importing, duplicating, or del
 ### Phase 5.2 — workspace transfer references
 
 The version 2 workspace file is declarative presentation configuration, not a world export. Concept filters carry `{ key, name, typeCode }`; the immutable key is assigned to a Concept and is never an internal row ID. Same-world imports resolve the exact key to the destination's existing Concept. Across independently created worlds, names/type codes are suggestions only and require explicit player choice; an absent or ambiguous match remains unfiltered with a visible warning. Legacy version 1 Concept IDs are discarded during migration. Workspace/panel writes are one transaction, and both the application service and persistence adapter enforce destination Player ownership. No Quest, Skill, Concept, Session, Transaction, or other world record is created by workspace import. See [Phase 5.2 report](PHASE-5.2-REPORT.md) for validation and compatibility details.
+
+### Phase 6 — player-facing interaction
+
+> Phase 6 improves interaction with the existing world; it does not redefine canonical world semantics merely to make the UI more game-like.
+
+The Player Hub is a contextual projection of the currently selected Player's persisted records. “Current” and “active” refer to recorded aggregate/status/lifecycle fields—not inferred daily activity. The timeline contains only timestamped world records that exist; elapsed duration is shown only when a Session has valid recorded start and end times. Player/Skill levels, stats, Concept tracks, Quest progress, Session outcome, and contextual links change only through their existing explicit domain/application commands. Quick Capture creates an existing typed Narrative Entry; context attachment is opt-in, and an unattached note is valid.
+
+Opening an Explorer record or following a Session's existing Quest/Skill/Concept context is navigation, not a world mutation. Workspace panels stay player-owned presentation configuration, and contextual visibility stays distinct from lifecycle and domain status. No new general graph, inferred progression, synthetic activity, account identity, or automatic leveling was introduced. See [Phase 6 report](PHASE-6-REPORT.md) for the interaction/UI boundary and verification.
