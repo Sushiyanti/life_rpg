@@ -1,7 +1,8 @@
 # Phase 4 — Dynamic World UI, Workspace & Explorer
 
-**Branch:** `phase-4-ui`  
-**Starting point:** `phase-3.6` at `cc96792`  
+**Phase 4 baseline branch:** `phase-4-ui`
+**Phase 4.1 corrective branch:** `phase-4.1-ui-fixes` (starting from Phase 4 commit `d161b5a`; current corrective checkpoint `70207da`)
+**Phase 4 starting point:** `phase-3.6` at `cc96792`
 **Scope:** First-generation local desktop UI over the Phase 3.6 world model; no Phase 5 work.
 
 ## Summary
