@@ -656,6 +656,11 @@ mod tests {
                         self.complete_quest(quest, player, tx)?;
                     }
                     RuleOperation::PlayerStat { .. } => {}
+                    RuleOperation::ConceptProgress { .. } => {
+                        return Err(StorageError::Operation(
+                            "test store does not persist Concept progress".into(),
+                        ));
+                    }
                 }
             }
             Ok(operations.to_vec())

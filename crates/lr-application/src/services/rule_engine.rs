@@ -95,6 +95,25 @@ fn pending_stat<S: WorldStore>(
         .find(|s| s.stat_code == code))
 }
 
+fn pending_concept_progress<S: WorldStore>(
+    store: &S,
+    concept_id: &EntityId,
+    code: &str,
+    operations: &[RuleOperation],
+) -> Result<Option<lr_domain::ConceptProgressTrack>, AppError> {
+    for operation in operations.iter().rev() {
+        if let RuleOperation::ConceptProgress { track, .. } = operation {
+            if track.concept_id == *concept_id && track.track_code == code {
+                return Ok(Some(track.clone()));
+            }
+        }
+    }
+    Ok(store
+        .list_progress_for_rule(concept_id)?
+        .into_iter()
+        .find(|track| track.track_code == code))
+}
+
 fn plan_action<S: WorldStore>(
     store: &S,
     event: &RuleEvent,
@@ -102,6 +121,7 @@ fn plan_action<S: WorldStore>(
     action: &RuleAction,
     operations: &mut Vec<RuleOperation>,
     now: &Iso8601Timestamp,
+    next_id: &mut impl FnMut() -> Result<String, AppError>,
 ) -> Result<Vec<RuleEvent>, AppError> {
     let player_id = EntityId::new(event.player_id())?;
     let mut generated = Vec::new();
@@ -238,6 +258,71 @@ fn plan_action<S: WorldStore>(
             operations.push(RuleOperation::PlayerStat {
                 stat,
                 expected_previous: previous.map(|s| s.current_value),
+            });
+        }
+        RuleAction::SetConceptProgress {
+            concept_id,
+            track_code,
+            value,
+            level,
+        } => {
+            let concept_key = EntityId::new(concept_id)?;
+            let concept = store.get_concept_for_rule(&concept_key)?.ok_or_else(|| {
+                AppError::Internal(format!("rule refers to missing Concept `{concept_id}`"))
+            })?;
+            if concept.player_id != player_id {
+                return Err(lr_domain::DomainError::invalid_value(
+                    "rule Concept progress action",
+                    "target Concept must belong to the event Player",
+                )
+                .into());
+            }
+            let definition = store
+                .list_progress_definitions_for_rule()?
+                .into_iter()
+                .find(|d| d.code == *track_code && d.is_active)
+                .ok_or_else(|| {
+                    AppError::Internal(format!(
+                        "rule refers to missing progress definition `{track_code}`"
+                    ))
+                })?;
+            let previous = pending_concept_progress(store, &concept_key, track_code, operations)?;
+            let track = match previous.as_ref() {
+                Some(current) => {
+                    let mut next = current.clone();
+                    next.change(&definition, *value, *level, now.clone())?;
+                    next
+                }
+                None => lr_domain::ConceptProgressTrack::new(
+                    EntityId::new(next_id()?)?,
+                    concept.id.clone(),
+                    &definition,
+                    *value,
+                    *level,
+                    now.clone(),
+                )?,
+            };
+            let history = lr_domain::ConceptProgressEntry::new(
+                EntityId::new(next_id()?)?,
+                &track,
+                previous.as_ref().map(|p| p.current_value),
+                now.clone(),
+                now.clone(),
+            )?;
+            generated.push(RuleEvent::ConceptProgressChanged {
+                player_id: player_id.to_string(),
+                concept_id: concept.id.to_string(),
+                concept_type: concept.concept_type.code,
+                track_code: track_code.clone(),
+                previous_value: previous.as_ref().map(|p| p.current_value),
+                current_value: track.current_value,
+                level: track.level,
+            });
+            operations.push(RuleOperation::ConceptProgress {
+                player_id: player_id.clone(),
+                track,
+                expected_previous: previous.map(|p| p.current_value),
+                history,
             });
         }
     }
@@ -378,7 +463,15 @@ pub fn execute<S: WorldStore>(
             let mut rule_events = Vec::new();
             for (index, action) in rule.definition.actions.iter().enumerate() {
                 actions += 1;
-                match plan_action(store, &event, &rule, action, &mut operations, &now) {
+                match plan_action(
+                    store,
+                    &event,
+                    &rule,
+                    action,
+                    &mut operations,
+                    &now,
+                    &mut next_id,
+                ) {
                     Ok(mut generated) => rule_events.append(&mut generated),
                     Err(error) => {
                         let message = error.to_string();

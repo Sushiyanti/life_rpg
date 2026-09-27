@@ -2,6 +2,7 @@
 //! its ports. No service reaches for a global — everything it needs is
 //! injected, which is what keeps them trivially testable.
 
+pub mod concepts;
 pub mod health;
 pub mod rule_engine;
 pub mod world;

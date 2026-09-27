@@ -379,11 +379,24 @@ mod tests {
         ] {
             assert!(json.get(key).is_some(), "missing key {key}");
         }
-        let penalty = Transaction::xp_adjustment(player, -20, 0, at).unwrap();
+        let penalty = Transaction::xp_adjustment(player, -20, 0, at.clone()).unwrap();
         let tx = serde_json::to_value(world::TransactionDto::from(penalty)).unwrap();
         assert_eq!(tx["amount"], -20);
         assert_eq!(tx["appliedAmount"], 0);
         assert!(tx.get("applied_amount").is_none());
+        assert_eq!(tx["capturedAt"], tx["occurredAt"]);
+        let mut effect = lr_domain::Effect::new(
+            EntityId::new("e1").unwrap(),
+            EntityId::new("p1").unwrap(),
+            lr_domain::TypeRef::effect("condition").unwrap(),
+            "Learning focus",
+            at.clone(),
+        )
+        .unwrap();
+        effect.target_concept(EntityId::new("c1").unwrap());
+        let effect = serde_json::to_value(world::EffectDto::from(effect)).unwrap();
+        assert_eq!(effect["targetKind"], "concept");
+        assert_eq!(effect["targetConceptId"], "c1");
     }
 
     #[test]

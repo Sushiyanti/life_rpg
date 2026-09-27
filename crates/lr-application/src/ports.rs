@@ -70,6 +70,29 @@ pub trait HealthStore: Send + Sync {
 /// Persistent world port. Methods use domain values and application errors only.
 /// Compound mutation methods must be implemented atomically by adapters.
 pub trait WorldStore: Send + Sync {
+    fn get_concept_for_rule(
+        &self,
+        _: &EntityId,
+    ) -> Result<Option<lr_domain::Concept>, StorageError> {
+        Err(StorageError::Operation(
+            "Concept rule actions are not supported by this store".into(),
+        ))
+    }
+    fn list_progress_definitions_for_rule(
+        &self,
+    ) -> Result<Vec<lr_domain::ProgressTrackDefinition>, StorageError> {
+        Err(StorageError::Operation(
+            "Concept progress rule actions are not supported by this store".into(),
+        ))
+    }
+    fn list_progress_for_rule(
+        &self,
+        _: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError> {
+        Err(StorageError::Operation(
+            "Concept progress rule actions are not supported by this store".into(),
+        ))
+    }
     fn create_rule(&self, _: &Rule) -> Result<(), StorageError> {
         Err(StorageError::Operation(
             "rules are not supported by this store".into(),
@@ -241,6 +264,175 @@ pub trait WorldStore: Send + Sync {
     ) -> Result<Transaction, StorageError>;
 }
 
+/// Persistence port for typed Concepts and their Concept-specific history.
+pub trait ConceptStore: Send + Sync {
+    fn insert_concept(&self, value: &lr_domain::Concept) -> Result<(), StorageError>;
+    fn get_concept(&self, id: &EntityId) -> Result<Option<lr_domain::Concept>, StorageError>;
+    fn update_concept(&self, value: &lr_domain::Concept) -> Result<(), StorageError>;
+    fn list_concepts(&self, player_id: &EntityId) -> Result<Vec<lr_domain::Concept>, StorageError>;
+    fn list_concept_relationship_types(&self) -> Result<Vec<String>, StorageError>;
+    fn insert_concept_relationship(
+        &self,
+        value: &lr_domain::ConceptRelationship,
+    ) -> Result<(), StorageError>;
+    fn update_concept_relationship(
+        &self,
+        value: &lr_domain::ConceptRelationship,
+    ) -> Result<(), StorageError>;
+    fn list_concept_relationships(
+        &self,
+        concept_id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptRelationship>, StorageError>;
+    fn list_progress_track_definitions(
+        &self,
+    ) -> Result<Vec<lr_domain::ProgressTrackDefinition>, StorageError>;
+    fn create_progress_track_definition(
+        &self,
+        value: &lr_domain::ProgressTrackDefinition,
+    ) -> Result<(), StorageError>;
+    fn list_concept_progress(
+        &self,
+        concept_id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError>;
+    fn list_concept_progress_history(
+        &self,
+        concept_id: &EntityId,
+        track_code: Option<&str>,
+    ) -> Result<Vec<lr_domain::ConceptProgressEntry>, StorageError>;
+    fn link_entity_to_concept(
+        &self,
+        value: &lr_domain::ConceptEntityLink,
+    ) -> Result<(), StorageError>;
+    fn unlink_entity_from_concept(
+        &self,
+        concept_id: &EntityId,
+        kind: lr_domain::ConceptEntityKind,
+        entity_id: &str,
+    ) -> Result<(), StorageError>;
+    fn list_concept_entity_links(
+        &self,
+        concept_id: &EntityId,
+        kind: Option<lr_domain::ConceptEntityKind>,
+    ) -> Result<Vec<lr_domain::ConceptEntityLink>, StorageError>;
+    fn capture_concept_snapshot(
+        &self,
+        concept_id: &EntityId,
+        date: &DateValue,
+        captured_at: &Iso8601Timestamp,
+    ) -> Result<lr_domain::ConceptStateSnapshot, StorageError>;
+    fn list_concept_snapshots(
+        &self,
+        concept_id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptStateSnapshot>, StorageError>;
+}
+impl<T: ConceptStore + ?Sized> ConceptStore for std::sync::Arc<T> {
+    fn insert_concept(&self, v: &lr_domain::Concept) -> Result<(), StorageError> {
+        (**self).insert_concept(v)
+    }
+    fn get_concept(&self, id: &EntityId) -> Result<Option<lr_domain::Concept>, StorageError> {
+        (**self).get_concept(id)
+    }
+    fn update_concept(&self, v: &lr_domain::Concept) -> Result<(), StorageError> {
+        (**self).update_concept(v)
+    }
+    fn list_concepts(&self, id: &EntityId) -> Result<Vec<lr_domain::Concept>, StorageError> {
+        (**self).list_concepts(id)
+    }
+    fn list_concept_relationship_types(&self) -> Result<Vec<String>, StorageError> {
+        (**self).list_concept_relationship_types()
+    }
+    fn insert_concept_relationship(
+        &self,
+        v: &lr_domain::ConceptRelationship,
+    ) -> Result<(), StorageError> {
+        (**self).insert_concept_relationship(v)
+    }
+    fn update_concept_relationship(
+        &self,
+        v: &lr_domain::ConceptRelationship,
+    ) -> Result<(), StorageError> {
+        (**self).update_concept_relationship(v)
+    }
+    fn list_concept_relationships(
+        &self,
+        id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptRelationship>, StorageError> {
+        (**self).list_concept_relationships(id)
+    }
+    fn list_progress_track_definitions(
+        &self,
+    ) -> Result<Vec<lr_domain::ProgressTrackDefinition>, StorageError> {
+        (**self).list_progress_track_definitions()
+    }
+    fn create_progress_track_definition(
+        &self,
+        v: &lr_domain::ProgressTrackDefinition,
+    ) -> Result<(), StorageError> {
+        (**self).create_progress_track_definition(v)
+    }
+    fn list_concept_progress(
+        &self,
+        id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError> {
+        (**self).list_concept_progress(id)
+    }
+    fn list_concept_progress_history(
+        &self,
+        id: &EntityId,
+        c: Option<&str>,
+    ) -> Result<Vec<lr_domain::ConceptProgressEntry>, StorageError> {
+        (**self).list_concept_progress_history(id, c)
+    }
+    fn link_entity_to_concept(&self, v: &lr_domain::ConceptEntityLink) -> Result<(), StorageError> {
+        (**self).link_entity_to_concept(v)
+    }
+    fn unlink_entity_from_concept(
+        &self,
+        id: &EntityId,
+        k: lr_domain::ConceptEntityKind,
+        e: &str,
+    ) -> Result<(), StorageError> {
+        (**self).unlink_entity_from_concept(id, k, e)
+    }
+    fn list_concept_entity_links(
+        &self,
+        id: &EntityId,
+        k: Option<lr_domain::ConceptEntityKind>,
+    ) -> Result<Vec<lr_domain::ConceptEntityLink>, StorageError> {
+        (**self).list_concept_entity_links(id, k)
+    }
+    fn capture_concept_snapshot(
+        &self,
+        id: &EntityId,
+        d: &DateValue,
+        t: &Iso8601Timestamp,
+    ) -> Result<lr_domain::ConceptStateSnapshot, StorageError> {
+        (**self).capture_concept_snapshot(id, d, t)
+    }
+    fn list_concept_snapshots(
+        &self,
+        id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptStateSnapshot>, StorageError> {
+        (**self).list_concept_snapshots(id)
+    }
+}
+pub trait SearchStore: Send + Sync {
+    fn search(
+        &self,
+        query: &crate::SearchQuery,
+        active_at: &Iso8601Timestamp,
+    ) -> Result<Vec<crate::SearchHit>, StorageError>;
+}
+impl<T: SearchStore + ?Sized> SearchStore for std::sync::Arc<T> {
+    fn search(
+        &self,
+        q: &crate::SearchQuery,
+        t: &Iso8601Timestamp,
+    ) -> Result<Vec<crate::SearchHit>, StorageError> {
+        (**self).search(q, t)
+    }
+}
+
 /// Injected source of time keeps services deterministic under test.
 pub trait Clock: Send + Sync {
     fn now_rfc3339(&self) -> String;
@@ -264,6 +456,23 @@ impl<T: HealthStore + ?Sized> HealthStore for std::sync::Arc<T> {
     }
 }
 impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
+    fn get_concept_for_rule(
+        &self,
+        id: &EntityId,
+    ) -> Result<Option<lr_domain::Concept>, StorageError> {
+        (**self).get_concept_for_rule(id)
+    }
+    fn list_progress_definitions_for_rule(
+        &self,
+    ) -> Result<Vec<lr_domain::ProgressTrackDefinition>, StorageError> {
+        (**self).list_progress_definitions_for_rule()
+    }
+    fn list_progress_for_rule(
+        &self,
+        id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError> {
+        (**self).list_progress_for_rule(id)
+    }
     fn create_rule(&self, r: &Rule) -> Result<(), StorageError> {
         (**self).create_rule(r)
     }

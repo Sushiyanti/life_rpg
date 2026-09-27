@@ -11,6 +11,8 @@ pub struct Transaction {
     /// Actual state delta for XP events. `amount` remains the requested event.
     pub applied_amount: Option<i64>,
     pub occurred_at: Iso8601Timestamp,
+    /// When this installation recorded the event; legacy rows may not know it.
+    pub captured_at: Option<Iso8601Timestamp>,
     pub reason: Option<String>,
     pub description: Option<String>,
     pub source_kind: Option<String>,
@@ -51,6 +53,7 @@ impl Transaction {
             resource: resource.to_string(),
             amount,
             applied_amount: (resource == "xp").then_some(amount),
+            captured_at: Some(occurred_at.clone()),
             occurred_at,
             reason: None,
             description: None,
@@ -58,6 +61,17 @@ impl Transaction {
             source_id: None,
             metadata_json: "{}".into(),
         })
+    }
+
+    /// Override the default capture moment when the event's occurrence time is supplied separately.
+    pub fn with_capture_time(mut self, captured_at: Iso8601Timestamp) -> DomainResult<Self> {
+        if captured_at < self.occurred_at {
+            return Err(DomainError::Invariant(
+                "transaction occurred_at cannot be after captured_at".into(),
+            ));
+        }
+        self.captured_at = Some(captured_at);
+        Ok(self)
     }
 
     /// Construct the ledger event for a requested XP adjustment, including a
@@ -90,5 +104,27 @@ impl Transaction {
         )?;
         tx.applied_amount = Some(applied);
         Ok(tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn transaction_capture_cannot_precede_the_occurred_event() {
+        let occurred = Iso8601Timestamp::parse("2026-09-27T10:00:00Z").unwrap();
+        let captured = Iso8601Timestamp::parse("2026-09-27T10:01:00Z").unwrap();
+        let transaction = Transaction::new(
+            EntityId::new("player-1").unwrap(),
+            TypeRef::transaction("xp").unwrap(),
+            "xp",
+            1,
+            occurred,
+        )
+        .unwrap();
+        assert!(transaction.clone().with_capture_time(captured).is_ok());
+        assert!(transaction
+            .with_capture_time(Iso8601Timestamp::parse("2026-09-27T09:59:00Z").unwrap())
+            .is_err());
     }
 }

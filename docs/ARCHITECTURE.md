@@ -6,7 +6,7 @@ decisions that will matter in later phases.
 
 For the product-specific vocabulary and current invariants, see the [Domain
 Design Codex](DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](PHASE-2.1-REPORT.md),
-and [Phase 3 report](PHASE-3-REPORT.md).
+the [Phase 3 report](PHASE-3-REPORT.md), and [Phase 3.5 report](PHASE-3.5-REPORT.md).
 
 ---
 
@@ -59,10 +59,12 @@ thiserror.workspace = true
 chrono.workspace = true
 ```
 
-No `tauri`, no `rusqlite`, no `serde`. If a developer tries to add a UI concern
-to the domain, they must first edit the manifest and justify it in review.
-`cargo test -p lr-domain` compiles with zero infrastructure, which is the
-practical payoff.
+No `tauri`, no `rusqlite`, and no wire-format serialization derives. The domain
+uses a small `serde_json` dependency only to validate the explicitly versioned
+snapshot JSON value. If a developer tries to add a UI concern to the domain,
+they must first edit the manifest and justify it in review. `cargo test -p
+lr-domain` still compiles with zero infrastructure, which is the practical
+payoff.
 
 ---
 
@@ -243,15 +245,15 @@ blocking on a question. These were chosen during Phase 1:
 
 ### Vocabulary and trigger semantics
 
-The event is the trusted trigger source, distinct from a scheduled/state-only query. Version 1 emits `quest_completed`, `player_xp_changed`, and `stat_changed`; each Rust event variant has structured semantic fields. The event is serialized only for audit. A Rule definition has a schema version (currently 1), event-kind trigger, typed condition tree, and ordered closed action list. No rule column or payload is interpreted as executable code.
+The event is the trusted trigger source, distinct from a scheduled/state-only query. Version 1 emits `quest_completed`, `player_xp_changed`, `stat_changed`, and (Phase 3.5) `concept_progress_changed`; each Rust event variant has structured semantic fields. The event is serialized only for audit. A Rule definition has a schema version (currently 1), event-kind trigger, typed condition tree, and ordered closed action list. No rule column or payload is interpreted as executable code.
 
-Conditions support event-kind matching, numeric/text comparisons, `ALL`, `ANY`, and `NOT`. Numeric subjects are selected from event fields; asking an event for a subject it does not carry returns no match. This version does not query arbitrary current entity state or schedule evaluations. Actions support XP award/removal, valid Quest completion, and setting/modifying a data-defined Player Stat. The domain constructors/transitions validate XP floor, Quest lifecycle, finite stat values, and configured stat bounds. Other action families remain deferred until their behavior is designed.
+Conditions support event-kind matching, numeric/text comparisons, `ALL`, `ANY`, and `NOT`. Numeric subjects are selected from event fields; asking an event for a subject it does not carry returns no match. This version does not query arbitrary current entity state or schedule evaluations. Actions support XP award/removal, valid Quest completion, setting/modifying a data-defined Player Stat, and the constrained `set_concept_progress` action. Concept actions check same-Player ownership, active data-defined track semantics/bounds, and finite values. Other action families remain deferred until their behavior is designed.
 
 ### Ordering and atomicity
 
 For a given event, enabled rules are ordered by priority descending, then stable Rule ID ascending. Rules are evaluated in that order. Ordered actions append follow-on typed events, processed FIFO after the current event's rule set. Iteration does not depend on SQL row order, frontend ordering, map iteration, or randomness. IDs/timestamps are supplied by application services, with event source order retained.
 
-The evaluator plans root and derived changes using validated domain values (`Player::apply_xp`, `Quest::complete`, `PlayerStat::new`). It sends typed `RuleOperation`s and successful/condition-failed audit records through `WorldStore::apply_rule_chain`. The SQLite adapter rechecks expected prior state and ownership, inserts related XP Transactions, applies all Player/Quest/Stat state, and appends audit records in one transaction. Failure in a later action therefore commits none of the initiating state change or earlier planned actions. When the batch itself fails, the adapter transaction rolls back; the application attempts a separate failure-audit insert. No SQL or game-rule branches are placed in Tauri commands or React.
+The evaluator plans root and derived changes using validated domain values (`Player::apply_xp`, `Quest::complete`, `PlayerStat::new`, and Concept Progress Track transitions). It sends typed `RuleOperation`s and successful/condition-failed audit records through `WorldStore::apply_rule_chain`. The SQLite adapter rechecks expected prior values and ownership, inserts related XP Transactions and immutable Concept progress history, applies all Player/Quest/Stat/Concept state, and appends audit records in one transaction. Failure in a later action therefore commits none of the initiating state change or earlier planned actions. When the batch itself fails, the adapter transaction rolls back; the application attempts a separate failure-audit insert. No SQL or game-rule branches are placed in Tauri commands or React.
 
 The execution audit is debugging history, not a replacement for Transactions or daily snapshots. It records Rule ID, chain ID, typed event kind/payload, condition result, configured actions, status/error, depth, and time; SQLite rejects updates/deletes to those rows.
 
@@ -263,7 +265,29 @@ There is no evaluator for arbitrary expressions, no script/action plug-in mechan
 
 ---
 
-## 7. Roadmap
+## 7. Phase 3.5 domain refinement
+
+### Concepts stay distinct from activities and records
+
+A `Concept` is a Player-owned meaningful subject (for example a topic, project, place, or life area), not a universal wrapper. Quest, Skill, Skill Tree, Narrative Entry, Comment, Transaction, and Effect remain distinct typed entities. A closed cross-entity link table and the explicit Effect target variant connect only supported entity kinds to a Concept. Concept-to-Concept relationships are directed, typed, data-defined records with same-Player guards; this is not a graph inference engine.
+
+Concept types live in the existing `type_definitions` registry under the `concept` namespace. Relationship codes and Progress Track definitions are data-defined. Progress carries explicit semantics (`numeric`, `percentage`, `experience`, `level`, `mastery`) with finite/bounds checks; it does not introduce a universal XP property or imply conversions between measures.
+
+### Time is not a daily activity record
+
+`created_at` means initial record creation, `updated_at` the last mutation of mutable state, `occurred_at` a real-world event time when meaningful, and `captured_at` the installation's observation/recording time. New Concept progress entries store both occurred and captured values. New Transactions store captured time when known; legacy Transactions retain unknown capture time rather than receiving a backfilled guess. Existing Player/Skill snapshots keep their established `created_at` column as their precise capture time; Concept snapshots use `captured_at`.
+
+Daily snapshots are immutable, unique per entity/date observations, not summaries of everything that happened during the day. Multiple chronological records may occur on one date. Missing dates are gaps in recorded data, not zero or negative activity, and are not auto-filled. Snapshot rows are not rewritten by migration.
+
+### Search is a typed query over a compact text projection
+
+`lr-application::SearchQuery` and `SearchHit` provide filtering/sorting/pagination without teaching the frontend SQL. SQLite FTS5 indexes only bounded identity/type/status/time/name/body text; triggers and migration backfill synchronize it. Full aggregate rows, metadata JSON, and rule payloads are not copied into a second database. Query filters include entity kind, Player, Concept association, type/status/active, time range, and bounded text. Effect active state is evaluated against the query instant; explicit Concept links, relationships, and targets drive related-Concept filtering. Tags, arbitrary JSON search, ranking tuning, and the search/timeline UI are deferred.
+
+`ConceptService::detail` composes current progress, Concept relationships, explicit related entity references, progress history, and snapshots into a backend read model. It is data for a future specialized page, not a persisted page entity or Phase 4 UI implementation.
+
+---
+
+## 8. Roadmap
 
 | Phase | Scope | Status |
 |---|---|---|
@@ -271,6 +295,7 @@ There is no evaluator for arbitrary expressions, no script/action plug-in mechan
 | **2** | Persistent world aggregates, type vocabulary, transactions and snapshots | **complete** |
 | **2.1** | Canonical daily state history, dynamic stats, XP policy, lifecycle and hierarchy hardening | **complete in `phase-2.1`** |
 | **3** | Typed, declarative event/condition/action engine, bounded chains, rule audit and atomic SQLite execution | **complete in `phase-3`** |
+| **3.5** | Typed Concepts, relationships, progress tracks/history, temporal clarity, and global search foundation | **complete in `phase-3.5`** |
 | 4 | Dynamic presentation: stored presentation records, UI-state persistence, workspace layout | planned |
 | 5 | Style sandbox/editor and workspace customization | planned |
 | 6 | Packaging polish, backup/restore, export | planned |

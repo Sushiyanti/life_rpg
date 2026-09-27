@@ -192,6 +192,8 @@ impl From<Skill> for SkillDto {
 pub struct EffectDto {
     pub id: String,
     pub player_id: String,
+    pub target_kind: String,
+    pub target_concept_id: Option<String>,
     pub type_code: String,
     pub name: String,
     pub description: Option<String>,
@@ -205,6 +207,12 @@ impl From<Effect> for EffectDto {
         Self {
             id: v.id.to_string(),
             player_id: v.player_id.to_string(),
+            target_kind: match v.target_kind() {
+                lr_domain::EffectTargetKind::Player => "player",
+                lr_domain::EffectTargetKind::Concept => "concept",
+            }
+            .into(),
+            target_concept_id: v.target_concept_id.map(|id| id.to_string()),
             type_code: v.effect_type.code,
             name: v.name,
             description: v.description,
@@ -225,6 +233,7 @@ pub struct TransactionDto {
     pub amount: i64,
     pub applied_amount: Option<i64>,
     pub occurred_at: String,
+    pub captured_at: Option<String>,
     pub reason: Option<String>,
     pub description: Option<String>,
     pub source_kind: Option<String>,
@@ -240,6 +249,7 @@ impl From<Transaction> for TransactionDto {
             amount: v.amount,
             applied_amount: v.applied_amount,
             occurred_at: v.occurred_at.to_string(),
+            captured_at: v.captured_at.map(|t| t.to_string()),
             reason: v.reason,
             description: v.description,
             source_kind: v.source_kind,

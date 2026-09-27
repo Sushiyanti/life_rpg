@@ -170,10 +170,19 @@ fn skill(row: &Row<'_>) -> Result<Skill, StorageError> {
     })
 }
 fn effect(row: &Row<'_>) -> Result<Effect, StorageError> {
+    let target_kind: String = row.get(15).map_err(op)?;
+    let target_concept_id: Option<String> = row.get(16).map_err(op)?;
+    if (target_kind == "player" && target_concept_id.is_some())
+        || (target_kind == "concept" && target_concept_id.is_none())
+        || !matches!(target_kind.as_str(), "player" | "concept")
+    {
+        return Err(op("corrupt Effect target reference"));
+    }
     Ok(Effect {
         id: id(row.get(0).map_err(op)?)?,
         player_id: id(row.get(1).map_err(op)?)?,
         effect_type: type_ref(row.get(2).map_err(op)?, row.get(3).map_err(op)?)?,
+        target_concept_id: target_concept_id.map(id).transpose()?,
         name: row.get(4).map_err(op)?,
         description: row.get(5).map_err(op)?,
         started_at: timestamp(row.get(6).map_err(op)?)?,
@@ -204,6 +213,11 @@ fn transaction(row: &Row<'_>) -> Result<Transaction, StorageError> {
         amount: row.get(5).map_err(op)?,
         applied_amount: row.get(6).map_err(op)?,
         occurred_at: timestamp(row.get(7).map_err(op)?)?,
+        captured_at: row
+            .get::<_, Option<String>>(13)
+            .map_err(op)?
+            .map(timestamp)
+            .transpose()?,
         reason: row.get(8).map_err(op)?,
         description: row.get(9).map_err(op)?,
         source_kind: row.get(10).map_err(op)?,
@@ -249,8 +263,8 @@ const PLAYER_SQL: &str =
 const QUEST_SQL: &str = "id,player_id,parent_quest_id,skill_id,quest_type_namespace,quest_type_code,title,description,story,instructions,status,difficulty,progress,xp_reward,due_at,started_at,completed_at,metadata_json,created_at,updated_at";
 const TREE_SQL: &str = "id,player_id,tree_type_namespace,tree_type_code,name,description,story,instructions,is_active,metadata_json,created_at,updated_at";
 const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at";
-const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at";
-const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json";
+const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id";
+const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json,captured_at";
 const COMMENT_SQL: &str =
     "id,author_player_id,target_kind,target_id,body,metadata_json,created_at,updated_at";
 const NARRATIVE_SQL: &str = "id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at";
@@ -259,7 +273,7 @@ fn insert_transaction(
     tx: &SqlTransaction<'_>,
     value: &Transaction,
 ) -> Result<Transaction, StorageError> {
-    tx.execute("INSERT INTO transactions (player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![value.player_id.as_str(),value.transaction_type.namespace,value.transaction_type.code,value.resource,value.amount,value.applied_amount,value.occurred_at.as_str(),value.reason,value.description,value.source_kind,value.source_id,value.metadata_json]).map_err(op)?;
+    tx.execute("INSERT INTO transactions (player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json,captured_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![value.player_id.as_str(),value.transaction_type.namespace,value.transaction_type.code,value.resource,value.amount,value.applied_amount,value.occurred_at.as_str(),value.reason,value.description,value.source_kind,value.source_id,value.metadata_json,value.captured_at.as_ref().map(Iso8601Timestamp::as_str)]).map_err(op)?;
     let mut stored = value.clone();
     stored.id = Some(tx.last_insert_rowid());
     Ok(stored)
@@ -289,6 +303,7 @@ fn event_kind(raw: String) -> Result<EventKind, StorageError> {
         "quest_completed" => Ok(EventKind::QuestCompleted),
         "player_xp_changed" => Ok(EventKind::PlayerXpChanged),
         "stat_changed" => Ok(EventKind::StatChanged),
+        "concept_progress_changed" => Ok(EventKind::ConceptProgressChanged),
         _ => Err(op(format!("unknown stored rule event kind `{raw}`"))),
     }
 }
@@ -338,6 +353,23 @@ const RULE_SQL: &str = "id,name,description,is_enabled,priority,trigger_kind,sch
 const RULE_EXECUTION_SQL: &str = "id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,error,depth,executed_at";
 
 impl WorldStore for SqliteHealthStore {
+    fn get_concept_for_rule(
+        &self,
+        id: &EntityId,
+    ) -> Result<Option<lr_domain::Concept>, StorageError> {
+        lr_application::ConceptStore::get_concept(self, id)
+    }
+    fn list_progress_definitions_for_rule(
+        &self,
+    ) -> Result<Vec<lr_domain::ProgressTrackDefinition>, StorageError> {
+        lr_application::ConceptStore::list_progress_track_definitions(self)
+    }
+    fn list_progress_for_rule(
+        &self,
+        id: &EntityId,
+    ) -> Result<Vec<lr_domain::ConceptProgressTrack>, StorageError> {
+        lr_application::ConceptStore::list_concept_progress(self, id)
+    }
     fn create_rule(&self, value: &Rule) -> Result<(), StorageError> {
         value.definition.validate().map_err(op)?;
         let json = serde_json::to_string(&value.definition).map_err(op)?;
@@ -424,6 +456,15 @@ impl WorldStore for SqliteHealthStore {
                         let current:Option<f64>=tx.query_row("SELECT current_value FROM player_stats WHERE player_id=?1 AND stat_code=?2",params![stat.player_id.as_str(),stat.stat_code],|r|r.get(0)).optional().map_err(op)?;
                         if current!=*expected_previous{return Err(op("rule stat action observed a stale value"));}
                         tx.execute("INSERT INTO player_stats(player_id,stat_code,current_value,metadata_json,updated_at) VALUES (?1,?2,?3,?4,?5) ON CONFLICT(player_id,stat_code) DO UPDATE SET current_value=excluded.current_value,metadata_json=excluded.metadata_json,updated_at=excluded.updated_at",params![stat.player_id.as_str(),stat.stat_code,stat.current_value,stat.metadata_json,stat.updated_at.as_str()]).map_err(op)?;
+                    }
+                    RuleOperation::ConceptProgress{player_id,track,expected_previous,history}=>{
+                        if history.concept_id!=track.concept_id||history.track_code!=track.track_code||history.previous_value!=*expected_previous||history.current_value!=track.current_value||history.level!=track.level{return Err(op("Concept progress operation and history disagree"));}
+                        let owner:String=tx.query_row("SELECT player_id FROM concepts WHERE id=?1",[track.concept_id.as_str()],|r|r.get(0)).map_err(op)?;
+                        let current:Option<f64>=tx.query_row("SELECT current_value FROM concept_progress_tracks WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code],|r|r.get(0)).optional().map_err(op)?;
+                        if current!=*expected_previous{return Err(op("rule Concept progress action observed a stale value"));}
+                        if current.is_some(){tx.execute("UPDATE concept_progress_tracks SET current_value=?3,level=?4,is_active=?5,metadata_json=?6,updated_at=?7 WHERE concept_id=?1 AND track_code=?2",params![track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.updated_at.as_str()]).map_err(op)?;}else{tx.execute("INSERT INTO concept_progress_tracks(id,concept_id,track_code,current_value,level,is_active,metadata_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![track.id.as_str(),track.concept_id.as_str(),track.track_code,track.current_value,track.level,track.is_active as i64,track.metadata_json,track.created_at.as_str(),track.updated_at.as_str()]).map_err(op)?;}
+                        if owner!=player_id.as_str(){return Err(op("Concept progress rule target belongs to another Player"));}
+                        tx.execute("INSERT INTO concept_progress_history(id,concept_id,track_code,previous_value,current_value,level,occurred_at,captured_at,metadata_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![history.id.as_str(),history.concept_id.as_str(),history.track_code,history.previous_value,history.current_value,history.level,history.occurred_at.as_str(),history.captured_at.as_str(),history.metadata_json]).map_err(op)?;
                     }
                 }
             }
@@ -567,7 +608,7 @@ impl WorldStore for SqliteHealthStore {
     }
 
     fn insert_effect(&self, e: &Effect) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{let target_kind=if e.target_concept_id.is_some(){"concept"}else{"player"};conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str(),target_kind,e.target_concept_id.as_ref().map(EntityId::as_str)]).map_err(op)?;Ok(())})
     }
     fn list_effects(
         &self,

@@ -23,6 +23,7 @@
 //! Tauri's `app_data_dir`), so this crate stays testable — tests point it at a
 //! temp directory or at `:memory:`.
 
+pub mod concept_store;
 pub mod error;
 pub mod migrations;
 pub mod pragma;

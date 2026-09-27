@@ -1861,6 +1861,7 @@ name = "lr-domain"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "serde_json",
  "thiserror 1.0.69",
 ]
 

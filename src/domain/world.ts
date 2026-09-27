@@ -1,22 +1,22 @@
-/** Hand-mirrored Phase 2 world DTOs from `lr-contracts/src/world.rs`. */
+/** Hand-mirrored world DTOs from `lr-contracts` and `lr-application` rule types. */
 export type Player={id:string;name:string;description:string|null;level:number;currentXp:number;isActive:boolean;metadataJson:string;createdAt:string;updatedAt:string};
 export type Quest={id:string;playerId:string;typeCode:string;parentQuestId:string|null;skillId:string|null;title:string;status:string;difficulty:number|null;progress:number;xpReward:number;dueAt:string|null;startedAt:string|null;completedAt:string|null;description:string|null};
 export type SkillTree={id:string;playerId:string;typeCode:string;name:string;description:string|null;isActive:boolean};
 export type Skill={id:string;skillTreeId:string;parentSkillId:string|null;typeCode:string;name:string;level:number;currentXp:number;investedMinutes:number;status:string};
-export type Effect={id:string;playerId:string;typeCode:string;name:string;description:string|null;startedAt:string;expiresAt:string|null;deactivatedAt:string|null;intensity:number};
-export type Transaction={id:number|null;playerId:string;typeCode:string;resource:string;amount:number;appliedAmount:number|null;occurredAt:string;reason:string|null;description:string|null;sourceKind:string|null;sourceId:string|null};
+export type Effect={id:string;playerId:string;targetKind:'player'|'concept';targetConceptId:string|null;typeCode:string;name:string;description:string|null;startedAt:string;expiresAt:string|null;deactivatedAt:string|null;intensity:number};
+export type Transaction={id:number|null;playerId:string;typeCode:string;resource:string;amount:number;appliedAmount:number|null;occurredAt:string;capturedAt:string|null;reason:string|null;description:string|null;sourceKind:string|null;sourceId:string|null};
 export type PlayerSnapshot={id:number|null;playerId:string;snapshotDate:string;level:number;currentXp:number;stateJson:string;createdAt:string};
 export type SkillSnapshot={id:number|null;skillId:string;snapshotDate:string;level:number;currentXp:number;status:string;investedMinutes:number;stateJson:string;createdAt:string};
 export type StatDefinition={id:string;code:string;name:string;description:string|null;unit:string|null;minimum:number|null;maximum:number|null;isActive:boolean};
 export type PlayerStat={playerId:string;statCode:string;currentValue:number;updatedAt:string};
 export type Comment={id:number|null;authorPlayerId:string|null;targetKind:string;targetId:string;body:string;createdAt:string};
 export type NarrativeEntry={id:string;playerId:string;kind:string;title:string;content:string;author:string|null;createdAt:string};
-export type EventKind='quest_completed'|'player_xp_changed'|'stat_changed';
-export type NumericSubject='previous_xp'|'current_xp'|'requested_amount'|'applied_amount'|'player_level'|'quest_progress'|'quest_xp_reward'|'stat_value';
-export type TextSubject='quest_type'|'stat_code';
+export type EventKind='quest_completed'|'player_xp_changed'|'stat_changed'|'concept_progress_changed';
+export type NumericSubject='previous_xp'|'current_xp'|'requested_amount'|'applied_amount'|'player_level'|'quest_progress'|'quest_xp_reward'|'stat_value'|'previous_progress'|'current_progress'|'concept_progress_level';
+export type TextSubject='quest_type'|'stat_code'|'concept_type'|'concept_track_code';
 export type Comparison='equal'|'not_equal'|'greater'|'greater_or_equal'|'less'|'less_or_equal';
 export type RuleCondition={op:'always'}|{op:'event_kind_is';kind:EventKind}|{op:'number_compare';subject:NumericSubject;comparison:Comparison;value:number}|{op:'text_compare';subject:TextSubject;comparison:'equal'|'not_equal';value:string}|{op:'all'|'any';conditions:RuleCondition[]}|{op:'not';condition:RuleCondition};
-export type RuleAction={kind:'award_xp';amount:number;reason:string|null}|{kind:'complete_quest';questId:string}|{kind:'set_player_stat';statCode:string;value:number}|{kind:'modify_player_stat';statCode:string;delta:number};
+export type RuleAction={kind:'award_xp';amount:number;reason:string|null}|{kind:'complete_quest';questId:string}|{kind:'set_player_stat';statCode:string;value:number}|{kind:'modify_player_stat';statCode:string;delta:number}|{kind:'set_concept_progress';conceptId:string;trackCode:string;value:number;level:number|null};
 export type RuleDefinition={schemaVersion:1;trigger:EventKind;condition:RuleCondition;actions:RuleAction[]};
 export type Rule={id:string;name:string;description:string|null;enabled:boolean;priority:number;definition:RuleDefinition;metadataJson:string;createdAt:string;updatedAt:string};
 export type RuleExecution={id:string;chainId:string;ruleId:string;eventKind:EventKind;eventJson:string;conditionPassed:boolean|null;actionsJson:string;status:'condition_failed'|'succeeded'|'failed'|'guard_aborted';error:string|null;depth:number;executedAt:string};

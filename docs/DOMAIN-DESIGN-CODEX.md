@@ -1,107 +1,110 @@
 # Life RPG — Domain Design Codex
 
-This is the concise conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules; later areas below remain boundaries, not features to build early.
+This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 3's bounded declarative rules and Phase 3.5's domain refinement. Phase 4 UI work has **not** begun.
 
 ## Product philosophy
 
-Life RPG is a **local-first application that represents a player's real life as a game-like world**. It is more than a productivity or task-list app: its purpose is to give the player's state, progression, quests, skills, effects, events/history, narrative, and eventually customizable presentation a coherent, persistent game-world representation. The user's world stays on their machine in SQLite; there is no account, cloud dependency, or server.
+Life RPG is a **local-first application that represents a player's real life as a persistent game-like world**. The backend/domain establishes what something **is**, what state it has, what happened to it, and when that was observed. The frontend decides how that world **looks and feels**. Presentation must not redefine or corrupt domain meaning.
 
-The backend/domain establishes what an entity **is**, its state, and what happened to it. The frontend decides how that world **looks and feels**. Presentation must not change or corrupt domain meaning.
+The database remains a typed relational world, not a universal object/property framework. Shared abstractions are used only where they express real shared semantics.
 
 ## Core vocabulary
 
-| Concept | Represents / is not | Time, extension, and relationships |
+| Entity | Represents / is not | Structured semantics |
 |---|---|---|
-| **Player** | A character representing the user in this world; not a login/account or the whole application. | Current aggregate: name, level, XP, active flag, metadata. Owns quests, skill trees, effects, stats, transactions, snapshots, and narrative. Core columns are structured. |
-| **State** | What is true of an entity now; not an event log or a historical record. | Current state lives on aggregates and current-value tables. Structured invariants are domain/database-enforced where possible. |
-| **Daily State Snapshot** | A preserved answer to “what did this character/skill look like on this date?”; not a live view or an event. | Immutable historical record, unique per entity/date. Player v1 stores level and XP in columns and versioned `state_json` containing active dynamic stats and currently active effects. Skill snapshots store level, XP, status, invested minutes and versioned tree/parent context. Capture reads and inserts atomically. |
-| **Stat** | A named, player-specific measure such as Patience or Programming Focus; not a hard-coded field for each future game concept, and not an untyped Player blob. | `StatDefinition` describes a data-defined code/name/description/unit/bounds/active state; `PlayerStat` stores one structured value per player+code. New concepts are rows, not migrations. Metadata is reserved for genuinely extensible detail. Snapshots preserve both definition context and value. |
-| **Quest** | A goal/objective in the world; not a separate table per genre or a generic UI card. | Current state and type are structured. Main/side/daily/challenge are normally registry-backed variants of one concept. Phase 2 statuses are `open` (planned), `active`, `completed`, and `abandoned`; pause/failure transitions are intentionally not represented yet. |
-| **Quest hierarchy** | Parent/child decomposition of goals; not permission to cross between players' worlds. | Current relationship. Parent and linked skill must belong to the same Player. Self-parenting and indirect cycles are rejected. SQLite triggers enforce ownership and acyclicity as a final guard. |
-| **Skill Tree** | A Player-owned grouping of related abilities; not the skill itself or a presentation layout. | Current entity with an explicit `is_active` flag. Type is data-defined. Owns its Skills. |
-| **Skill** | An ability/practice area that can progress; not a Quest. | Current state includes level, XP, invested minutes, and status (`active`, `paused`, `completed`, `archived`). A skill and its parent must live in the same tree; parent cycles are rejected. |
-| **Skill state** | The present progression of one Skill; not its full history. | Current fields stay structured. Daily history is a separate `SkillStateSnapshot`; time-investment events are separate Transactions. |
-| **Effect** | A temporary or persistent modifier/condition attached to a Player; not an XP/resource ledger entry. | Shared entity; Buff and Debuff are effect types/categories, not separate domain classes. Lifecycle is derived explicitly: `scheduled`, `active`, `expired`, or `manually deactivated`. Expiry is time-based; `deactivated_at` is a durable, non-destructive manual-off marker. Snapshots capture only effects active at capture time. |
-| **Buff / Debuff** | Positive/negative semantics of an Effect; not distinct storage models. | Data-defined `effect` types; one Effect lifecycle and storage shape. |
-| **Transaction** | An append-only historical change/event (XP, time, or another named resource); not current state or a snapshot. | Player and timestamp are structured. XP stores `amount` (requested event) and `applied_amount` (actual state delta). For a penalty that exceeds current XP, requested remains negative while applied is clamped so resulting XP is zero. XP events are written only through atomic state-changing operations. |
-| **Comment** | User-authored annotation attached to a supported entity; not intentional story content or a domain transition. | Historical text. Its polymorphic target is checked for existence in the same insert transaction; target kinds are closed and explicit. |
-| **Narrative Entry** | Intentional journal/story content in the world; not a Comment or automatic ledger. | Player-scoped authored record, separate from progression. Its kind is extensible through the type registry. |
-| **Rule** | A persistent declarative definition interpreted by trusted application code; never an ad-hoc callback or persisted user script. | Schema version 1; closed event, condition, and action vocabularies; priority ordering; bounded rule chain; metadata remains non-semantic. |
-| **UI State** | Interface-only choices such as current selection or panel arrangement; not Player state. | Frontend/presentation concern unless a later phase deliberately persists it in a separate store. It must not affect domain validity. |
-| **Presentation** | The visual rendering of domain concepts; not the concepts themselves. | Frontend-defined and controlled. Variants, density, and style do not redefine Quest/Skill/Effect semantics. |
-| **Workspace** | A future saved arrangement of views/tools; not a Skill Tree or domain container. | Not persisted in Phase 2.1. If added, it must remain distinct from Player/world entities. |
+| **Player** | A character representing the user in this world; not an account or the application. | Owns the local world and its Player-level progression. |
+| **Concept** | A meaningful subject in the Player's world, such as Python, Health, a project, a place, a person, or a goal. It is **not** a Quest, Skill, NarrativeEntry, Comment, or generic container. | Player-owned; data-defined Concept type; name/description/active state/metadata and created/updated timestamps. Concepts can have their own relationships and zero or more typed Progress Tracks. |
+| **Concept type** | A useful classification of a Concept; not a closed Rust enum. | Rows in the existing `type_definitions` registry under the `concept` namespace. Adding a type is normally data/configuration, not a code change or migration. Seed examples include subject, project, life_area, person, and place. |
+| **Concept relationship** | A typed, directed relation between two Concepts, not a general graph engine. | Source, target, data-defined relationship code, active state, metadata, created/updated timestamps. Both endpoints must belong to the same Player; self-relations are rejected. Seed relationship codes include `related_to`, `parent_of`, `child_of`, `depends_on`, `part_of`, `derived_from`, and `prerequisite_of`. |
+| **Quest** | A goal/objective in the world; not a Concept. | Existing Quest type/status/progress/lifecycle remains structured. A Quest may be explicitly linked to one or more Concepts. Parent/child and linked Skill ownership/cycle invariants remain intact. |
+| **Skill Tree / Skill** | A Player-owned grouping and a distinct ability/practice area; neither is a Concept. | Existing types, lifecycle, levels, XP, minutes, and hierarchy remain structured. Both can be linked to Concepts. |
+| **Stat** | A named Player-specific measure such as Patience; not a hard-coded field per future idea or untyped JSON. | `StatDefinition` defines code/name/unit/bounds/active state; `PlayerStat` stores one structured current value per Player+code. |
+| **Progress Track** | One explicitly defined way to describe how a Concept is developing; not a universal `Concept.xp`. | A Concept may have zero or many independently named tracks. Definition has code, semantics, bounds, active state, metadata, and timestamps; current track has value, optional level, active state, metadata, and timestamps. `(concept, track_code)` is unique. |
+| **Effect** | A temporary or persistent modifier/condition. It targets the Player by default and may explicitly target a same-world Concept. It is not automatically allowed to target every entity. | One Effect shape and lifecycle; target is a closed `player` or `concept` variant. Type, start, expiry, manual deactivation, metadata, created/updated times are structured. Lifecycle is derived as scheduled/active/expired/manually deactivated. |
+| **Transaction** | An append-only historical change/event, not current state or a snapshot. | Structured Player/resource/amount/source and `occurred_at`; `captured_at` records local observation when known. XP preserves requested `amount` and actual `applied_amount`. Legacy rows may have unknown capture time. |
+| **Comment** | User annotation on a supported entity; not an intentional story or progression transition. | Historical authored text; target kinds are closed and target existence/same-world ownership is checked at insert. |
+| **Narrative Entry** | Intentional journal/story content; not a Comment or automatic ledger. | Player-scoped typed record with created/updated times. It can be linked to a Concept. |
+| **History** | Records of changes and observations; not a catch-all `ConceptHistory` table. | Transactions remain the resource ledger; Concept progress uses append-only progress entries; existing rule history audits rules; snapshots preserve selected state; other meaningful records retain their own types. Explicit Concept links and target references let queries compose them. |
+| **Daily Snapshot** | “This entity's state was captured on this calendar date.” It does not represent everything that happened all day. | Per-entity/date uniqueness, immutable JSON state with a schema version, and a precise capture timestamp (`created_at` on existing Player/Skill snapshots; `captured_at` on Concept snapshots). |
+| **Rule** | Persistent declarative data interpreted by trusted application code; never an executable script or callback. | Versioned closed event/condition/action vocabulary, deterministic priority ordering, bounded chains, append-only execution audit. |
+| **UI State / Workspace** | Interface-only selections/layout; not Player/world truth. | Future presentation concern; Phase 4 is deliberately outside this milestone. |
 
-## Current state, events, snapshots, and narrative
+## Progress is not one universal number
 
-These records answer different questions and must stay separate:
+Progress semantics are explicit and are not interchangeable merely because values are numeric:
 
-- **Current state** answers “what is true now?” It is optimized for ordinary reads and is represented by structured aggregate/table fields.
-- **Transaction history** answers “what event/change was recorded?” It is append-only. XP penalties preserve both the requested event and actual applied delta; generic resource amounts remain their recorded amount.
-- **Daily snapshots** answer “what state was observed on this date?” They are immutable point-in-time records and never replace the current aggregate or ledger.
-- **Narrative records** answer “what story/journal content did the user intentionally record?” They do not silently change stats or progression.
+- **XP / experience** records nonnegative whole accumulated experience. It may later drive a separately defined level transition, but is not itself a percentage.
+- **Level** is a positive whole ordinal/rank. It is not a quantity to sum or average like a generic stat.
+- **Percentage** is bounded to `0..=100` (and may have stricter definition bounds).
+- **Numeric** is a finite measure interpreted by its definition and optional minimum/maximum.
+- **Mastery** is an explicitly named mastery measure. It does not silently imply an XP formula or a particular scale; the definition bounds, if any, govern it.
+- Names such as familiarity, confidence, understanding, strength, or endurance are data-defined track codes with explicit semantics; they are not compiled fields on Concept.
 
-An XP award/penalty updates Player state and inserts its Transaction in one SQLite transaction. Quest completion plus an optional XP reward, and Skill time investment plus its Transaction, are also atomic. A failed validation/write must leave both the current state and history unchanged.
+The implementation validates finite values, definition bounds, percentage ranges, whole-number experience/level rules, positive optional track level, and active definitions in the domain and SQLite. It does not convert between tracks or invent level-up/unlock formulas.
 
-## Extensibility boundary
+## Concepts relate to, but do not absorb, other entities
 
-Guiding principles: **do not hardcode every future game concept; do not turn the application into untyped JSON.**
+A Concept is a subject around which typed records may be organized. For example, a Concept `Python` may relate to another Concept `Programming`, while a Quest `Finish Python course`, Skill `Python Programming`, Narrative Entry, Comment, Transaction, or Effect remains its own entity and can carry an explicit Concept link/target where appropriate.
 
-- **Strongly typed/structured:** identity, owner links, level, XP, status, dates/timestamps, stat code/value, bounds, transaction amount, hierarchy, and relationships needed for constraints or queries.
-- **Database-defined:** Quest/Skill Tree/Skill/Effect/Transaction/Narrative type vocabulary and Player Stat definitions. A new stat or semantic type should normally be inserted as data, not compiled into a field or schema migration.
-- **Versioned JSON:** only intentionally extensible snapshots and metadata. Player snapshot `state_json` has `schemaVersion: 1`, `stats`, and `activeEffects`; these are explicit semantic fields, not serialized Rust structs. Skill snapshot JSON preserves `schemaVersion`, `skillTreeId`, and `parentSkillId`. Core historical fields remain columns.
-- **Frontend-defined:** layout, labels/presentation choices that do not define domain truth, and transient UI state.
+Relationships are simple directed edges with a data-defined code. They do not implement arbitrary graph traversal, ontology inference, or a universal relationship table across every entity class. Explicit cross-entity links are intentionally closed to named supported kinds. SQLite checks same-Player ownership and foreign-key/reference existence as a final guard.
 
-## Lifecycle and integrity decisions
+## Current state, events, history, snapshots, and narrative
 
-- **Player:** one active/inactive flag; no duplicate status enum. XP is always at least zero.
-- **Quest:** planned/open → active → completed or abandoned. Phase 3 adds a declarative `complete_quest` action only; it does not invent pause/failed states.
-- **Skill:** explicit current status among active/paused/completed/archived. State changes and invested time do not erase prior Transactions or snapshots.
-- **Skill Tree:** active/inactive flag; archive/delete workflow is not added here.
-- **Effect:** scheduled/active/expired/manual-off is evaluated against timestamps and the deactivation marker. Deactivation is retained rather than deleting the Effect.
-- **Transaction:** append-only; it has no active/inactive lifecycle. Correction is another event, never rewriting history.
-- **Comment / Narrative Entry:** authored records; neither is a progression lifecycle. Phase 2.1 does not add a broad edit/delete workflow.
-- **Hierarchy:** relational FKs prove referenced rows exist, but not shared ownership or absence of cycles. SQLite triggers additionally check owner/tree consistency and recursive ancestor chains. Application/domain checks reject direct self-parenting early; database checks remain authoritative for the stored graph.
-- **Snapshot:** unique per player/date or skill/date. A second ordinary capture for that day is rejected; historical rows are not overwritten.
-- **Stat:** one current value for each `(player, stat_code)`; definition bounds and active status are enforced in the domain and database. A later value overwrites current state, while daily snapshots preserve observed history.
+These answer different questions and must stay separate:
 
-## Phase 3 — declarative rule engine
+- **Current state** answers “what is true now?” It lives in structured aggregates/current-value tables.
+- **Occurred events** answer “when did a real-world event happen?” Use `occurred_at` when meaningful. Multiple events may have the same calendar date, and a Concept progress change may be backdated as long as it is not later than capture.
+- **Capture time** answers “when did this installation observe/record the event or state?” Use `captured_at` on Concept progress history, Concept snapshots, and newly written Transactions. Legacy Transaction rows retain `NULL` when the historical capture moment is unknown; do not fabricate it from `occurred_at`.
+- **Created/updated time** answer when a mutable record was first created and last changed. Immutable event records do not receive a meaningless `updated_at`; snapshots keep their established capture column name.
+- **Daily snapshots** answer “what state was observed on this date?” They are immutable, unique per entity/date, and capture an exact instant. A second normal capture for that date is rejected. Days without a snapshot are gaps in recorded data—not zero activity, a negative state, or evidence that nothing happened. No interpolation or fake snapshots are generated.
+- **Transactions** answer “what resource change was recorded?” They are append-only. XP operations update Player state and add the matching Transaction atomically; requested and applied deltas remain distinct.
+- **Narrative** answers “what story/journal content did the Player intentionally record?” It does not silently change progression.
 
-The event-driven runtime is an application-layer interpreter over closed, serde-tagged data types. Database rows cannot carry executable Rust, Python, JavaScript, shell, or expression code; there is no `eval` path. Unknown event/condition/action tags and unsupported rule schema versions are rejected. Rules store `schemaVersion: 1`, trigger, condition, and ordered actions in a validated definition; the database separately constrains the version and trigger to match the JSON.
+The model permits multiple timestamped events on one date. A daily snapshot and a chronological event stream are different records with different meanings.
 
-### Events and triggers
+## Search and query foundation
 
-Version 1 intentionally supports three typed events: `quest_completed` (Player, Quest, type, progress and XP reward context), `player_xp_changed` (previous/current XP, requested/applied adjustment and level), and `stat_changed` (Player, stat code and previous/current value). A trigger is an event kind, not a polling or scheduled state condition. Source Quest/XP/stat changes and the Quest reward's XP event are placed into the same FIFO rule chain. Actions may enqueue follow-on Quest, XP, and stat events; event semantics are preserved as typed Rust variants rather than unstructured input JSON.
+Global search is an application-level query over a compact SQLite FTS5 projection. The projection stores only searchable identity, kind, owner, type/status/active markers, occurrence time, name, and bounded text—not full aggregate JSON, metadata blobs, or a second world database. SQLite triggers keep it synchronized, and migration backfill indexes existing rows.
 
-### Conditions and actions
+Search results remain references to typed domain entities. The query supports text, entity kind, Player, related Concept, type code, status, active state evaluated at the query instant for Effects, timestamp range, sort, limit, and offset. Text is sanitized to quoted AND terms so FTS operators cannot escape the query; inputs and result limits are bounded. Relevance uses FTS5 when text is present. Concept-related filtering follows explicit Concept links/Effect targets and active Concept relationships.
 
-Conditions include `always`, event-kind match, typed numeric and text comparisons, and recursive `all`/`any`/`not`. Comparisons only read fields carried by the matching event; a subject absent from that event does not match, including beneath logical negation. Incompatible condition/event subjects are rejected when the definition is validated. Conditions do not query arbitrary entity state, evaluate strings as expressions, or schedule later work. Nesting is capped at 8, each logical group has at most 16 children, and the full tree has at most 128 nodes.
+Search covers Player, Concept, Quest, Skill Tree, Skill, Effect, Narrative Entry, Comment, Transaction, and Concept progress history. Tags, source/category-specific filters, a timeline UI, ranking tuning, and broad arbitrary JSON search are intentionally deferred. Specialized pages (Concept, Quest Board, Skill Tree, Journal, Search/Explorer) are built by the frontend from meaningful domain/query results; the backend does not create a `Page` entity for each screen.
 
-The action vocabulary is deliberately small: `award_xp` (negative amounts provide the XP-floor penalty behavior), `complete_quest` (only an existing valid completion transition, with its optional reward transaction), `set_player_stat`, and `modify_player_stat`. XP and Stat domain constructors validate requested transitions and stat bounds before persistence. Skill XP/unlock/skill lifecycle, effect activation, Quest start/abandon, narrative actions, and time-based triggers are not implemented because their rule/event semantics are not yet specified.
+## Phase 3 — declarative rule engine, extended compatibly
 
-### Ordering, atomicity, history, and limits
+The application-layer interpreter accepts only closed typed Rust event, condition, and action variants serialized as data. Unknown variants, fields, incompatible subjects, and unsupported schema versions fail closed. There is no expression evaluator, database-stored code, scheduler, daemon, or polling.
 
-Enabled rules for one event are ordered by descending integer priority, then ascending stable Rule ID. Generated events are processed FIFO in action order. Condition evaluation and action planning are deterministic; all initial source changes and the resulting planned RuleOperations plus their successful/condition-failed audit rows are persisted in one SQLite transaction. Each operation is constructed only after domain transitions; the persistence adapter rechecks expected prior values/ownership and inserts matching XP Transactions in that transaction. Any rule/action/guard failure applies none of the root or derived world writes. A separate append-only audit write records the failure/abort when storage remains available.
+Supported typed events are `quest_completed`, `player_xp_changed`, `stat_changed`, and `concept_progress_changed`. The Concept progress event includes Player, Concept, Concept type, track code, prior/current value, and optional level. Conditions read only the fields present on their event; they do not query arbitrary live state. The additional action `set_concept_progress` validates same-Player ownership, active track definitions, semantic bounds, finite values, and optional level. Its follow-on event enters the same FIFO chain.
 
-`rule_execution_history` records which Rule, chain, event payload/kind, condition result, configured actions, outcome/error, depth, and timestamp. It is an audit/debug layer; Transactions and snapshots remain the authoritative world-state history. Rules are limited to 16 actions each, 32 actions per chain, depth 8, and 64 rule evaluations per chain. The evaluator also rejects a repeated `(Rule ID, canonical event payload)` pair. Execution history is append-only in SQLite.
+Rule planning is bounded (depth 8, 16 actions/rule, 32 actions/chain, 64 evaluations/chain) and deterministic. A source Concept progress update, all derived progress/XP/Quest/stat operations, and successful execution history commit or roll back together through `WorldStore::apply_rule_chain`. Stale expected values/ownership and database constraints are rechecked in SQLite. Failure audit is attempted separately after rollback. Effect targeting is modeled now; Effect activation/deactivation rule actions and Skill unlock mechanics remain deferred.
+
+## Extensibility and integrity boundaries
+
+- **Strongly typed/structured:** identity, owners, type references, statuses, values, bounds, relationship endpoints, target kinds, dates/times, occurrence/capture, and fields needed for integrity and queries.
+- **Data-defined:** Concept/Quest/Skill/Effect/Narrative types, relationship codes, and Progress Track definitions. New meaningful type rows need not require a new Rust enum or schema migration.
+- **Versioned JSON:** only intentionally extensible metadata and selected immutable snapshots. Core identity, measures, lifecycle, history, and searchable fields are not hidden in JSON.
+- **Frontend-defined:** presentation, layout, transient UI state, and views that do not define world truth.
+- **SQLite guards:** foreign keys and triggers reinforce same-Player relationships/Effect targets, valid Concept links, progress bounds, append-only histories, immutable snapshots, and synchronized FTS projection.
 
 ## Architecture boundaries
 
 | Layer | Allowed responsibility |
 |---|---|
-| `lr-domain` | Pure world concepts, validated values, state transitions, and invariants. No SQLite, Tauri, React, IPC, or file access. |
-| `lr-application` | Commands/queries, use cases, clocks/IDs, and persistence ports expressed in domain terms. No SQL or desktop/frontend types. |
-| `lr-persistence` | SQLite schema/migrations, row mapping, constraints/triggers, and atomic storage adapter. The only Rust layer that knows SQL. |
-| `lr-contracts` | Serializable, camelCase IPC DTOs. It translates domain/use-case results without making frontend types domain types. |
-| `src-tauri` | Composition root and thin command adapters; no SQL and no game rules. |
-| `src/` frontend | Typed IPC client and presentation/UI. No direct DB access; UI appearance does not determine domain meaning. |
+| `lr-domain` | Pure world concepts, validated values, state transitions, and invariants; no database or UI. |
+| `lr-application` | Use cases, typed search/detail queries, clocks/IDs, rule execution, and persistence ports; no SQL. |
+| `lr-persistence` | SQLite migrations, row mapping, indexes/triggers, FTS projection, and atomic adapter. |
+| `lr-contracts` | Serializable IPC DTOs; translates values without making frontend types domain types. |
+| `src-tauri` | Composition root and thin commands; no SQL or game rules. |
+| `src/` frontend | Typed IPC client and presentation/UI; no direct DB access. |
 
 The intended flow remains **React + TypeScript → typed Tauri IPC → application service/port → SQLite adapter**.
 
-## Intentionally future work (not implemented here)
+## Intentionally deferred
 
-- **Further rules work:** conditions over arbitrary live entity state, skill-XP/unlock actions, effects, additional event sources, and scheduled triggers remain future work.
-- **Dynamic UI state, presentation persistence, workspaces, and Style Sandbox:** separate interface concerns; no schema/runtime here.
-- **Complete character UI, quest board, and skill-tree UI:** beyond the small Phase 2 verification surface.
-- **Cloud synchronization, accounts, authentication, HTTP API, and multiplayer:** outside the local-first single-user architecture.
+- Phase 4 dynamic UI state, presentation persistence, workspaces, Concept page, Search/Explorer, timeline, and visual polish.
+- Universal entity/property/event frameworks, a full knowledge graph, event-sourcing rewrite, a separate search database, CMS, or no-code rule platform.
+- Tagging until a concrete organization use case justifies reusable tags.
+- Arbitrary live-state rules, scheduling/background processing, Concept-triggered Effect activation, Skill unlock formulas, XP-to-level conversion, and inference across Concept graphs.
+- Cloud synchronization, accounts, authentication, HTTP API, and multiplayer.
 
-Do not implement these early merely because the conceptual model mentions them.
+Do not implement future concepts merely because they appear in the roadmap.

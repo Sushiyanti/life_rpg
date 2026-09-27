@@ -6,12 +6,13 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 3 — Declarative rules.** The local-first world now supports a
-> versioned, closed event/condition/action vocabulary, bounded deterministic rule
-> chains, atomic SQLite application, and append-only execution audit history. No
-> database-stored source code is executed. See the [Domain Design
+> **Status: Phase 3.5 — Domain refinement.** Alongside Phase 3's bounded,
+> fail-atomic declarative rules, the world now has typed Concepts, Concept
+> relationships and non-XP progress tracks, temporal progress history, Concept
+> Effect targets, and bounded cross-entity search. Phase 4 UI work has not begun.
+> See the [Domain Design
 > Codex](docs/DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
-> and [Phase 3 report](docs/PHASE-3-REPORT.md).
+> [Phase 3 report](docs/PHASE-3-REPORT.md), and [Phase 3.5 report](docs/PHASE-3.5-REPORT.md).
 
 ---
 
@@ -88,6 +89,14 @@ actions are XP award/penalty, valid Quest completion, and bounded Player Stat se
 modify. Rules are data only—there is no expression parser, `eval`, scripting, or
 scheduler. Chain limits and exact supported fields are documented in the [Codex](docs/DOMAIN-DESIGN-CODEX.md).
 
+Phase 3.5 adds `concept_progress_changed` to the same closed event system, with
+bounded `set_concept_progress` actions. Concepts remain meaningful world subjects;
+Quests, Skills, Narratives, Comments, Transactions, and Effects remain their own
+typed entities and may be linked to a Concept. Progress tracks explicitly
+distinguish numeric, percentage, experience, level, and mastery semantics.
+Global search is an application query over a compact SQLite FTS5 text projection,
+not a second copy of the world.
+
 ---
 
 ## Why this stack
@@ -128,17 +137,20 @@ life-rpg/
 │  │     ├─ value.rs              #   validated identity/date/time/version values
 │  │     ├─ player.rs             #   Player progression and XP floor
 │  │     ├─ quest.rs / skill.rs   #   current Quest and Skill lifecycles
+│  │     ├─ concept.rs            #   typed Concept, links, and progress semantics
 │  │     └─ stat.rs               #   data-defined Player Stat values
 │  │
 │  ├─ lr-application/             # APPLICATION — use cases + ports
 │  │  └─ src/
 │  │     ├─ lib.rs
 │  │     ├─ error.rs              #   storage, domain, and rule-chain errors
-│  │     ├─ ports.rs              #   HealthStore, WorldStore, Clock — no SQL
+│  │     ├─ ports.rs              #   focused world, Concept, and search ports — no SQL
 │  │     ├─ rules.rs              #   versioned event/condition/action data model
+│  │     ├─ search.rs             #   typed global search query/results
 │  │     └─ services/
 │  │        ├─ health.rs          #   operational health use case
 │  │        ├─ world.rs           #   Player/world use cases
+│  │        ├─ concepts.rs        #   Concept use cases and detail query
 │  │        └─ rule_engine.rs     #   trusted, bounded deterministic interpreter
 │  │
 │  ├─ lr-persistence/             # PERSISTENCE — the only SQLite-aware crate
@@ -146,14 +158,16 @@ life-rpg/
 │  │     ├─ lib.rs
 │  │     ├─ error.rs             #   PersistenceError -> StorageError translation
 │  │     ├─ pragma.rs            #   WAL / foreign_keys / synchronous / busy_timeout
-│  │     ├─ migrations.rs        #   schema versions 1–6 + upgrade tests
+│  │     ├─ migrations.rs        #   schema versions 1–7 + upgrade tests
 │  │     ├─ sqlite_store.rs      #   health/connection adapter
 │  │     ├─ world_store.rs       #   atomic world/rule persistence + tests
+│  │     ├─ concept_store.rs     #   Concept/progress/search adapters + tests
 │  │     └─ migrations/
 │  │        ├─ 0001_core_ledger.sql … 0003_type_definition_registry.sql
 │  │        ├─ 0004_phase2_domain.sql
 │  │        ├─ 0005_phase21_integrity.sql
-│  │        └─ 0006_phase3_rules.sql
+│  │        ├─ 0006_phase3_rules.sql
+│  │        └─ 0007_phase35_concepts.sql
 │  │
 │  └─ lr-contracts/               # IPC BOUNDARY — DTOs shared with the frontend
 │     └─ src/world.rs             #   world and Rule DTOs; lib.rs pins wire contracts

@@ -9,10 +9,17 @@ pub enum EffectLifecycle {
     Expired,
     ManuallyDeactivated,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectTargetKind {
+    Player,
+    Concept,
+}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Effect {
     pub id: EntityId,
     pub player_id: EntityId,
+    /// When present, the Effect targets this Concept rather than the Player.
+    pub target_concept_id: Option<EntityId>,
     pub effect_type: TypeRef,
     pub name: String,
     pub description: Option<String>,
@@ -49,6 +56,7 @@ impl Effect {
         Ok(Self {
             id,
             player_id,
+            target_concept_id: None,
             effect_type,
             name: name.trim().into(),
             description: None,
@@ -62,6 +70,16 @@ impl Effect {
             created_at: started_at.clone(),
             updated_at: started_at,
         })
+    }
+    pub fn target_kind(&self) -> EffectTargetKind {
+        if self.target_concept_id.is_some() {
+            EffectTargetKind::Concept
+        } else {
+            EffectTargetKind::Player
+        }
+    }
+    pub fn target_concept(&mut self, concept_id: EntityId) {
+        self.target_concept_id = Some(concept_id);
     }
     pub fn is_active_at(&self, now: &Iso8601Timestamp) -> bool {
         self.lifecycle_at(now) == EffectLifecycle::Active

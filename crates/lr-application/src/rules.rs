@@ -21,6 +21,7 @@ pub enum EventKind {
     QuestCompleted,
     PlayerXpChanged,
     StatChanged,
+    ConceptProgressChanged,
 }
 impl EventKind {
     pub fn as_str(self) -> &'static str {
@@ -28,6 +29,7 @@ impl EventKind {
             Self::QuestCompleted => "quest_completed",
             Self::PlayerXpChanged => "player_xp_changed",
             Self::StatChanged => "stat_changed",
+            Self::ConceptProgressChanged => "concept_progress_changed",
         }
     }
 }
@@ -56,6 +58,15 @@ pub enum RuleEvent {
         previous_value: Option<f64>,
         current_value: f64,
     },
+    ConceptProgressChanged {
+        player_id: String,
+        concept_id: String,
+        concept_type: String,
+        track_code: String,
+        previous_value: Option<f64>,
+        current_value: f64,
+        level: Option<i32>,
+    },
 }
 impl RuleEvent {
     pub fn kind(&self) -> EventKind {
@@ -63,6 +74,7 @@ impl RuleEvent {
             Self::QuestCompleted { .. } => EventKind::QuestCompleted,
             Self::PlayerXpChanged { .. } => EventKind::PlayerXpChanged,
             Self::StatChanged { .. } => EventKind::StatChanged,
+            Self::ConceptProgressChanged { .. } => EventKind::ConceptProgressChanged,
         }
     }
     pub fn player_id(&self) -> &str {
@@ -70,6 +82,7 @@ impl RuleEvent {
             Self::QuestCompleted { player_id, .. }
             | Self::PlayerXpChanged { player_id, .. }
             | Self::StatChanged { player_id, .. } => player_id,
+            Self::ConceptProgressChanged { player_id, .. } => player_id,
         }
     }
     pub(crate) fn loop_key(&self) -> String {
@@ -105,6 +118,23 @@ impl RuleEvent {
             (Self::StatChanged { current_value, .. }, NumericSubject::StatValue) => {
                 Some(*current_value)
             }
+            (
+                Self::ConceptProgressChanged {
+                    previous_value: Some(value),
+                    ..
+                },
+                NumericSubject::PreviousProgress,
+            ) => Some(*value),
+            (
+                Self::ConceptProgressChanged { current_value, .. },
+                NumericSubject::CurrentProgress,
+            ) => Some(*current_value),
+            (
+                Self::ConceptProgressChanged {
+                    level: Some(value), ..
+                },
+                NumericSubject::ConceptProgressLevel,
+            ) => Some(*value as f64),
             _ => None,
         }
     }
@@ -112,6 +142,12 @@ impl RuleEvent {
         match (self, subject) {
             (Self::QuestCompleted { quest_type, .. }, TextSubject::QuestType) => Some(quest_type),
             (Self::StatChanged { stat_code, .. }, TextSubject::StatCode) => Some(stat_code),
+            (Self::ConceptProgressChanged { concept_type, .. }, TextSubject::ConceptType) => {
+                Some(concept_type)
+            }
+            (Self::ConceptProgressChanged { track_code, .. }, TextSubject::ConceptTrackCode) => {
+                Some(track_code)
+            }
             _ => None,
         }
     }
@@ -150,12 +186,17 @@ pub enum NumericSubject {
     QuestProgress,
     QuestXpReward,
     StatValue,
+    PreviousProgress,
+    CurrentProgress,
+    ConceptProgressLevel,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextSubject {
     QuestType,
     StatCode,
+    ConceptType,
+    ConceptTrackCode,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -267,6 +308,12 @@ impl RuleCondition {
                             | NumericSubject::AppliedAmount
                             | NumericSubject::PlayerLevel
                     ) | (EventKind::StatChanged, NumericSubject::StatValue)
+                        | (
+                            EventKind::ConceptProgressChanged,
+                            NumericSubject::PreviousProgress
+                                | NumericSubject::CurrentProgress
+                                | NumericSubject::ConceptProgressLevel
+                        )
                 ) =>
             {
                 Err(DomainError::invalid_value(
@@ -285,6 +332,10 @@ impl RuleCondition {
                     (trigger, subject),
                     (EventKind::QuestCompleted, TextSubject::QuestType)
                         | (EventKind::StatChanged, TextSubject::StatCode)
+                        | (
+                            EventKind::ConceptProgressChanged,
+                            TextSubject::ConceptType | TextSubject::ConceptTrackCode
+                        )
                 ) =>
             {
                 Err(DomainError::invalid_value(
@@ -318,10 +369,27 @@ impl RuleCondition {
     deny_unknown_fields
 )]
 pub enum RuleAction {
-    AwardXp { amount: i64, reason: Option<String> },
-    CompleteQuest { quest_id: String },
-    SetPlayerStat { stat_code: String, value: f64 },
-    ModifyPlayerStat { stat_code: String, delta: f64 },
+    AwardXp {
+        amount: i64,
+        reason: Option<String>,
+    },
+    CompleteQuest {
+        quest_id: String,
+    },
+    SetPlayerStat {
+        stat_code: String,
+        value: f64,
+    },
+    ModifyPlayerStat {
+        stat_code: String,
+        delta: f64,
+    },
+    SetConceptProgress {
+        concept_id: String,
+        track_code: String,
+        value: f64,
+        level: Option<i32>,
+    },
 }
 impl RuleAction {
     fn validate(&self) -> DomainResult<()> {
@@ -361,6 +429,9 @@ impl RuleAction {
                     "requires a stat code and finite delta",
                 ))
             }
+            Self::SetConceptProgress { concept_id, track_code, value, level }
+                if concept_id.trim().is_empty() || concept_id.len()>160 || track_code.trim().is_empty() || track_code.len()>160 || !value.is_finite() || level.is_some_and(|n|n<1) =>
+            { Err(DomainError::invalid_value("rule Concept progress action","requires valid Concept/track identifiers, a finite value, and positive optional level")) }
             _ => Ok(()),
         }
     }
@@ -487,6 +558,12 @@ pub enum RuleOperation {
     PlayerStat {
         stat: PlayerStat,
         expected_previous: Option<f64>,
+    },
+    ConceptProgress {
+        player_id: EntityId,
+        track: lr_domain::ConceptProgressTrack,
+        expected_previous: Option<f64>,
+        history: lr_domain::ConceptProgressEntry,
     },
 }
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]

@@ -5,6 +5,7 @@
 //! and snapshots), and user/game content (comments and narrative entries).
 
 pub mod comment;
+pub mod concept;
 pub mod effect;
 pub mod error;
 pub mod narrative;
@@ -18,7 +19,11 @@ pub mod type_definition;
 pub mod value;
 
 pub use comment::{Comment, CommentTargetKind};
-pub use effect::{Effect, EffectLifecycle};
+pub use concept::{
+    Concept, ConceptEntityKind, ConceptEntityLink, ConceptProgressEntry, ConceptProgressTrack,
+    ConceptRelationship, ConceptStateSnapshot, ProgressSemantics, ProgressTrackDefinition,
+};
+pub use effect::{Effect, EffectLifecycle, EffectTargetKind};
 pub use error::{DomainError, DomainResult};
 pub use narrative::NarrativeEntry;
 pub use player::{Player, XP_PER_LEVEL};
