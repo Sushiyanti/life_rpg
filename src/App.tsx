@@ -17,7 +17,7 @@ const localSet = (key: string, value: string) => { try { localStorage.setItem(ke
 const localRemove = (key: string) => { try { localStorage.removeItem(key); } catch { /* Storage is an optional presentation convenience. */ } };
 const activeWorkspaceKey = (playerId: string) => `life-rpg.active-workspace.v1.${playerId}`;
 const knownRoutes: AppRoute[] = ['dashboard', 'player', 'quests', 'skills', 'skillTrees', 'concepts', 'effects', 'journal', 'explorer', 'history', 'rules', 'status'];
-const emptyQuery = { text: null, kind: 'player', playerId: null, conceptId: null, typeCode: null, status: null, active: null, from: null, through: null, context: null, includeHidden: true, includeArchived: true, includeTrashed: true, sort: 'name' as const, limit: 200, offset: 0 };
+const emptyQuery = { text: null, kind: 'player', playerId: null, conceptId: null, typeCode: null, status: null, active: null, targetKind: null, from: null, through: null, context: null, includeHidden: true, includeArchived: true, includeTrashed: true, sort: 'name' as const, limit: 200, offset: 0 };
 type EntityTarget = { kind: string; id: string; returnRoute: AppRoute };
 
 export function App() {

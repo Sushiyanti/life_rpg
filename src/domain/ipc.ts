@@ -46,6 +46,10 @@ export const COMMANDS = {
   addComment: 'add_comment',
   listComments: 'list_comments',
   writeNarrative: 'write_narrative',
+  createNarrative: 'create_narrative',
+  getNarrativeEntry: 'get_narrative_entry',
+  listNarrativeEntries: 'list_narrative_entries',
+  updateNarrative: 'update_narrative',
   getWorldOverview: 'get_world_overview',
   listTransactions: 'list_transactions',
   captureSkillSnapshot: 'capture_skill_snapshot',
@@ -88,6 +92,9 @@ export const COMMANDS = {
   listQuestSessions: 'list_quest_sessions',
   listAttachedContent: 'list_attached_content',
   attachContent: 'attach_content',
+  removeContentAttachment: 'remove_content_attachment',
+  listContentAttachmentRoles: 'list_content_attachment_roles',
+  listContentRelationships: 'list_content_relationships',
   listConceptAssociations: 'list_concept_associations',
   associateConcept: 'associate_concept',
   listProgressSuggestions: 'list_progress_suggestions',
@@ -178,6 +185,10 @@ export class CoreClient {
   async addComment(targetKind:string,targetId:string,body:string,authorPlayerId?:string):Promise<Comment>{return this.invoke<Comment>(COMMANDS.addComment,{authorPlayerId:authorPlayerId??null,targetKind,targetId,body});}
   async listComments(targetKind:string,targetId:string):Promise<Comment[]>{return this.invoke<Comment[]>(COMMANDS.listComments,{targetKind,targetId});}
   async writeNarrative(playerId:string,kind:string,title:string,content:string):Promise<NarrativeEntry>{return this.invoke<NarrativeEntry>(COMMANDS.writeNarrative,{playerId,kind,title,content});}
+  async createNarrative(playerId:string,value:{kind:string;title:string;content:string;author?:string|null;sourceKind?:string|null;sourceId?:string|null}):Promise<NarrativeEntry>{return this.invoke<NarrativeEntry>(COMMANDS.createNarrative,{playerId,...value,author:value.author??null,sourceKind:value.sourceKind??null,sourceId:value.sourceId??null});}
+  async getNarrativeEntry(playerId:string,contentId:string):Promise<NarrativeEntry|null>{return this.invoke<NarrativeEntry|null>(COMMANDS.getNarrativeEntry,{playerId,contentId});}
+  async listNarrativeEntries(playerId:string):Promise<NarrativeEntry[]>{return this.invoke<NarrativeEntry[]>(COMMANDS.listNarrativeEntries,{playerId});}
+  async updateNarrative(playerId:string,contentId:string,value:{kind:string;title:string;content:string;author?:string|null;sourceKind?:string|null;sourceId?:string|null}):Promise<NarrativeEntry>{return this.invoke<NarrativeEntry>(COMMANDS.updateNarrative,{playerId,contentId,...value,author:value.author??null,sourceKind:value.sourceKind??null,sourceId:value.sourceId??null});}
   async getWorldOverview(playerId:string):Promise<WorldOverview>{return this.invoke<WorldOverview>(COMMANDS.getWorldOverview,{playerId});}
   async listTransactions(playerId:string,limit?:number):Promise<Transaction[]>{return this.invoke<Transaction[]>(COMMANDS.listTransactions,{playerId,limit:limit??null});}
   async listConcepts(playerId:string):Promise<Concept[]>{return this.invoke<Concept[]>(COMMANDS.listConcepts,{playerId});}
@@ -221,8 +232,11 @@ export class CoreClient {
   async unlinkEffectFromSession(playerId:string,sessionId:string,linkId:string):Promise<SessionEffect>{return this.invoke(COMMANDS.unlinkEffectFromSession,{playerId,sessionId,linkId});}
   async getQuestStage(stageId:string):Promise<QuestStage|null>{return this.invoke(COMMANDS.getQuestStage,{stageId});}
   async getQuestBranch(branchId:string):Promise<QuestBranch|null>{return this.invoke(COMMANDS.getQuestBranch,{branchId});}
-  async listAttachedContent(targetKind:string,targetId:string):Promise<ContentAttachment[]>{return this.invoke(COMMANDS.listAttachedContent,{targetKind,targetId});}
+  async listAttachedContent(playerId:string,targetKind:string,targetId:string,includeRemoved=false):Promise<ContentAttachment[]>{return this.invoke<ContentAttachment[]>(COMMANDS.listAttachedContent,{playerId,targetKind,targetId,includeRemoved});}
   async attachContent(playerId:string,contentId:string,targetKind:string,targetId:string,role:string):Promise<ContentAttachment>{return this.invoke(COMMANDS.attachContent,{playerId,contentId,targetKind,targetId,role});}
+  async removeContentAttachment(playerId:string,relationshipId:string):Promise<void>{return this.invoke<void>(COMMANDS.removeContentAttachment,{playerId,relationshipId});}
+  async listContentAttachmentRoles():Promise<string[]>{return this.invoke<string[]>(COMMANDS.listContentAttachmentRoles);}
+  async listContentRelationships(playerId:string,contentId:string,includeRemoved=false):Promise<ContentAttachment[]>{return this.invoke<ContentAttachment[]>(COMMANDS.listContentRelationships,{playerId,contentId,includeRemoved});}
   async listConceptAssociations(conceptId:string):Promise<ConceptAssociation[]>{return this.invoke(COMMANDS.listConceptAssociations,{conceptId,entityKind:null,entityId:null});}
   async associateConcept(conceptId:string,entityKind:string,entityId:string,role:string):Promise<ConceptAssociation>{return this.invoke(COMMANDS.associateConcept,{conceptId,entityKind,entityId,role});}
   async listProgressSuggestions(conceptId:string,includeResolved=false):Promise<ProgressSuggestion[]>{return this.invoke(COMMANDS.listProgressSuggestions,{conceptId,includeResolved});}

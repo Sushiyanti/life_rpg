@@ -78,6 +78,12 @@ pub fn search_world(
         type_code: query.type_code,
         status: query.status,
         active: query.active,
+        target_kind: query
+            .target_kind
+            .as_deref()
+            .map(ContentTargetKind::parse)
+            .transpose()
+            .map_err(domain_error)?,
         from: parse_time(query.from)?,
         through: parse_time(query.through)?,
         context: query.context,
@@ -395,13 +401,48 @@ pub fn attach_content(
 #[tauri::command]
 pub fn list_attached_content(
     state: State<'_, AppState>,
+    player_id: String,
     target_kind: String,
     target_id: String,
+    include_removed: bool,
 ) -> Result<Vec<ContentAttachmentDto>, CommandErrorDto> {
     let kind = content_kind(&target_kind)?;
     state
         .semantics
-        .content_for(kind, &target_id)
+        .content_for(&player_id, kind, &target_id, include_removed)
+        .map(|v| v.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn remove_content_attachment(
+    state: State<'_, AppState>,
+    player_id: String,
+    relationship_id: String,
+) -> Result<(), CommandErrorDto> {
+    state
+        .semantics
+        .remove_content_attachment(&player_id, &relationship_id)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_content_attachment_roles(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, CommandErrorDto> {
+    state
+        .semantics
+        .content_attachment_roles()
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_content_relationships(
+    state: State<'_, AppState>,
+    player_id: String,
+    content_id: String,
+    include_removed: bool,
+) -> Result<Vec<ContentAttachmentDto>, CommandErrorDto> {
+    state
+        .semantics
+        .content_relationships(&player_id, &content_id, include_removed)
         .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(Into::into)
 }

@@ -36,6 +36,10 @@ describe('COMMANDS', () => {
     expect(COMMANDS.setPresentationPreference).toBe('set_presentation_preference');
     expect(COMMANDS.setPresentationVisibility).toBe('set_presentation_visibility');
     expect(COMMANDS.startQuestSession).toBe('start_quest_session');
+    expect(COMMANDS.createNarrative).toBe('create_narrative');
+    expect(COMMANDS.updateNarrative).toBe('update_narrative');
+    expect(COMMANDS.listContentRelationships).toBe('list_content_relationships');
+    expect(COMMANDS.removeContentAttachment).toBe('remove_content_attachment');
     expect(COMMANDS.createWorkspace).toBe('create_workspace');
     expect(COMMANDS.setDefaultWorkspace).toBe('set_default_workspace');
     expect(COMMANDS.listWorkspacePanels).toBe('list_workspace_panels');
@@ -61,6 +65,21 @@ describe('CoreClient', () => {
 	   await client.setPresentationVisibility({playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
 	   expect(transport).toHaveBeenLastCalledWith('set_presentation_visibility', {playerId: 'player-1', entityKind: 'quest', entityId: 'quest-1', context: 'dashboard', isVisible: false});
 	 });
+
+  it('sends explicit content and relationship intents without exposing SQL', async () => {
+    const transport = vi.fn(async () => ({ id: 'content-1' })) as unknown as InvokeTransport;
+    const client = new CoreClient(transport);
+    await client.createNarrative('player-1', { kind: 'guide', title: 'Python path', content: 'Read first.', author: 'Ada', sourceKind: 'book', sourceId: 'isbn-1' });
+    expect(transport).toHaveBeenLastCalledWith('create_narrative', expect.objectContaining({ playerId: 'player-1', kind: 'guide', sourceKind: 'book', sourceId: 'isbn-1' }));
+    await client.attachContent('player-1', 'content-1', 'quest_session', 'session-1', 'guidance');
+    expect(transport).toHaveBeenLastCalledWith('attach_content', { playerId: 'player-1', contentId: 'content-1', targetKind: 'quest_session', targetId: 'session-1', role: 'guidance' });
+    await client.listAttachedContent('player-1', 'quest_session', 'session-1', true);
+    expect(transport).toHaveBeenLastCalledWith('list_attached_content', { playerId: 'player-1', targetKind: 'quest_session', targetId: 'session-1', includeRemoved: true });
+    await client.removeContentAttachment('player-1', 'relationship-1');
+    expect(transport).toHaveBeenLastCalledWith('remove_content_attachment', { playerId: 'player-1', relationshipId: 'relationship-1' });
+    await client.listContentRelationships('player-1', 'content-1', true);
+    expect(transport).toHaveBeenLastCalledWith('list_content_relationships', { playerId: 'player-1', contentId: 'content-1', includeRemoved: true });
+  });
 
   it('passes the command name through and returns the payload', async () => {
     const transport = vi.fn(async () => healthyReport()) as unknown as InvokeTransport;

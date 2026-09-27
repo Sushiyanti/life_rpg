@@ -670,24 +670,50 @@ where
     ) -> Result<ContentAttachment, AppError> {
         let p = EntityId::new(player_id)?;
         let content = EntityId::new(content_id)?;
-        let content_exists = self
+        let content_entry = self
             .store
-            .list_narrative_entries(&p)?
-            .iter()
-            .any(|n| n.id == content);
-        if !content_exists {
+            .get_narrative_entry(&content)?
+            .ok_or_else(|| AppError::Internal("Content record not found".into()))?;
+        if content_entry.player_id != p || !content_entry.is_active {
             return Err(lr_domain::DomainError::invalid_value(
                 "Content attachment",
-                "Content must belong to the Player",
+                "Content must be active and belong to the Player",
+            )
+            .into());
+        }
+        if self
+            .store
+            .get_lifecycle(RevisionTargetKind::NarrativeEntry, &content)?
+            != LifecycleState::Active
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Content attachment",
+                "archived or trashed Content cannot be newly attached",
+            )
+            .into());
+        }
+        let target = EntityId::new(target_id)?;
+        self.ensure_content_target_for_player(&p, target_kind, &target)?;
+        if !self
+            .store
+            .list_content_attachment_roles()?
+            .iter()
+            .any(|code| code == role)
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Content role",
+                "must be an active registered content relationship role",
             )
             .into());
         }
         let v = ContentAttachment::new(
+            self.id("content-rel")?,
             content,
             p,
             target_kind,
-            EntityId::new(target_id)?,
+            target,
             role,
+            0,
             self.now()?,
         )?;
         self.store.attach_content(&v)?;
@@ -695,12 +721,112 @@ where
     }
     pub fn content_for(
         &self,
+        player_id: &str,
         kind: ContentTargetKind,
         target_id: &str,
+        include_removed: bool,
     ) -> Result<Vec<ContentAttachment>, AppError> {
+        let player = EntityId::new(player_id)?;
+        let target = EntityId::new(target_id)?;
+        self.ensure_content_target_for_player(&player, kind, &target)?;
         Ok(self
             .store
-            .list_content_attachments(kind, &EntityId::new(target_id)?)?)
+            .list_content_attachments(kind, &target, include_removed)?)
+    }
+    pub fn remove_content_attachment(
+        &self,
+        player_id: &str,
+        relationship_id: &str,
+    ) -> Result<(), AppError> {
+        self.store.remove_content_attachment(
+            &EntityId::new(player_id)?,
+            &EntityId::new(relationship_id)?,
+            &self.now()?,
+        )?;
+        Ok(())
+    }
+    pub fn content_attachment_roles(&self) -> Result<Vec<String>, AppError> {
+        Ok(self.store.list_content_attachment_roles()?)
+    }
+    pub fn content_relationships(
+        &self,
+        player_id: &str,
+        content_id: &str,
+        include_removed: bool,
+    ) -> Result<Vec<ContentAttachment>, AppError> {
+        let player = EntityId::new(player_id)?;
+        let content = self
+            .store
+            .get_narrative_entry(&EntityId::new(content_id)?)?
+            .ok_or_else(|| AppError::Internal("Content record not found".into()))?;
+        if content.player_id != player {
+            return Err(lr_domain::DomainError::invalid_value(
+                "Content record",
+                "belongs to another Player",
+            )
+            .into());
+        }
+        Ok(self
+            .store
+            .list_content_relationships(&content.id, include_removed)?)
+    }
+    fn ensure_content_target_for_player(
+        &self,
+        player: &EntityId,
+        kind: ContentTargetKind,
+        target: &EntityId,
+    ) -> Result<(), AppError> {
+        let same_world = match kind {
+            ContentTargetKind::Player => self
+                .store
+                .get_player(target)?
+                .is_some_and(|value| value.id == *player),
+            ContentTargetKind::Quest => self
+                .store
+                .get_quest(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Stage => self
+                .store
+                .get_stage(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Branch => self
+                .store
+                .get_branch(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Session => self
+                .store
+                .get_session(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Skill => match self.store.get_skill(target)? {
+                Some(value) => self
+                    .store
+                    .get_skill_tree(&value.skill_tree_id)?
+                    .is_some_and(|tree| tree.player_id == *player),
+                None => false,
+            },
+            ContentTargetKind::SkillTree => self
+                .store
+                .get_skill_tree(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Concept => self
+                .store
+                .get_concept(target)?
+                .is_some_and(|value| value.player_id == *player),
+            ContentTargetKind::Effect => self
+                .store
+                .list_effects(player, None)?
+                .iter()
+                .any(|value| value.id == *target),
+        };
+        if same_world {
+            Ok(())
+        } else {
+            Err(lr_domain::DomainError::invalid_value(
+                "Content target",
+                "must exist in the Player world",
+            )
+            .into())
+        }
     }
     pub fn associate(
         &self,
@@ -1257,19 +1383,20 @@ where
         let mut sessions = self
             .store
             .list_sessions(&quest.player_id, Some(&key), None)?;
-        let mut content = self
-            .store
-            .list_content_attachments(ContentTargetKind::Quest, &key)?;
+        let mut content =
+            self.store
+                .list_content_attachments(ContentTargetKind::Quest, &key, false)?;
         let mut associations = self
             .store
             .list_associations_for_entity(AssociatedEntityKind::Quest, key.as_str())?;
         let mut revisions = self.store.list_revisions(RevisionTargetKind::Quest, &key)?;
         for stage in &stages {
             branches.extend(self.store.list_branches(&stage.id)?);
-            content.extend(
-                self.store
-                    .list_content_attachments(ContentTargetKind::Stage, &stage.id)?,
-            );
+            content.extend(self.store.list_content_attachments(
+                ContentTargetKind::Stage,
+                &stage.id,
+                false,
+            )?);
             associations.extend(
                 self.store
                     .list_associations_for_entity(AssociatedEntityKind::Stage, stage.id.as_str())?,
@@ -1287,10 +1414,11 @@ where
             }
         }
         for branch in &branches {
-            content.extend(
-                self.store
-                    .list_content_attachments(ContentTargetKind::Branch, &branch.id)?,
-            );
+            content.extend(self.store.list_content_attachments(
+                ContentTargetKind::Branch,
+                &branch.id,
+                false,
+            )?);
             concept_associations.extend(
                 self.store.list_associations_for_entity(
                     AssociatedEntityKind::Branch,
@@ -1303,10 +1431,11 @@ where
             );
         }
         for session in &sessions {
-            content.extend(
-                self.store
-                    .list_content_attachments(ContentTargetKind::Session, &session.id)?,
-            );
+            content.extend(self.store.list_content_attachments(
+                ContentTargetKind::Session,
+                &session.id,
+                false,
+            )?);
             concept_associations.extend(self.store.list_associations_for_entity(
                 AssociatedEntityKind::Session,
                 session.id.as_str(),
@@ -1390,7 +1519,7 @@ where
             .list_associations_for_entity(AssociatedEntityKind::Skill, key.as_str())?;
         let content = self
             .store
-            .list_content_attachments(ContentTargetKind::Skill, &key)?;
+            .list_content_attachments(ContentTargetKind::Skill, &key, false)?;
         let ids: HashSet<String> = content.iter().map(|c| c.content_id.to_string()).collect();
         let content_entries = self
             .store

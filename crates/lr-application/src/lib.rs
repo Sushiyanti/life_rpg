@@ -28,6 +28,8 @@ pub use services::health::{
     ApplicationInfo, DatabaseInfo, HealthReport, HealthService, HealthStatus, RoundTripInfo,
 };
 pub use services::semantics::{QuestActivityDetail, QuestDetail, SemanticsService, SkillDetail};
-pub use services::world::{AwardXpOutcome, WorldOverview, WorldService, DEFAULT_LEDGER_LIMIT};
+pub use services::world::{
+    AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService, DEFAULT_LEDGER_LIMIT,
+};
 
 pub const LAYER_NAME: &str = "application";

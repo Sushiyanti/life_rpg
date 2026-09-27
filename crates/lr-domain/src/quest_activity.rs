@@ -275,6 +275,7 @@ impl QuestSession {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentTargetKind {
+    Player,
     Quest,
     Stage,
     Branch,
@@ -282,10 +283,12 @@ pub enum ContentTargetKind {
     Skill,
     SkillTree,
     Concept,
+    Effect,
 }
 impl ContentTargetKind {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Player => "player",
             Self::Quest => "quest",
             Self::Stage => "quest_stage",
             Self::Branch => "quest_branch",
@@ -293,10 +296,12 @@ impl ContentTargetKind {
             Self::Skill => "skill",
             Self::SkillTree => "skill_tree",
             Self::Concept => "concept",
+            Self::Effect => "effect",
         }
     }
     pub fn parse(v: &str) -> DomainResult<Self> {
         match v {
+            "player" => Ok(Self::Player),
             "quest" => Ok(Self::Quest),
             "quest_stage" => Ok(Self::Stage),
             "quest_branch" => Ok(Self::Branch),
@@ -304,6 +309,7 @@ impl ContentTargetKind {
             "skill" => Ok(Self::Skill),
             "skill_tree" => Ok(Self::SkillTree),
             "concept" => Ok(Self::Concept),
+            "effect" => Ok(Self::Effect),
             _ => Err(DomainError::invalid_value(
                 "content target",
                 "unsupported target kind",
@@ -313,22 +319,29 @@ impl ContentTargetKind {
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContentAttachment {
+    /// Stable identifier makes each attach/remove cycle a historical fact.
+    pub id: EntityId,
     pub content_id: EntityId,
     pub player_id: EntityId,
     pub target_kind: ContentTargetKind,
     pub target_id: EntityId,
     pub role_code: String,
+    pub sort_order: i32,
+    /// Compatibility projection for existing callers; it is `removed_at.is_none()`.
     pub is_active: bool,
     pub created_at: Iso8601Timestamp,
     pub updated_at: Iso8601Timestamp,
+    pub removed_at: Option<Iso8601Timestamp>,
 }
 impl ContentAttachment {
     pub fn new(
+        id: EntityId,
         content_id: EntityId,
         player_id: EntityId,
         target_kind: ContentTargetKind,
         target_id: EntityId,
         role_code: impl Into<String>,
+        sort_order: i32,
         now: Iso8601Timestamp,
     ) -> DomainResult<Self> {
         let code = role_code.into();
@@ -344,15 +357,31 @@ impl ContentAttachment {
             ));
         }
         Ok(Self {
+            id,
             content_id,
             player_id,
             target_kind,
             target_id,
             role_code: code,
+            sort_order,
             is_active: true,
             created_at: now.clone(),
             updated_at: now,
+            removed_at: None,
         })
+    }
+
+    pub fn remove(&mut self, removed_at: Iso8601Timestamp) -> DomainResult<()> {
+        if self.removed_at.is_some() || !self.is_active {
+            return Err(DomainError::invalid_value(
+                "content relationship",
+                "is already removed",
+            ));
+        }
+        self.removed_at = Some(removed_at.clone());
+        self.updated_at = removed_at;
+        self.is_active = false;
+        Ok(())
     }
 }
 

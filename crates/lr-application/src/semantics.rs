@@ -100,11 +100,24 @@ pub trait SemanticsStore: Send + Sync {
         include_removed: bool,
     ) -> Result<Vec<SessionEffect>, StorageError>;
     fn attach_content(&self, value: &ContentAttachment) -> Result<(), StorageError>;
+    fn remove_content_attachment(
+        &self,
+        player_id: &EntityId,
+        relationship_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError>;
     fn list_content_attachments(
         &self,
         kind: ContentTargetKind,
         target_id: &EntityId,
+        include_removed: bool,
     ) -> Result<Vec<ContentAttachment>, StorageError>;
+    fn list_content_relationships(
+        &self,
+        content_id: &EntityId,
+        include_removed: bool,
+    ) -> Result<Vec<ContentAttachment>, StorageError>;
+    fn list_content_attachment_roles(&self) -> Result<Vec<String>, StorageError>;
     fn insert_association(&self, value: &ConceptAssociation) -> Result<(), StorageError>;
     fn get_association(&self, id: &EntityId) -> Result<Option<ConceptAssociation>, StorageError>;
     fn update_association(&self, value: &ConceptAssociation) -> Result<(), StorageError>;
@@ -311,12 +324,31 @@ impl<T: SemanticsStore + ?Sized> SemanticsStore for std::sync::Arc<T> {
     fn attach_content(&self, v: &ContentAttachment) -> Result<(), StorageError> {
         (**self).attach_content(v)
     }
+    fn remove_content_attachment(
+        &self,
+        player_id: &EntityId,
+        relationship_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        (**self).remove_content_attachment(player_id, relationship_id, removed_at)
+    }
     fn list_content_attachments(
         &self,
         k: ContentTargetKind,
         id: &EntityId,
+        include_removed: bool,
     ) -> Result<Vec<ContentAttachment>, StorageError> {
-        (**self).list_content_attachments(k, id)
+        (**self).list_content_attachments(k, id, include_removed)
+    }
+    fn list_content_relationships(
+        &self,
+        id: &EntityId,
+        include_removed: bool,
+    ) -> Result<Vec<ContentAttachment>, StorageError> {
+        (**self).list_content_relationships(id, include_removed)
+    }
+    fn list_content_attachment_roles(&self) -> Result<Vec<String>, StorageError> {
+        (**self).list_content_attachment_roles()
     }
     fn insert_association(&self, v: &ConceptAssociation) -> Result<(), StorageError> {
         (**self).insert_association(v)

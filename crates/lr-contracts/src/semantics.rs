@@ -255,26 +255,32 @@ impl From<QuestSession> for QuestSessionDto {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentAttachmentDto {
+    pub id: String,
     pub content_id: String,
     pub player_id: String,
     pub target_kind: String,
     pub target_id: String,
     pub role_code: String,
+    pub sort_order: i32,
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+    pub removed_at: Option<String>,
 }
 impl From<ContentAttachment> for ContentAttachmentDto {
     fn from(v: ContentAttachment) -> Self {
         Self {
+            id: v.id.to_string(),
             content_id: v.content_id.to_string(),
             player_id: v.player_id.to_string(),
             target_kind: v.target_kind.as_str().into(),
             target_id: v.target_id.to_string(),
             role_code: v.role_code,
+            sort_order: v.sort_order,
             is_active: v.is_active,
             created_at: v.created_at.to_string(),
             updated_at: v.updated_at.to_string(),
+            removed_at: v.removed_at.map(|value| value.to_string()),
         }
     }
 }
@@ -465,6 +471,7 @@ pub struct SearchQueryDto {
     pub type_code: Option<String>,
     pub status: Option<String>,
     pub active: Option<bool>,
+    pub target_kind: Option<String>,
     pub from: Option<String>,
     pub through: Option<String>,
     pub context: Option<String>,
@@ -485,6 +492,7 @@ impl From<SearchQuery> for SearchQueryDto {
             type_code: v.type_code,
             status: v.status,
             active: v.active,
+            target_kind: v.target_kind.map(|value| value.as_str().into()),
             from: v.from.map(|x| x.to_string()),
             through: v.through.map(|x| x.to_string()),
             context: v.context,

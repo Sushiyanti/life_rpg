@@ -142,15 +142,19 @@ fn update_effect(tx: &Transaction<'_>, value: &Effect) -> Result<(), StorageErro
     }
 }
 fn attachment(r: &Row<'_>) -> Result<ContentAttachment, StorageError> {
+    let removed_at = opt_ts(r.get(8).map_err(op)?)?;
     Ok(ContentAttachment {
-        content_id: eid(r.get(0).map_err(op)?)?,
-        player_id: eid(r.get(1).map_err(op)?)?,
-        target_kind: ContentTargetKind::parse(&r.get::<_, String>(2).map_err(op)?).map_err(op)?,
-        target_id: eid(r.get(3).map_err(op)?)?,
-        role_code: r.get(4).map_err(op)?,
-        is_active: r.get::<_, i64>(5).map_err(op)? != 0,
-        created_at: ts(r.get(6).map_err(op)?)?,
-        updated_at: ts(r.get(7).map_err(op)?)?,
+        id: eid(r.get(0).map_err(op)?)?,
+        content_id: eid(r.get(1).map_err(op)?)?,
+        player_id: eid(r.get(2).map_err(op)?)?,
+        target_kind: ContentTargetKind::parse(&r.get::<_, String>(3).map_err(op)?).map_err(op)?,
+        target_id: eid(r.get(4).map_err(op)?)?,
+        role_code: r.get(5).map_err(op)?,
+        sort_order: r.get(6).map_err(op)?,
+        created_at: ts(r.get(7).map_err(op)?)?,
+        is_active: removed_at.is_none(),
+        removed_at,
+        updated_at: ts(r.get(9).map_err(op)?)?,
     })
 }
 fn association(r: &Row<'_>) -> Result<ConceptAssociation, StorageError> {
@@ -405,14 +409,43 @@ impl SemanticsStore for SqliteHealthStore {
         })
     }
     fn attach_content(&self, v: &ContentAttachment) -> Result<(), StorageError> {
-        self.with_conn(|d|{d.execute("INSERT INTO content_attachments(content_id,player_id,target_kind,target_id,role_code,is_active,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8)ON CONFLICT(content_id,target_kind,target_id,role_code)DO UPDATE SET is_active=excluded.is_active,updated_at=excluded.updated_at",params![v.content_id.as_str(),v.player_id.as_str(),v.target_kind.as_str(),v.target_id.as_str(),v.role_code,v.is_active as i64,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|d|{d.execute("INSERT INTO content_attachments(id,content_id,player_id,target_kind,target_id,role_code,sort_order,created_at,removed_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,NULL,?9)",params![v.id.as_str(),v.content_id.as_str(),v.player_id.as_str(),v.target_kind.as_str(),v.target_id.as_str(),v.role_code,v.sort_order,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
+    }
+    fn remove_content_attachment(
+        &self,
+        player_id: &EntityId,
+        relationship_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+    ) -> Result<(), StorageError> {
+        self.with_conn(|d| { let changed=d.execute("UPDATE content_attachments SET removed_at=?3,updated_at=?3 WHERE id=?1 AND player_id=?2 AND removed_at IS NULL",params![relationship_id.as_str(),player_id.as_str(),removed_at.as_str()]).map_err(op)?; if changed==1 {Ok(())} else {Err(op("Content relationship is missing, outside Player world, or already removed"))} })
     }
     fn list_content_attachments(
         &self,
         k: ContentTargetKind,
         id: &EntityId,
+        include_removed: bool,
     ) -> Result<Vec<ContentAttachment>, StorageError> {
-        self.with_conn(|d|{let mut s=d.prepare("SELECT content_id,player_id,target_kind,target_id,role_code,is_active,created_at,updated_at FROM content_attachments WHERE target_kind=?1 AND target_id=?2 ORDER BY role_code,created_at").map_err(op)?;let mut rows=s.query(params![k.as_str(),id.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(attachment(r)?)}Ok(out)})
+        self.with_conn(|d|{let mut s=d.prepare("SELECT id,content_id,player_id,target_kind,target_id,role_code,sort_order,created_at,removed_at,updated_at FROM content_attachments WHERE target_kind=?1 AND target_id=?2 AND (?3 OR removed_at IS NULL) ORDER BY role_code,sort_order,created_at,id").map_err(op)?;let mut rows=s.query(params![k.as_str(),id.as_str(),include_removed]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(attachment(r)?)}Ok(out)})
+    }
+    fn list_content_relationships(
+        &self,
+        content_id: &EntityId,
+        include_removed: bool,
+    ) -> Result<Vec<ContentAttachment>, StorageError> {
+        self.with_conn(|d|{let mut s=d.prepare("SELECT id,content_id,player_id,target_kind,target_id,role_code,sort_order,created_at,removed_at,updated_at FROM content_attachments WHERE content_id=?1 AND (?2 OR removed_at IS NULL) ORDER BY target_kind,sort_order,created_at,id").map_err(op)?;let mut rows=s.query(params![content_id.as_str(),include_removed]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(attachment(r)?)}Ok(out)})
+    }
+    fn list_content_attachment_roles(&self) -> Result<Vec<String>, StorageError> {
+        self.with_conn(|d| {
+            let mut s = d
+                .prepare("SELECT code FROM content_attachment_roles ORDER BY code")
+                .map_err(op)?;
+            let rows = s
+                .query_map([], |r| r.get(0))
+                .map_err(op)?
+                .collect::<Result<Vec<String>, _>>()
+                .map_err(op)?;
+            Ok(rows)
+        })
     }
     fn insert_association(&self, v: &ConceptAssociation) -> Result<(), StorageError> {
         self.with_conn(|d|{d.execute("INSERT INTO concept_associations(id,player_id,concept_id,entity_kind,entity_id,association_code,is_active,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",params![v.id.as_str(),v.player_id.as_str(),v.concept_id.as_str(),v.entity_kind.as_str(),v.entity_id,v.association_code,v.is_active as i64,v.metadata_json,v.created_at.as_str(),v.updated_at.as_str()]).map_err(op)?;Ok(())})
@@ -761,8 +794,9 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
 mod tests {
     use super::*;
     use lr_application::{
-        Clock, ConceptService, EventKind, RuleAction, RuleCondition, SearchEntityKind, SearchSort,
-        SemanticsService, TextComparison, TextSubject, WorldService, WorldStore,
+        Clock, ConceptService, EventKind, NarrativeWrite, RuleAction, RuleCondition,
+        SearchEntityKind, SearchQuery, SearchSort, SemanticsService, TextComparison, TextSubject,
+        WorldService, WorldStore,
     };
     use std::sync::Arc;
     const T0: &str = "2026-09-27T10:00:00Z";
@@ -1185,7 +1219,12 @@ mod tests {
             .unwrap();
         assert_eq!(
             semantics
-                .content_for(ContentTargetKind::Session, session1.id.as_str())
+                .content_for(
+                    player.id.as_str(),
+                    ContentTargetKind::Session,
+                    session1.id.as_str(),
+                    false
+                )
                 .unwrap()
                 .len(),
             1
@@ -1306,6 +1345,274 @@ mod tests {
         assert_eq!(restores, 1);
         let states:i64=store.with_conn(|db|db.query_row("SELECT count(*) FROM entity_lifecycle_history WHERE target_kind='quest_session' AND target_id=?1",[session1.id.as_str()],|r|r.get::<_,i64>(0)).map_err(op)).unwrap();
         assert_eq!(states, 2);
+    }
+
+    #[test]
+    fn content_relationships_are_player_scoped_timestamped_and_reusable() {
+        let store = store();
+        let world = WorldService::new(store.clone(), Frozen);
+        let semantics = SemanticsService::new(store.clone(), Frozen);
+        let concepts = ConceptService::new(store.clone(), Frozen);
+        let ada = world.create_player("Ada", None).unwrap();
+        let grace = world.create_player("Grace", None).unwrap();
+        let quest = world
+            .create_quest(
+                ada.id.as_str(),
+                "main",
+                "Learn Python",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        let stage = semantics
+            .create_stage(ada.id.as_str(), quest.id.as_str(), "Week one", 0)
+            .unwrap();
+        let session = semantics
+            .start_session(
+                ada.id.as_str(),
+                Some(quest.id.as_str()),
+                Some(stage.id.as_str()),
+                None,
+                None,
+                None,
+                None,
+            )
+            .unwrap();
+        let concept = concepts
+            .create_concept(ada.id.as_str(), "subject", "Python", None)
+            .unwrap();
+        let effect = semantics
+            .create_effect(
+                ada.id.as_str(),
+                lr_application::EffectWrite {
+                    type_code: "buff".into(),
+                    name: "Focused study".into(),
+                    description: None,
+                    target_concept_id: None,
+                    intensity: 1,
+                    started_at: None,
+                    expires_at: None,
+                },
+                None,
+            )
+            .unwrap();
+        let content = world
+            .write_narrative(
+                ada.id.as_str(),
+                "guide",
+                "Python Learning Path",
+                "Read then practise.",
+            )
+            .unwrap();
+        let content = world
+            .update_narrative(
+                ada.id.as_str(),
+                content.id.as_str(),
+                NarrativeWrite {
+                    kind: "guide".into(),
+                    title: "Python Learning Path".into(),
+                    content: "Read, practise, then reflect.".into(),
+                    author: Some("Ada".into()),
+                    source_kind: Some("book".into()),
+                    source_id: Some("isbn-7".into()),
+                },
+            )
+            .unwrap();
+        assert_eq!(content.author.as_deref(), Some("Ada"));
+        let revisions = semantics
+            .revisions(
+                lr_domain::RevisionTargetKind::NarrativeEntry,
+                content.id.as_str(),
+            )
+            .unwrap();
+        assert_eq!(revisions.len(), 1);
+        assert!(revisions[0].snapshot_json.contains("Read then practise."));
+        for (kind, target, role) in [
+            (ContentTargetKind::Quest, quest.id.as_str(), "guidance"),
+            (ContentTargetKind::Session, session.id.as_str(), "reading"),
+            (ContentTargetKind::Concept, concept.id.as_str(), "reference"),
+            (ContentTargetKind::Effect, effect.id.as_str(), "about"),
+        ] {
+            semantics
+                .attach_content(ada.id.as_str(), content.id.as_str(), kind, target, role)
+                .unwrap();
+        }
+        let all = semantics
+            .content_relationships(ada.id.as_str(), content.id.as_str(), false)
+            .unwrap();
+        assert_eq!(
+            all.len(),
+            4,
+            "one canonical Content record can serve many contexts"
+        );
+        assert!(all
+            .iter()
+            .all(|relationship| relationship.is_active && relationship.removed_at.is_none()));
+        let mut search = SearchQuery::default();
+        search.kind = Some(SearchEntityKind::NarrativeEntry);
+        search.target_kind = Some(ContentTargetKind::Quest);
+        search.text = Some("practise reflect".into());
+        assert_eq!(
+            semantics.search(&search).unwrap()[0].id,
+            content.id.as_str()
+        );
+        search.target_kind = None;
+        search.concept_id = Some(concept.id.clone());
+        assert_eq!(
+            semantics.search(&search).unwrap()[0].id,
+            content.id.as_str()
+        );
+        assert!(semantics
+            .attach_content(
+                grace.id.as_str(),
+                content.id.as_str(),
+                ContentTargetKind::Player,
+                grace.id.as_str(),
+                "guidance"
+            )
+            .is_err());
+        assert!(semantics
+            .attach_content(
+                ada.id.as_str(),
+                content.id.as_str(),
+                ContentTargetKind::Quest,
+                "missing",
+                "guidance"
+            )
+            .is_err());
+
+        let quest_link = all
+            .iter()
+            .find(|relationship| relationship.target_kind == ContentTargetKind::Quest)
+            .unwrap();
+        semantics
+            .remove_content_attachment(ada.id.as_str(), quest_link.id.as_str())
+            .unwrap();
+        assert!(semantics
+            .content_for(
+                ada.id.as_str(),
+                ContentTargetKind::Quest,
+                quest.id.as_str(),
+                false
+            )
+            .unwrap()
+            .is_empty());
+        let history = semantics
+            .content_relationships(ada.id.as_str(), content.id.as_str(), true)
+            .unwrap();
+        let removed = history
+            .iter()
+            .find(|relationship| relationship.id == quest_link.id)
+            .unwrap();
+        assert!(!removed.is_active);
+        assert_eq!(
+            removed.removed_at.as_ref().unwrap().as_str(),
+            "2026-09-27T10:00:00+00:00"
+        );
+        let reattached = semantics
+            .attach_content(
+                ada.id.as_str(),
+                content.id.as_str(),
+                ContentTargetKind::Quest,
+                quest.id.as_str(),
+                "guidance",
+            )
+            .unwrap();
+        assert_ne!(
+            reattached.id, quest_link.id,
+            "a reattach is a new fact, not an overwritten removal"
+        );
+
+        semantics
+            .deactivate_effect(ada.id.as_str(), effect.id.as_str(), None)
+            .unwrap();
+        assert_eq!(
+            semantics
+                .content_for(
+                    ada.id.as_str(),
+                    ContentTargetKind::Effect,
+                    effect.id.as_str(),
+                    false
+                )
+                .unwrap()
+                .len(),
+            1,
+            "Effect lifecycle changes do not delete content relationships"
+        );
+    }
+
+    #[test]
+    fn content_and_relationships_survive_a_file_store_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("phase7-content.sqlite3");
+        let (player_id, content_id, quest_id) = {
+            let store = Arc::new(SqliteHealthStore::open_file(&path, T0));
+            let world = WorldService::new(store.clone(), Frozen);
+            let semantics = SemanticsService::new(store, Frozen);
+            let player = world.create_player("Ada", None).unwrap();
+            let quest = world
+                .create_quest(
+                    player.id.as_str(),
+                    "main",
+                    "Study",
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(0),
+                )
+                .unwrap();
+            let content = world
+                .write_narrative(
+                    player.id.as_str(),
+                    "guide",
+                    "Restart-safe guide",
+                    "This remains canonical after restart.",
+                )
+                .unwrap();
+            semantics
+                .attach_content(
+                    player.id.as_str(),
+                    content.id.as_str(),
+                    ContentTargetKind::Quest,
+                    quest.id.as_str(),
+                    "guidance",
+                )
+                .unwrap();
+            (
+                player.id.to_string(),
+                content.id.to_string(),
+                quest.id.to_string(),
+            )
+        };
+        let reopened = Arc::new(SqliteHealthStore::open_file(&path, T0));
+        let world = WorldService::new(reopened.clone(), Frozen);
+        let semantics = SemanticsService::new(reopened, Frozen);
+        assert_eq!(
+            world
+                .get_narrative(&player_id, &content_id)
+                .unwrap()
+                .unwrap()
+                .title,
+            "Restart-safe guide"
+        );
+        assert_eq!(
+            semantics
+                .content_for(&player_id, ContentTargetKind::Quest, &quest_id, false)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            semantics
+                .content_relationships(&player_id, &content_id, false)
+                .unwrap()
+                .len(),
+            1
+        );
     }
     #[test]
     fn manual_progress_is_protected_and_suggestions_commit_with_acceptance() {

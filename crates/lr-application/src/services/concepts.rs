@@ -352,9 +352,11 @@ where
             relationships: self.store.list_concept_relationships(&key)?,
             related_entities: self.store.list_concept_entity_links(&key, None)?,
             associations: self.store.list_associations(&key, None, None)?,
-            content: self
-                .store
-                .list_content_attachments(ContentTargetKind::Concept, &key)?,
+            content: self.store.list_content_attachments(
+                ContentTargetKind::Concept,
+                &key,
+                false,
+            )?,
             related_search_results,
             progress_history: self.store.list_concept_progress_history(&key, None)?,
             snapshots: self.store.list_concept_snapshots(&key)?,

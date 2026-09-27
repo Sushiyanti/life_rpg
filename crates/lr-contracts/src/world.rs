@@ -371,7 +371,12 @@ pub struct NarrativeEntryDto {
     pub title: String,
     pub content: String,
     pub author: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_id: Option<String>,
+    pub is_active: bool,
+    pub metadata_json: String,
     pub created_at: String,
+    pub updated_at: String,
 }
 impl From<NarrativeEntry> for NarrativeEntryDto {
     fn from(v: NarrativeEntry) -> Self {
@@ -382,7 +387,12 @@ impl From<NarrativeEntry> for NarrativeEntryDto {
             title: v.title,
             content: v.content,
             author: v.author,
+            source_kind: v.source_kind,
+            source_id: v.source_id,
+            is_active: v.is_active,
+            metadata_json: v.metadata_json,
             created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
         }
     }
 }

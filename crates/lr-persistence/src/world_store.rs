@@ -259,6 +259,7 @@ fn narrative(row: &Row<'_>) -> Result<NarrativeEntry, StorageError> {
         metadata_json: row.get(9).map_err(op)?,
         created_at: timestamp(row.get(10).map_err(op)?)?,
         updated_at: timestamp(row.get(11).map_err(op)?)?,
+        is_active: b(row.get(12).map_err(op)?),
     })
 }
 
@@ -271,7 +272,7 @@ const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,na
 const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json,captured_at";
 const COMMENT_SQL: &str =
     "id,author_player_id,target_kind,target_id,body,metadata_json,created_at,updated_at";
-const NARRATIVE_SQL: &str = "id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at";
+const NARRATIVE_SQL: &str = "id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at,is_active";
 
 fn insert_transaction(
     tx: &SqlTransaction<'_>,
@@ -732,7 +733,18 @@ impl WorldStore for SqliteHealthStore {
         self.with_conn(|conn|{let sql=format!("SELECT {COMMENT_SQL} FROM comments WHERE target_kind=?1 AND target_id=?2 ORDER BY created_at");let mut stmt=conn.prepare(&sql).map_err(op)?;let mut rows=stmt.query(params![k.as_str(),target.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(comment(r)?);}Ok(out)})
     }
     fn insert_narrative_entry(&self, n: &NarrativeEntry) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO narrative_entries(id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",params![n.id.as_str(),n.player_id.as_str(),n.kind.namespace,n.kind.code,n.title,n.content,n.author,n.source_kind,n.source_id,n.metadata_json,n.created_at.as_str(),n.updated_at.as_str()]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{conn.execute("INSERT INTO narrative_entries(id,player_id,kind_namespace,kind_code,title,content,author,source_kind,source_id,metadata_json,created_at,updated_at,is_active)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",params![n.id.as_str(),n.player_id.as_str(),n.kind.namespace,n.kind.code,n.title,n.content,n.author,n.source_kind,n.source_id,n.metadata_json,n.created_at.as_str(),n.updated_at.as_str(),n.is_active as i64]).map_err(op)?;Ok(())})
+    }
+    fn get_narrative_entry(&self, id: &EntityId) -> Result<Option<NarrativeEntry>, StorageError> {
+        self.with_conn(|conn| {
+            let sql = format!("SELECT {NARRATIVE_SQL} FROM narrative_entries WHERE id=?1");
+            let mut stmt = conn.prepare(&sql).map_err(op)?;
+            let mut rows = stmt.query([id.as_str()]).map_err(op)?;
+            rows.next().map_err(op)?.map(narrative).transpose()
+        })
+    }
+    fn update_narrative_entry(&self, n: &NarrativeEntry) -> Result<(), StorageError> {
+        self.with_conn(|conn| { let changed=conn.execute("UPDATE narrative_entries SET kind_namespace=?3,kind_code=?4,title=?5,content=?6,author=?7,source_kind=?8,source_id=?9,is_active=?10,metadata_json=?11,updated_at=?12 WHERE id=?1 AND player_id=?2",params![n.id.as_str(),n.player_id.as_str(),n.kind.namespace,n.kind.code,n.title,n.content,n.author,n.source_kind,n.source_id,n.is_active as i64,n.metadata_json,n.updated_at.as_str()]).map_err(op)?; if changed==1 {Ok(())} else {Err(op("content record not found in Player world"))} })
     }
     fn list_narrative_entries(&self, p: &EntityId) -> Result<Vec<NarrativeEntry>, StorageError> {
         self.with_conn(|conn|{let sql=format!("SELECT {NARRATIVE_SQL} FROM narrative_entries WHERE player_id=?1 ORDER BY created_at DESC");let mut stmt=conn.prepare(&sql).map_err(op)?;let mut rows=stmt.query([p.as_str()]).map_err(op)?;let mut out=vec![];while let Some(r)=rows.next().map_err(op)?{out.push(narrative(r)?);}Ok(out)})

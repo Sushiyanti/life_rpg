@@ -1,7 +1,7 @@
 //! Thin IPC adapters for the Phase 2 application world service.
 
 use crate::state::AppState;
-use lr_application::{RuleDefinition, DEFAULT_LEDGER_LIMIT};
+use lr_application::{NarrativeWrite, RuleDefinition, DEFAULT_LEDGER_LIMIT};
 use lr_contracts::world::{
     AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
     QuestDto, RuleDto, RuleExecutionDto, SkillDto, SkillSnapshotDto, SkillTreeDto,
@@ -259,6 +259,87 @@ pub fn write_narrative(
     state
         .world
         .write_narrative(&player_id, &kind, &title, &content)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn create_narrative(
+    state: State<'_, AppState>,
+    player_id: String,
+    kind: String,
+    title: String,
+    content: String,
+    author: Option<String>,
+    source_kind: Option<String>,
+    source_id: Option<String>,
+) -> Result<NarrativeEntryDto, CommandErrorDto> {
+    state
+        .world
+        .create_narrative(
+            &player_id,
+            NarrativeWrite {
+                kind,
+                title,
+                content,
+                author,
+                source_kind,
+                source_id,
+            },
+        )
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn get_narrative_entry(
+    state: State<'_, AppState>,
+    player_id: String,
+    content_id: String,
+) -> Result<Option<NarrativeEntryDto>, CommandErrorDto> {
+    state
+        .world
+        .get_narrative(&player_id, &content_id)
+        .map(|value| value.map(Into::into))
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_narrative_entries(
+    state: State<'_, AppState>,
+    player_id: String,
+) -> Result<Vec<NarrativeEntryDto>, CommandErrorDto> {
+    state
+        .world
+        .world_overview(&player_id)
+        .map(|world| world.narratives.into_iter().map(Into::into).collect())
+        .map_err(Into::into)
+}
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn update_narrative(
+    state: State<'_, AppState>,
+    player_id: String,
+    content_id: String,
+    kind: String,
+    title: String,
+    content: String,
+    author: Option<String>,
+    source_kind: Option<String>,
+    source_id: Option<String>,
+) -> Result<NarrativeEntryDto, CommandErrorDto> {
+    state
+        .world
+        .update_narrative(
+            &player_id,
+            &content_id,
+            NarrativeWrite {
+                kind,
+                title,
+                content,
+                author,
+                source_kind,
+                source_id,
+            },
+        )
         .map(Into::into)
         .map_err(Into::into)
 }

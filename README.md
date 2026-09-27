@@ -6,15 +6,14 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 4 — First-generation world UI (complete on `phase-4-ui`).**
-> The app now has a persistent world shell, configurable dashboard panels,
-> Player/Quest/Skill/Concept/Effect/Journal screens, typed Concept links,
-> contextual visibility, world search, and recoverable history views. Levels
-> remain manually authored; hidden records remain distinct from trashed records.
-> See the [Phase 4 report](docs/PHASE-4-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
-> [Architecture](docs/ARCHITECTURE.md), [Phase 2.1 report](docs/PHASE-2.1-REPORT.md),
-> [Phase 3 report](docs/PHASE-3-REPORT.md), [Phase 3.5 report](docs/PHASE-3.5-REPORT.md),
-> and [Phase 3.6 report](docs/PHASE-3.6-REPORT.md).
+> **Status: Phase 7 — Reusable Content & Guidance.**
+> The local-first world now includes a dedicated Content Guidebook built on the
+> existing `NarrativeEntry` model: typed authored content can be edited,
+> recovered, searched, and explicitly attached to multiple same-world records
+> without copying it. Attachment removal preserves timestamped relationship
+> history, while content lifecycle, target lifecycle, and visibility remain
+> independent. See the [Phase 7 report](docs/PHASE-7-REPORT.md), [Domain Design
+> Codex](docs/DOMAIN-DESIGN-CODEX.md), and [Architecture](docs/ARCHITECTURE.md).
 
 ---
 

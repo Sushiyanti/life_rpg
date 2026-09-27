@@ -5,8 +5,8 @@ use lr_application::{
 };
 use lr_domain::{
     Concept, ConceptEntityKind, ConceptEntityLink, ConceptProgressEntry, ConceptProgressTrack,
-    ConceptRelationship, ConceptStateSnapshot, DateValue, EntityId, Iso8601Timestamp,
-    ProgressSemantics, ProgressTrackDefinition, TypeRef,
+    ConceptRelationship, ConceptStateSnapshot, ContentTargetKind, DateValue, EntityId,
+    Iso8601Timestamp, ProgressSemantics, ProgressTrackDefinition, TypeRef,
 };
 use rusqlite::{params, Row};
 fn op(e: impl std::fmt::Display) -> StorageError {
@@ -244,6 +244,7 @@ impl SearchStore for SqliteHealthStore {
                      WHEN f.kind='concept_progress' THEN (SELECT concept_id FROM concept_progress_history h WHERE h.id=f.entity_id)
                      WHEN f.kind='quest_session' THEN (SELECT concept_id FROM quest_sessions s WHERE s.id=f.entity_id)
                      WHEN f.kind='effect' THEN (SELECT target_concept_id FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept')
+                     WHEN f.kind='narrative_entry' THEN (SELECT target_id FROM content_attachments ca WHERE ca.content_id=f.entity_id AND ca.target_kind='concept' AND ca.removed_at IS NULL ORDER BY ca.created_at LIMIT 1)
                      ELSE COALESCE((SELECT concept_id FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id ORDER BY l.created_at LIMIT 1),
                                    (SELECT concept_id FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.is_active=1 ORDER BY a.created_at LIMIT 1)) END AS concept_id,
                 f.type_code,f.status,
@@ -269,12 +270,14 @@ impl SearchStore for SqliteHealthStore {
                      OR (f.kind='quest_session' AND EXISTS(SELECT 1 FROM quest_sessions s WHERE s.id=f.entity_id AND s.concept_id=?10))
                      OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.entity_kind=f.kind AND l.entity_id=f.entity_id AND l.concept_id=?10)
                      OR EXISTS(SELECT 1 FROM concept_associations a WHERE a.entity_kind=f.kind AND a.entity_id=f.entity_id AND a.concept_id=?10 AND a.is_active=1)
+                     OR (f.kind='narrative_entry' AND EXISTS(SELECT 1 FROM content_attachments ca WHERE ca.content_id=f.entity_id AND ca.target_kind='concept' AND ca.target_id=?10 AND ca.removed_at IS NULL))
                      OR (f.kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=f.entity_id AND e.target_kind='concept' AND e.target_concept_id=?10))))
                   AND (COALESCE(el.state,'active')='active' OR (COALESCE(el.state,'active')='archived' AND ?15=1) OR (COALESCE(el.state,'active')='trashed' AND ?16=1))
                   AND (?13 IS NULL OR ?14=1 OR COALESCE(pp.is_visible,1)=1)
+                  AND (?17 IS NULL OR (f.kind='narrative_entry' AND EXISTS(SELECT 1 FROM content_attachments ca WHERE ca.content_id=f.entity_id AND ca.target_kind=?17 AND ca.removed_at IS NULL)))
                 ORDER BY {sort} LIMIT ?11 OFFSET ?12"#);
             let mut stmt=db.prepare(&sql).map_err(op)?;
-            let mut rows=stmt.query(params![fts,q.kind.map(SearchEntityKind::as_str),q.player_id.as_ref().map(EntityId::as_str),q.type_code,q.status,q.from.as_ref().map(Iso8601Timestamp::as_str),q.through.as_ref().map(Iso8601Timestamp::as_str),q.active.map(i64::from),at.as_str(),q.concept_id.as_ref().map(EntityId::as_str),q.limit,q.offset,q.context,q.include_hidden as i64,q.include_archived as i64,q.include_trashed as i64]).map_err(op)?;
+            let mut rows=stmt.query(params![fts,q.kind.map(SearchEntityKind::as_str),q.player_id.as_ref().map(EntityId::as_str),q.type_code,q.status,q.from.as_ref().map(Iso8601Timestamp::as_str),q.through.as_ref().map(Iso8601Timestamp::as_str),q.active.map(i64::from),at.as_str(),q.concept_id.as_ref().map(EntityId::as_str),q.limit,q.offset,q.context,q.include_hidden as i64,q.include_archived as i64,q.include_trashed as i64,q.target_kind.map(ContentTargetKind::as_str)]).map_err(op)?;
             let mut out=Vec::new();
             while let Some(r)=rows.next().map_err(op)?{
                 let kind_raw:String=r.get(0).map_err(op)?;

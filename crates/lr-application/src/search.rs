@@ -1,5 +1,5 @@
 //! Typed global search/query API. Results remain domain entity references, not generic database rows.
-use lr_domain::{EntityId, Iso8601Timestamp, LifecycleState};
+use lr_domain::{ContentTargetKind, EntityId, Iso8601Timestamp, LifecycleState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchEntityKind {
@@ -71,6 +71,8 @@ pub struct SearchQuery {
     pub type_code: Option<String>,
     pub status: Option<String>,
     pub active: Option<bool>,
+    /// When supplied, only Narrative Entries actively attached to this target kind match.
+    pub target_kind: Option<ContentTargetKind>,
     pub from: Option<Iso8601Timestamp>,
     pub through: Option<Iso8601Timestamp>,
     /// Apply contextual visibility only when an actual UI context is requested.
@@ -92,6 +94,7 @@ impl Default for SearchQuery {
             type_code: None,
             status: None,
             active: None,
+            target_kind: None,
             from: None,
             through: None,
             context: None,

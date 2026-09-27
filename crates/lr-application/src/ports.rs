@@ -245,6 +245,16 @@ pub trait WorldStore: Send + Sync {
         target_id: &EntityId,
     ) -> Result<Vec<Comment>, StorageError>;
     fn insert_narrative_entry(&self, entry: &NarrativeEntry) -> Result<(), StorageError>;
+    fn get_narrative_entry(&self, _: &EntityId) -> Result<Option<NarrativeEntry>, StorageError> {
+        Err(StorageError::Operation(
+            "content records are not supported by this store".into(),
+        ))
+    }
+    fn update_narrative_entry(&self, _: &NarrativeEntry) -> Result<(), StorageError> {
+        Err(StorageError::Operation(
+            "content records are not supported by this store".into(),
+        ))
+    }
     fn list_narrative_entries(
         &self,
         player_id: &EntityId,
@@ -645,6 +655,12 @@ impl<T: WorldStore + ?Sized> WorldStore for std::sync::Arc<T> {
     }
     fn insert_narrative_entry(&self, n: &NarrativeEntry) -> Result<(), StorageError> {
         (**self).insert_narrative_entry(n)
+    }
+    fn get_narrative_entry(&self, id: &EntityId) -> Result<Option<NarrativeEntry>, StorageError> {
+        (**self).get_narrative_entry(id)
+    }
+    fn update_narrative_entry(&self, n: &NarrativeEntry) -> Result<(), StorageError> {
+        (**self).update_narrative_entry(n)
     }
     fn list_narrative_entries(&self, id: &EntityId) -> Result<Vec<NarrativeEntry>, StorageError> {
         (**self).list_narrative_entries(id)

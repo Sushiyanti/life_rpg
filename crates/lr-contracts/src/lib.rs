@@ -544,6 +544,74 @@ mod tests {
     }
 
     #[test]
+    fn phase7_content_and_relationship_contracts_preserve_structured_history() {
+        use lr_domain::{
+            ContentAttachment, ContentTargetKind, EntityId, Iso8601Timestamp, NarrativeEntry,
+            TypeRef,
+        };
+        let created = Iso8601Timestamp::parse("2026-09-28T00:00:00Z").unwrap();
+        let removed = Iso8601Timestamp::parse("2026-09-28T01:00:00Z").unwrap();
+        let mut narrative = NarrativeEntry::new(
+            EntityId::new("content-1").unwrap(),
+            EntityId::new("player-1").unwrap(),
+            TypeRef::new("narrative_entry", "guide").unwrap(),
+            "Guide",
+            "Body",
+            created.clone(),
+        )
+        .unwrap();
+        narrative
+            .edit(
+                TypeRef::new("narrative_entry", "guide").unwrap(),
+                "Guide",
+                "Body",
+                Some("Ada".into()),
+                Some("book".into()),
+                Some("source-1".into()),
+                removed.clone(),
+            )
+            .unwrap();
+        let narrative = serde_json::to_value(world::NarrativeEntryDto::from(narrative)).unwrap();
+        for key in [
+            "sourceKind",
+            "sourceId",
+            "isActive",
+            "metadataJson",
+            "updatedAt",
+        ] {
+            assert!(
+                narrative.get(key).is_some(),
+                "Narrative content DTO missing `{key}`"
+            );
+        }
+        let mut relationship = ContentAttachment::new(
+            EntityId::new("relationship-1").unwrap(),
+            EntityId::new("content-1").unwrap(),
+            EntityId::new("player-1").unwrap(),
+            ContentTargetKind::Quest,
+            EntityId::new("quest-1").unwrap(),
+            "guidance",
+            3,
+            created,
+        )
+        .unwrap();
+        relationship.remove(removed).unwrap();
+        let relationship =
+            serde_json::to_value(semantics::ContentAttachmentDto::from(relationship)).unwrap();
+        for key in ["id", "sortOrder", "isActive", "removedAt"] {
+            assert!(
+                relationship.get(key).is_some(),
+                "Content relationship DTO missing `{key}`"
+            );
+        }
+        assert_eq!(relationship["isActive"], false);
+        let mut query = lr_application::SearchQuery::default();
+        query.target_kind = Some(ContentTargetKind::Quest);
+        let query = serde_json::to_value(semantics::SearchQueryDto::from(query)).unwrap();
+        assert_eq!(query["targetKind"], "quest");
+    }
+
+    #[test]
     fn workspace_import_wire_request_rejects_unknown_executable_fields() {
         let request = serde_json::json!({
             "name":"Learning", "template":"learning", "script":"alert(1)", "panels":[]

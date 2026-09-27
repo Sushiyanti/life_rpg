@@ -30,6 +30,17 @@ pub struct AwardXpOutcome {
     pub transaction: Transaction,
 }
 
+/// Explicit authored fields for the reusable Content Guidebook.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NarrativeWrite {
+    pub kind: String,
+    pub title: String,
+    pub content: String,
+    pub author: Option<String>,
+    pub source_kind: Option<String>,
+    pub source_id: Option<String>,
+}
+
 pub struct WorldService<S, C>
 where
     S: WorldStore,
@@ -612,16 +623,93 @@ where
         title: &str,
         content: &str,
     ) -> Result<NarrativeEntry, AppError> {
+        self.create_narrative(
+            player_id,
+            NarrativeWrite {
+                kind: kind.into(),
+                title: title.into(),
+                content: content.into(),
+                author: None,
+                source_kind: None,
+                source_id: None,
+            },
+        )
+    }
+    pub fn create_narrative(
+        &self,
+        player_id: &str,
+        write: NarrativeWrite,
+    ) -> Result<NarrativeEntry, AppError> {
         let p = self.required_player(player_id)?;
-        let value = NarrativeEntry::new(
+        let now = self.now()?;
+        let mut value = NarrativeEntry::new(
             self.new_id("narrative")?,
             p.id,
-            TypeRef::new("narrative_entry", kind)?,
-            title,
-            content,
-            self.now()?,
+            TypeRef::new("narrative_entry", write.kind)?,
+            write.title,
+            write.content,
+            now.clone(),
+        )?;
+        value.edit(
+            value.kind.clone(),
+            value.title.clone(),
+            value.content.clone(),
+            write.author,
+            write.source_kind,
+            write.source_id,
+            now,
         )?;
         self.store.insert_narrative_entry(&value)?;
+        Ok(value)
+    }
+    pub fn get_narrative(
+        &self,
+        player_id: &str,
+        content_id: &str,
+    ) -> Result<Option<NarrativeEntry>, AppError> {
+        let player = self.required_player(player_id)?;
+        let content = self
+            .store
+            .get_narrative_entry(&EntityId::new(content_id)?)?;
+        match content {
+            Some(value) if value.player_id == player.id => Ok(Some(value)),
+            Some(_) => Err(lr_domain::DomainError::invalid_value(
+                "content record",
+                "belongs to another Player",
+            )
+            .into()),
+            None => Ok(None),
+        }
+    }
+    pub fn update_narrative(
+        &self,
+        player_id: &str,
+        content_id: &str,
+        write: NarrativeWrite,
+    ) -> Result<NarrativeEntry, AppError> {
+        let player = self.required_player(player_id)?;
+        let id = EntityId::new(content_id)?;
+        let mut value = self
+            .store
+            .get_narrative_entry(&id)?
+            .ok_or_else(|| AppError::Internal("content record not found".into()))?;
+        if value.player_id != player.id {
+            return Err(lr_domain::DomainError::invalid_value(
+                "content record",
+                "belongs to another Player",
+            )
+            .into());
+        }
+        value.edit(
+            TypeRef::new("narrative_entry", write.kind)?,
+            write.title,
+            write.content,
+            write.author,
+            write.source_kind,
+            write.source_id,
+            self.now()?,
+        )?;
+        self.store.update_narrative_entry(&value)?;
         Ok(value)
     }
     pub fn world_overview(&self, player_id: &str) -> Result<WorldOverview, AppError> {
