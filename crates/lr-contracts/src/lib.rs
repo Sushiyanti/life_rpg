@@ -26,6 +26,8 @@
 //! surface the UI needs. Phase 2 adds `PlayerDto`, `QuestDto`, … following the
 //! same pattern.
 
+pub mod world;
+
 use lr_application::HealthReport;
 use serde::{Deserialize, Serialize};
 

@@ -21,7 +21,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use lr_application::{HealthStore, RoundTripProof, SchemaReport, StoreDiagnostics, StorageError};
+use lr_application::{HealthStore, RoundTripProof, SchemaReport, StorageError, StoreDiagnostics};
 use rusqlite::Connection;
 
 use crate::error::PersistenceError;
@@ -119,7 +119,7 @@ impl SqliteHealthStore {
     }
 
     /// Borrow the connection, or explain why we cannot.
-    fn with_conn<T>(
+    pub(crate) fn with_conn<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, StorageError>,
     ) -> Result<T, StorageError> {
@@ -142,7 +142,7 @@ impl SqliteHealthStore {
     /// Needed because `Connection::transaction` takes `&mut self`. Keeping the
     /// two helpers separate means read-only operations cannot accidentally
     /// take a write lock.
-    fn with_conn_mut<T>(
+    pub(crate) fn with_conn_mut<T>(
         &self,
         f: impl FnOnce(&mut Connection) -> Result<T, StorageError>,
     ) -> Result<T, StorageError> {
@@ -160,9 +160,7 @@ impl SqliteHealthStore {
     /// Human-readable location of the store, when file-backed.
     pub fn location(&self) -> Option<String> {
         match &self.state {
-            State::Ready { location, .. } => {
-                location.as_ref().map(|p| p.display().to_string())
-            }
+            State::Ready { location, .. } => location.as_ref().map(|p| p.display().to_string()),
             State::Unavailable { .. } => None,
         }
     }
@@ -187,8 +185,7 @@ impl HealthStore for SqliteHealthStore {
             Ok(StoreDiagnostics {
                 backend: "sqlite".to_string(),
                 location_hint: self.location(),
-                journal_mode: pragma::journal_mode(conn)
-                    .map_err(StorageError::from)?,
+                journal_mode: pragma::journal_mode(conn).map_err(StorageError::from)?,
                 foreign_keys: pragma::foreign_keys_enabled(conn).map_err(StorageError::from)?,
             })
         })
@@ -259,21 +256,25 @@ mod tests {
 
         let schema = store.schema_report().expect("schema");
         assert!(schema.is_current());
-        assert_eq!(schema.migrations.len(), 3);
+        assert_eq!(schema.migrations.len(), 4);
     }
 
     #[test]
     fn round_trip_writes_reads_and_counts() {
         let store = SqliteHealthStore::open_in_memory(T0);
 
-        let first = store.verify_round_trip("probe-abc", T0).expect("round trip");
+        let first = store
+            .verify_round_trip("probe-abc", T0)
+            .expect("round trip");
         assert!(first.matches());
         assert_eq!(first.token, "probe-abc");
         assert_eq!(first.read_back_token, "probe-abc");
         assert_eq!(first.probe_rows, 1);
         assert_eq!(first.row_id, 1);
 
-        let second = store.verify_round_trip("probe-def", T0).expect("round trip");
+        let second = store
+            .verify_round_trip("probe-def", T0)
+            .expect("round trip");
         assert_eq!(second.probe_rows, 2, "probe rows accumulate");
         assert_ne!(second.row_id, first.row_id);
     }
@@ -316,12 +317,19 @@ mod tests {
         let path = dir.path().join("nested").join("world.sqlite3");
         let store = SqliteHealthStore::open_file(&path, T0);
 
-        assert!(store.is_available(), "parent directory must be auto-created");
+        assert!(
+            store.is_available(),
+            "parent directory must be auto-created"
+        );
         let diag = store.diagnostics().expect("diagnostics");
         assert_eq!(diag.backend, "sqlite");
         assert_eq!(diag.journal_mode.to_lowercase(), "wal");
         assert!(diag.foreign_keys);
-        assert!(diag.location_hint.as_deref().unwrap().ends_with("world.sqlite3"));
+        assert!(diag
+            .location_hint
+            .as_deref()
+            .unwrap()
+            .ends_with("world.sqlite3"));
     }
 
     #[test]
@@ -337,7 +345,10 @@ mod tests {
         let rt = store.verify_round_trip("x", T0).expect_err("must fail");
         assert!(matches!(rt, StorageError::Unreachable(_)));
 
-        assert_eq!(store.unavailability_reason(), Some("simulated disk failure"));
+        assert_eq!(
+            store.unavailability_reason(),
+            Some("simulated disk failure")
+        );
     }
 
     #[test]
@@ -375,7 +386,7 @@ mod tests {
         assert!(report.database.as_ref().unwrap().schema_current);
         assert_eq!(
             report.database.as_ref().unwrap().migrations.len(),
-            3,
+            4,
             "status screen shows real migration history"
         );
     }

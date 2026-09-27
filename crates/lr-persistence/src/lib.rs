@@ -27,6 +27,7 @@ pub mod error;
 pub mod migrations;
 pub mod pragma;
 pub mod sqlite_store;
+pub mod world_store;
 
 pub use error::PersistenceError;
 pub use migrations::{applied_version, run_migrations, Migration, MIGRATIONS};

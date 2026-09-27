@@ -34,8 +34,8 @@ pub struct Migration {
 
 /// The full, ordered migration history known to this build.
 ///
-/// Phase 1 ships three steps, which is deliberate: a single migration would not
-/// prove that the runner sequences, records and skips correctly.
+/// Phase 1 shipped three foundation steps; Phase 2 appends the persistent domain
+/// as step four. Applied migration bodies are never edited.
 pub const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -51,6 +51,11 @@ pub const MIGRATIONS: &[Migration] = &[
         version: 3,
         name: "0003_type_definition_registry",
         sql: include_str!("migrations/0003_type_definition_registry.sql"),
+    },
+    Migration {
+        version: 4,
+        name: "0004_phase2_domain",
+        sql: include_str!("migrations/0004_phase2_domain.sql"),
     },
 ];
 
@@ -99,7 +104,10 @@ pub fn applied_version(conn: &Connection) -> Result<u32, PersistenceError> {
 ///
 /// Returns the versions that were applied by *this* call (empty when the store
 /// was already current).
-pub fn run_migrations(conn: &mut Connection, applied_at: &str) -> Result<Vec<u32>, PersistenceError> {
+pub fn run_migrations(
+    conn: &mut Connection,
+    applied_at: &str,
+) -> Result<Vec<u32>, PersistenceError> {
     ensure_ledger(conn)?;
 
     let current = applied_version(conn)?;
@@ -199,7 +207,7 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3]);
+        assert_eq!(applied, vec![1, 2, 3, 4]);
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -207,7 +215,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 3);
+        assert_eq!(first.len(), 4);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -215,7 +223,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 3, "ledger must not accumulate duplicates");
+        assert_eq!(count, 4, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -225,7 +233,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 3);
+        assert_eq!(report.migrations.len(), 4);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -249,13 +257,59 @@ mod tests {
         .unwrap();
 
         let applied = run_migrations(&mut conn, T0).unwrap();
-        assert_eq!(applied, vec![2, 3], "must apply only the missing steps");
+        assert_eq!(applied, vec![2, 3, 4], "must apply only the missing steps");
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
         // The pre-existing row keeps its original timestamp: history is intact.
         let m1 = report.migrations.iter().find(|m| m.version == 1).unwrap();
         assert_eq!(m1.applied_at.as_deref(), Some(T0));
+    }
+
+    #[test]
+    fn phase1_database_upgrades_to_phase2_without_losing_data() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+
+        // Reproduce a real Phase 1 database exactly: all original migration
+        // bodies and their ledger rows, plus existing user/infrastructure data.
+        for migration in &MIGRATIONS[..3] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?1, ?2, ?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO health_probe (token, written_at) VALUES ('phase1-proof', ?1)",
+            rusqlite::params![T0],
+        )
+        .unwrap();
+
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![4]);
+        assert!(schema_report(&conn).unwrap().is_current());
+
+        let proof_rows: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM health_probe WHERE token = 'phase1-proof'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(proof_rows, 1, "migration must preserve Phase 1 rows");
+
+        let player_table: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'players'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            player_table, 1,
+            "Phase 2 schema must be available after upgrade"
+        );
     }
 
     #[test]
@@ -294,6 +348,16 @@ mod tests {
             "app_meta",
             "health_probe",
             "type_definitions",
+            "players",
+            "quests",
+            "skill_trees",
+            "skills",
+            "transactions",
+            "player_state_snapshots",
+            "skill_state_snapshots",
+            "comments",
+            "narrative_entries",
+            "effects",
         ] {
             assert!(
                 tables.iter().any(|t| t == expected),

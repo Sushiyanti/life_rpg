@@ -21,6 +21,13 @@ describe('COMMANDS', () => {
     expect(COMMANDS.getStatus).toBe('get_status');
     expect(COMMANDS.getWorldLocation).toBe('get_world_location');
     expect(COMMANDS.ping).toBe('ping');
+    expect(COMMANDS.createPlayer).toBe('create_player');
+    expect(COMMANDS.awardXp).toBe('award_xp');
+    expect(COMMANDS.createQuest).toBe('create_quest');
+    expect(COMMANDS.completeQuest).toBe('complete_quest');
+    expect(COMMANDS.createSkillTree).toBe('create_skill_tree');
+    expect(COMMANDS.capturePlayerSnapshot).toBe('capture_player_snapshot');
+    expect(COMMANDS.getWorldOverview).toBe('get_world_overview');
   });
 });
 

@@ -6,12 +6,11 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 1 — Foundation.** This build is a genuinely runnable
-> application, not an architecture document. It launches a desktop window,
-> opens a real SQLite database, migrates it to a versioned schema, performs a
-> transaction-wrapped write/read round trip, and reports all of it on a status
-> screen. The Player / Quest / Skill domain is deliberately **not** implemented
-> yet — see [What Phase 1 does *not* do](#what-phase-1-does-not-do).
+> **Status: Phase 2 — Persistent core domain.** The application now persists
+> Player state, hierarchical Quests and Skills, Skill Trees, Effects, immutable
+> daily snapshots, an append-only Transaction ledger, Comments, and Narrative
+> Entries. It remains local-first: React communicates with the Rust core through
+> typed Tauri IPC, and SQLite remains private to the persistence layer.
 
 ---
 

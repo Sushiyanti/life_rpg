@@ -1849,6 +1849,7 @@ name = "lr-contracts"
 version = "0.1.0"
 dependencies = [
  "lr-application",
+ "lr-domain",
  "serde",
  "serde_json",
 ]

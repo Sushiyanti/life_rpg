@@ -231,7 +231,10 @@ where
                 self.store.diagnostics(),
                 Err(StorageError::Unreachable(_)) | Err(StorageError::Schema(_))
             );
-        let schema_current = schema.as_ref().map(SchemaReport::is_current).unwrap_or(false);
+        let schema_current = schema
+            .as_ref()
+            .map(SchemaReport::is_current)
+            .unwrap_or(false);
         let round_trip_ok = round_trip.as_ref().map(|r| r.matches).unwrap_or(false);
 
         let status = if storage_broken || schema.is_none() {
@@ -272,7 +275,10 @@ where
                 .as_ref()
                 .map(|d| d.journal_mode.clone())
                 .unwrap_or_else(|| "unknown".to_string()),
-            foreign_keys: diagnostics.as_ref().map(|d| d.foreign_keys).unwrap_or(false),
+            foreign_keys: diagnostics
+                .as_ref()
+                .map(|d| d.foreign_keys)
+                .unwrap_or(false),
         });
 
         HealthReport {
@@ -418,11 +424,17 @@ mod tests {
     fn probe_token_is_deterministic_for_a_frozen_clock() {
         let service = HealthService::new(FakeStore::healthy(), clock());
         let report = service.run();
-        assert_eq!(report.round_trip.as_ref().unwrap().token, "probe-deadbeef-0");
+        assert_eq!(
+            report.round_trip.as_ref().unwrap().token,
+            "probe-deadbeef-0"
+        );
 
         // second run increments the counter but keeps the frozen clock
         let second = service.run();
-        assert_eq!(second.round_trip.as_ref().unwrap().token, "probe-deadbeef-1");
+        assert_eq!(
+            second.round_trip.as_ref().unwrap().token,
+            "probe-deadbeef-1"
+        );
     }
 
     #[test]

@@ -13,11 +13,13 @@
 
 import { AppShell } from './app/AppShell';
 import { StatusScreen } from './features/status/StatusScreen';
+import { WorldPanel } from './features/world/WorldPanel';
 
 export function App() {
   return (
     <AppShell>
       <StatusScreen />
+      <WorldPanel />
     </AppShell>
   );
 }

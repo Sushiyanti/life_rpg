@@ -3,3 +3,4 @@
 //! injected, which is what keeps them trivially testable.
 
 pub mod health;
+pub mod world;
