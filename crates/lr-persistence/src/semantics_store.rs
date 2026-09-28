@@ -345,7 +345,7 @@ impl SemanticsStore for SqliteHealthStore {
         self.with_conn_mut(|db| {
             let tx = db.transaction().map_err(op)?;
             let changed = tx.execute(
-                "UPDATE effects SET deactivated_at=?2,updated_at=?2 WHERE id=?1 AND player_id=?3 AND deactivated_at IS NULL",
+                "UPDATE effects SET deactivated_at=?2,deactivation_source='manual',updated_at=?2 WHERE id=?1 AND player_id=?3 AND deactivated_at IS NULL",
                 params![value.id.as_str(), value.deactivated_at.as_ref().map(Iso8601Timestamp::as_str), value.player_id.as_str()],
             ).map_err(op)?;
             if changed != 1 { return Err(op("Effect is missing or already manually deactivated")); }

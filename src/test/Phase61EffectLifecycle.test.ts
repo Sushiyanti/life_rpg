@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Effect } from '../domain/world';
 import { effectLifecycleAt } from '../features/world/effectLifecycle';
 
-const base:Effect={id:'e1',playerId:'p1',targetKind:'player',targetConceptId:null,typeCode:'buff',name:'Focus',description:null,startedAt:'2026-01-01T00:00:00Z',expiresAt:null,deactivatedAt:null,intensity:1};
+const base:Effect={id:'e1',playerId:'p1',targetKind:'player',targetConceptId:null,typeCode:'buff',name:'Focus',description:null,startedAt:'2026-01-01T00:00:00Z',expiresAt:null,deactivatedAt:null,deactivationSource:null,intensity:1};
 
 describe('Phase 6.1 Effect lifecycle presentation',()=>{
   const now=Date.parse('2026-01-03T00:00:00Z');

@@ -6,6 +6,7 @@ pub enum EffectHistoryKind {
     DetailsChanged,
     ExpiryChanged,
     ManuallyDeactivated,
+    RuleDeactivated,
     SessionLinked,
     SessionUnlinked,
 }
@@ -16,6 +17,7 @@ impl EffectHistoryKind {
             Self::DetailsChanged => "details_changed",
             Self::ExpiryChanged => "expiry_changed",
             Self::ManuallyDeactivated => "manually_deactivated",
+            Self::RuleDeactivated => "rule_deactivated",
             Self::SessionLinked => "session_linked",
             Self::SessionUnlinked => "session_unlinked",
         }
@@ -26,6 +28,7 @@ impl EffectHistoryKind {
             "details_changed" => Ok(Self::DetailsChanged),
             "expiry_changed" => Ok(Self::ExpiryChanged),
             "manually_deactivated" => Ok(Self::ManuallyDeactivated),
+            "rule_deactivated" => Ok(Self::RuleDeactivated),
             "session_linked" => Ok(Self::SessionLinked),
             "session_unlinked" => Ok(Self::SessionUnlinked),
             _ => Err(DomainError::invalid_value(

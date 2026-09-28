@@ -105,6 +105,41 @@ impl Transaction {
         tx.applied_amount = Some(applied);
         Ok(tx)
     }
+
+    /// Ledger one Skill XP mutation using a distinct resource while retaining
+    /// requested-versus-applied floor semantics.
+    pub fn skill_xp_adjustment(
+        player_id: EntityId,
+        skill_id: &EntityId,
+        requested: i64,
+        applied: i64,
+        occurred_at: Iso8601Timestamp,
+    ) -> DomainResult<Self> {
+        if requested == 0 {
+            return Err(DomainError::invalid_value(
+                "requested Skill XP adjustment",
+                "must not be zero",
+            ));
+        }
+        if (requested > 0 && applied != requested)
+            || (requested < 0 && (applied > 0 || applied < requested))
+        {
+            return Err(DomainError::Invariant(
+                "applied Skill XP delta must match an award or be a clamped penalty".into(),
+            ));
+        }
+        let mut tx = Self::new(
+            player_id,
+            TypeRef::transaction("xp")?,
+            "skill_xp",
+            requested,
+            occurred_at,
+        )?;
+        tx.applied_amount = Some(applied);
+        tx.source_kind = Some("skill".into());
+        tx.source_id = Some(skill_id.to_string());
+        Ok(tx)
+    }
 }
 
 #[cfg(test)]

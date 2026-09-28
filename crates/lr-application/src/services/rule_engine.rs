@@ -2,12 +2,17 @@
 //! All effects are planned first and committed as one WorldStore operation batch.
 use crate::{
     rules::{
-        Rule, RuleAction, RuleEvent, RuleExecutionError, RuleExecutionRecord, RuleOperation,
-        MAX_ACTIONS_PER_CHAIN, MAX_RULE_CHAIN_DEPTH, MAX_RULE_EVALUATIONS_PER_CHAIN,
+        Rule, RuleAction, RuleEvent, RuleEventSource, RuleExecutionError, RuleExecutionRecord,
+        RuleOperation, MAX_ACTIONS_PER_CHAIN, MAX_RULE_CHAIN_DEPTH, MAX_RULE_EVALUATIONS_PER_CHAIN,
     },
     AppError, WorldStore,
 };
-use lr_domain::{EntityId, Iso8601Timestamp, Player, PlayerStat, Quest, Transaction};
+use chrono::Duration;
+use lr_domain::{
+    Effect, EffectHistoryEntry, EffectHistoryKind, EffectLifecycle, EntityId, Iso8601Timestamp,
+    Player, PlayerStat, Quest, Skill, SkillHistoryEntry, SkillHistoryKind, SkillHistorySource,
+    Transaction, TypeRef,
+};
 use std::collections::{HashSet, VecDeque};
 
 fn json<T: serde::Serialize>(value: &T) -> Result<String, AppError> {
@@ -332,6 +337,47 @@ fn plan_action<S: WorldStore>(
                 history,
             });
         }
+        RuleAction::AwardSkillXp {
+            skill_id,
+            delta,
+            reason,
+        } => generated.extend(plan_skill_xp(
+            store,
+            &player_id,
+            rule,
+            skill_id,
+            *delta,
+            reason.as_ref(),
+            operations,
+            now,
+        )?),
+        RuleAction::UnlockSkill { skill_id } => generated.extend(plan_unlock_skill(
+            store, &player_id, skill_id, operations, now, next_id,
+        )?),
+        RuleAction::ApplyEffect {
+            type_code,
+            name,
+            description,
+            target_concept_id,
+            intensity,
+            expires_in_seconds,
+        } => generated.extend(plan_apply_effect(
+            store,
+            &player_id,
+            rule,
+            type_code,
+            name,
+            description.as_ref(),
+            target_concept_id.as_ref(),
+            *intensity,
+            *expires_in_seconds,
+            operations,
+            now,
+            next_id,
+        )?),
+        RuleAction::DeactivateEffect { effect_id } => generated.extend(plan_deactivate_effect(
+            store, &player_id, effect_id, operations, now, next_id,
+        )?),
     }
     Ok(generated)
 }
@@ -551,4 +597,319 @@ pub fn execute<S: WorldStore>(
             Err(AppError::Storage(storage))
         }
     }
+}
+fn pending_skill<S: WorldStore>(
+    store: &S,
+    skill_id: &EntityId,
+    operations: &[RuleOperation],
+) -> Result<Skill, AppError> {
+    for operation in operations.iter().rev() {
+        match operation {
+            RuleOperation::SkillXp { skill, .. }
+            | RuleOperation::SkillAvailability { skill, .. }
+                if skill.id == *skill_id =>
+            {
+                return Ok(skill.clone())
+            }
+            _ => {}
+        }
+    }
+    store
+        .get_skill(skill_id)?
+        .ok_or_else(|| AppError::Internal(format!("Skill `{skill_id}` not found")))
+}
+
+fn pending_effect<S: WorldStore>(
+    store: &S,
+    player_id: &EntityId,
+    effect_id: &EntityId,
+    operations: &[RuleOperation],
+) -> Result<Effect, AppError> {
+    for operation in operations.iter().rev() {
+        match operation {
+            RuleOperation::CreateEffect { effect, .. }
+            | RuleOperation::DeactivateEffect { effect, .. }
+                if effect.id == *effect_id =>
+            {
+                return Ok(effect.clone())
+            }
+            _ => {}
+        }
+    }
+    store
+        .list_effects(player_id, None)?
+        .into_iter()
+        .find(|effect| effect.id == *effect_id)
+        .ok_or_else(|| AppError::Internal(format!("Effect `{effect_id}` not found")))
+}
+
+fn skill_state_json(skill: &Skill) -> Result<String, AppError> {
+    json(&serde_json::json!({
+        "availability": skill.availability.as_str(),
+        "availabilityControl": skill.availability_control.as_str(),
+    }))
+}
+
+fn effect_state_json(effect: &Effect) -> Result<String, AppError> {
+    json(&serde_json::json!({
+        "id": effect.id.as_str(),
+        "playerId": effect.player_id.as_str(),
+        "typeCode": effect.effect_type.code,
+        "name": effect.name,
+        "description": effect.description,
+        "targetConceptId": effect.target_concept_id.as_ref().map(EntityId::as_str),
+        "intensity": effect.intensity,
+        "startedAt": effect.started_at.as_str(),
+        "expiresAt": effect.expires_at.as_ref().map(Iso8601Timestamp::as_str),
+        "deactivatedAt": effect.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),
+        "deactivationSource": effect.deactivation_source.map(|source| source.as_str()),
+    }))
+}
+
+fn check_skill_owner<S: WorldStore>(
+    store: &S,
+    skill: &Skill,
+    player_id: &EntityId,
+) -> Result<(), AppError> {
+    let tree = store
+        .get_skill_tree(&skill.skill_tree_id)?
+        .ok_or_else(|| AppError::Internal("Skill Tree not found".into()))?;
+    if tree.player_id != *player_id {
+        return Err(lr_domain::DomainError::invalid_value(
+            "rule Skill action",
+            "target Skill must belong to the event Player",
+        )
+        .into());
+    }
+    Ok(())
+}
+
+fn plan_skill_xp<S: WorldStore>(
+    store: &S,
+    player_id: &EntityId,
+    rule: &Rule,
+    skill_id: &str,
+    delta: i64,
+    reason: Option<&String>,
+    operations: &mut Vec<RuleOperation>,
+    now: &Iso8601Timestamp,
+) -> Result<Vec<RuleEvent>, AppError> {
+    let id = EntityId::new(skill_id)?;
+    let mut skill = pending_skill(store, &id, operations)?;
+    check_skill_owner(store, &skill, player_id)?;
+    let previous_xp = skill.current_xp;
+    let applied_delta = skill.adjust_xp(delta, now.clone())?;
+    let mut transaction = Transaction::skill_xp_adjustment(
+        player_id.clone(),
+        &skill.id,
+        delta,
+        applied_delta,
+        now.clone(),
+    )?;
+    transaction.reason = reason.cloned().or_else(|| Some("rule_action".into()));
+    transaction.metadata_json = serde_json::json!({
+        "schemaVersion": 1,
+        "previousXp": previous_xp,
+        "currentXp": skill.current_xp,
+        "requestedDelta": delta,
+        "appliedDelta": applied_delta,
+        "source": "rule",
+        "ruleId": rule.id.as_str(),
+    })
+    .to_string();
+    let generated = RuleEvent::SkillXpChanged {
+        player_id: player_id.to_string(),
+        skill_id: skill.id.to_string(),
+        previous_xp,
+        current_xp: skill.current_xp,
+        requested_delta: delta,
+        applied_delta,
+        source: RuleEventSource::Rule,
+    };
+    operations.push(RuleOperation::SkillXp {
+        skill,
+        previous_xp,
+        transaction,
+    });
+    Ok(vec![generated])
+}
+
+fn plan_unlock_skill<S: WorldStore>(
+    store: &S,
+    player_id: &EntityId,
+    skill_id: &str,
+    operations: &mut Vec<RuleOperation>,
+    now: &Iso8601Timestamp,
+    next_id: &mut impl FnMut() -> Result<String, AppError>,
+) -> Result<Vec<RuleEvent>, AppError> {
+    let id = EntityId::new(skill_id)?;
+    let mut skill = pending_skill(store, &id, operations)?;
+    check_skill_owner(store, &skill, player_id)?;
+    let previous = skill_state_json(&skill)?;
+    let expected_availability = skill.availability;
+    let expected_control = skill.availability_control;
+    if !skill.unlock_by_rule(now.clone())? {
+        // Already-unlocked is an audited, deterministic no-op.
+        return Ok(Vec::new());
+    }
+    let history = SkillHistoryEntry {
+        id: EntityId::new(next_id()?)?,
+        player_id: player_id.clone(),
+        skill_id: skill.id.clone(),
+        kind: SkillHistoryKind::AvailabilityChanged,
+        source: SkillHistorySource::Rule,
+        recorded_at: now.clone(),
+        previous_state_json: Some(previous),
+        current_state_json: skill_state_json(&skill)?,
+    };
+    operations.push(RuleOperation::SkillAvailability {
+        skill: skill.clone(),
+        expected_availability,
+        expected_control,
+        history,
+    });
+    Ok(vec![RuleEvent::SkillUnlocked {
+        player_id: player_id.to_string(),
+        skill_id: skill.id.to_string(),
+        was_available: false,
+        source: RuleEventSource::Rule,
+    }])
+}
+
+fn plan_apply_effect<S: WorldStore>(
+    store: &S,
+    player_id: &EntityId,
+    rule: &Rule,
+    type_code: &str,
+    name: &str,
+    description: Option<&String>,
+    target_concept_id: Option<&String>,
+    intensity: i32,
+    expires_in_seconds: Option<u32>,
+    operations: &mut Vec<RuleOperation>,
+    now: &Iso8601Timestamp,
+    next_id: &mut impl FnMut() -> Result<String, AppError>,
+) -> Result<Vec<RuleEvent>, AppError> {
+    let registered = store.list_type_definitions(Some("effect"))?;
+    if !registered
+        .iter()
+        .any(|item| item.is_active && item.type_ref.code == type_code)
+    {
+        return Err(lr_domain::DomainError::invalid_value(
+            "rule Effect action",
+            "type must be an active registered Effect type",
+        )
+        .into());
+    }
+    let mut effect = Effect::new(
+        EntityId::new(next_id()?)?,
+        player_id.clone(),
+        TypeRef::effect(type_code.to_owned())?,
+        name,
+        now.clone(),
+    )?;
+    effect.description = description
+        .filter(|value| !value.trim().is_empty())
+        .cloned();
+    effect.intensity = intensity;
+    if let Some(raw_id) = target_concept_id {
+        let concept_id = EntityId::new(raw_id)?;
+        let concept = store.get_concept_for_rule(&concept_id)?.ok_or_else(|| {
+            AppError::Internal(format!(
+                "rule Effect target Concept `{concept_id}` not found"
+            ))
+        })?;
+        if concept.player_id != *player_id {
+            return Err(lr_domain::DomainError::invalid_value(
+                "rule Effect target",
+                "Concept must belong to the event Player",
+            )
+            .into());
+        }
+        effect.target_concept(concept.id);
+    }
+    if let Some(seconds) = expires_in_seconds {
+        let end = now
+            .to_datetime()?
+            .checked_add_signed(Duration::seconds(i64::from(seconds)))
+            .ok_or_else(|| lr_domain::DomainError::Invariant("Effect expiry overflow".into()))?;
+        effect.expires_at = Some(Iso8601Timestamp::from_datetime(end));
+    }
+    effect.source_kind = Some("rule".into());
+    effect.source_id = Some(rule.id.to_string());
+    let history = EffectHistoryEntry {
+        id: EntityId::new(next_id()?)?,
+        player_id: player_id.clone(),
+        effect_id: effect.id.clone(),
+        session_id: None,
+        kind: EffectHistoryKind::Created,
+        recorded_at: now.clone(),
+        previous_state_json: None,
+        current_state_json: effect_state_json(&effect)?,
+    };
+    let generated = RuleEvent::EffectCreated {
+        player_id: player_id.to_string(),
+        effect_id: effect.id.to_string(),
+        type_code: effect.effect_type.code.clone(),
+        target_concept_id: effect.target_concept_id.as_ref().map(ToString::to_string),
+        source: RuleEventSource::Rule,
+    };
+    operations.push(RuleOperation::CreateEffect {
+        effect,
+        history: vec![history],
+        session_link: None,
+    });
+    Ok(vec![generated])
+}
+
+fn plan_deactivate_effect<S: WorldStore>(
+    store: &S,
+    player_id: &EntityId,
+    effect_id: &str,
+    operations: &mut Vec<RuleOperation>,
+    now: &Iso8601Timestamp,
+    next_id: &mut impl FnMut() -> Result<String, AppError>,
+) -> Result<Vec<RuleEvent>, AppError> {
+    let id = EntityId::new(effect_id)?;
+    let mut effect = pending_effect(store, player_id, &id, operations)?;
+    if effect.player_id != *player_id {
+        return Err(lr_domain::DomainError::invalid_value(
+            "rule Effect action",
+            "target Effect must belong to the event Player",
+        )
+        .into());
+    }
+    if effect.lifecycle_at(now) != EffectLifecycle::Active {
+        return Err(lr_domain::DomainError::invalid_value(
+            "rule Effect deactivation",
+            "only an active, non-expired Effect can be deactivated",
+        )
+        .into());
+    }
+    let before = effect_state_json(&effect)?;
+    let expected_deactivated_at = effect.deactivated_at.clone();
+    effect.deactivate_by_rule(now.clone())?;
+    let history = EffectHistoryEntry {
+        id: EntityId::new(next_id()?)?,
+        player_id: player_id.clone(),
+        effect_id: effect.id.clone(),
+        session_id: None,
+        kind: EffectHistoryKind::RuleDeactivated,
+        recorded_at: now.clone(),
+        previous_state_json: Some(before),
+        current_state_json: effect_state_json(&effect)?,
+    };
+    let generated = RuleEvent::EffectDeactivated {
+        player_id: player_id.to_string(),
+        effect_id: effect.id.to_string(),
+        type_code: effect.effect_type.code.clone(),
+        source: RuleEventSource::Rule,
+    };
+    operations.push(RuleOperation::DeactivateEffect {
+        effect,
+        expected_deactivated_at,
+        history: vec![history],
+        session_link: None,
+    });
+    Ok(vec![generated])
 }

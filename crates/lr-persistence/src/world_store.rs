@@ -8,9 +8,12 @@ use lr_application::{
     EventKind, Rule, RuleDefinition, RuleExecutionRecord, RuleOperation, StorageError, WorldStore,
 };
 use lr_domain::{
-    Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
-    Player, PlayerStat, PlayerStateSnapshot, Quest, QuestStatus, Skill, SkillStateSnapshot,
-    SkillStatus, SkillTree, StatDefinition, Transaction, TypeDefinition, TypeRef,
+    Comment, CommentTargetKind, DateValue, Effect, EffectDeactivationSource, EffectHistoryEntry,
+    EffectHistoryKind, EntityId, Iso8601Timestamp, NarrativeEntry, Player, PlayerStat,
+    PlayerStateSnapshot, Quest, QuestSession, QuestStatus, SessionEffect, SessionStatus, Skill,
+    SkillAvailability, SkillAvailabilityControl, SkillHistoryEntry, SkillHistoryKind,
+    SkillHistorySource, SkillStateSnapshot, SkillStatus, SkillTree, StatDefinition, Transaction,
+    TypeDefinition, TypeRef,
 };
 use rusqlite::{params, OptionalExtension, Row, Transaction as SqlTransaction};
 
@@ -36,6 +39,13 @@ fn quest_status(raw: String) -> Result<QuestStatus, StorageError> {
 }
 fn skill_status(raw: String) -> Result<SkillStatus, StorageError> {
     SkillStatus::parse(&raw).map_err(|e| op(format!("corrupt skill status: {e}")))
+}
+fn skill_availability(raw: String) -> Result<SkillAvailability, StorageError> {
+    SkillAvailability::parse(&raw).map_err(|e| op(format!("corrupt Skill availability: {e}")))
+}
+fn skill_availability_control(raw: String) -> Result<SkillAvailabilityControl, StorageError> {
+    SkillAvailabilityControl::parse(&raw)
+        .map_err(|e| op(format!("corrupt Skill availability control: {e}")))
 }
 fn b(value: i64) -> bool {
     value != 0
@@ -171,6 +181,8 @@ fn skill(row: &Row<'_>) -> Result<Skill, StorageError> {
         metadata_json: row.get(15).map_err(op)?,
         created_at: timestamp(row.get(16).map_err(op)?)?,
         updated_at: timestamp(row.get(17).map_err(op)?)?,
+        availability: skill_availability(row.get(20).map_err(op)?)?,
+        availability_control: skill_availability_control(row.get(21).map_err(op)?)?,
     })
 }
 fn effect(row: &Row<'_>) -> Result<Effect, StorageError> {
@@ -200,6 +212,12 @@ fn effect(row: &Row<'_>) -> Result<Effect, StorageError> {
             .map_err(op)?
             .map(timestamp)
             .transpose()?,
+        deactivation_source: row
+            .get::<_, Option<String>>(17)
+            .map_err(op)?
+            .map(|value| EffectDeactivationSource::parse(&value))
+            .transpose()
+            .map_err(|error| op(format!("corrupt Effect deactivation source: {error}")))?,
         intensity: row.get(9).map_err(op)?,
         source_kind: row.get(10).map_err(op)?,
         source_id: row.get(11).map_err(op)?,
@@ -267,8 +285,8 @@ const PLAYER_SQL: &str =
     "id,name,description,level,current_xp,is_active,metadata_json,created_at,updated_at,level_name,progression_label";
 const QUEST_SQL: &str = "id,player_id,parent_quest_id,skill_id,quest_type_namespace,quest_type_code,title,description,story,instructions,status,difficulty,progress,xp_reward,due_at,started_at,completed_at,metadata_json,created_at,updated_at";
 const TREE_SQL: &str = "id,player_id,tree_type_namespace,tree_type_code,name,description,story,instructions,is_active,metadata_json,created_at,updated_at";
-const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label";
-const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id";
+const SKILL_SQL: &str = "id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label,availability,availability_control";
+const EFFECT_SQL: &str = "id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id,deactivation_source";
 const TX_SQL: &str = "id,player_id,transaction_type_namespace,transaction_type_code,resource,amount,applied_amount,occurred_at,reason,description,source_kind,source_id,metadata_json,captured_at";
 const COMMENT_SQL: &str =
     "id,author_player_id,target_kind,target_id,body,metadata_json,created_at,updated_at";
@@ -282,6 +300,43 @@ fn insert_transaction(
     let mut stored = value.clone();
     stored.id = Some(tx.last_insert_rowid());
     Ok(stored)
+}
+fn insert_skill_history(
+    tx: &SqlTransaction<'_>,
+    value: &SkillHistoryEntry,
+) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO skill_history(id,player_id,skill_id,event_kind,source,recorded_at,previous_state_json,current_state_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![value.id.as_str(),value.player_id.as_str(),value.skill_id.as_str(),value.kind.as_str(),value.source.as_str(),value.recorded_at.as_str(),value.previous_state_json,value.current_state_json],
+    ).map_err(op)?;
+    Ok(())
+}
+fn insert_effect_history(
+    tx: &SqlTransaction<'_>,
+    value: &EffectHistoryEntry,
+) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO effect_history(id,player_id,effect_id,session_id,event_kind,recorded_at,previous_state_json,current_state_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![value.id.as_str(),value.player_id.as_str(),value.effect_id.as_str(),value.session_id.as_ref().map(EntityId::as_str),value.kind.as_str(),value.recorded_at.as_str(),value.previous_state_json,value.current_state_json],
+    ).map_err(op)?;
+    Ok(())
+}
+fn insert_session_effect(
+    tx: &SqlTransaction<'_>,
+    value: &SessionEffect,
+) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO session_effects(id,player_id,session_id,effect_id,role,added_at,removed_at) VALUES(?1,?2,?3,?4,?5,?6,?7) ON CONFLICT(session_id,effect_id,role) DO UPDATE SET id=excluded.id,player_id=excluded.player_id,added_at=excluded.added_at,removed_at=NULL",
+        params![value.id.as_str(),value.player_id.as_str(),value.session_id.as_str(),value.effect_id.as_str(),value.role.as_str(),value.added_at.as_str(),value.removed_at.as_ref().map(Iso8601Timestamp::as_str)],
+    ).map_err(op)?;
+    Ok(())
+}
+fn insert_session(tx: &SqlTransaction<'_>, value: &QuestSession) -> Result<(), StorageError> {
+    tx.execute(
+        "INSERT INTO quest_sessions(id,player_id,quest_id,stage_id,branch_id,skill_id,concept_id,started_at,ended_at,status,progress_before,progress_after,result,notes,is_active,metadata_json,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",
+        params![value.id.as_str(),value.player_id.as_str(),value.quest_id.as_ref().map(EntityId::as_str),value.stage_id.as_ref().map(EntityId::as_str),value.branch_id.as_ref().map(EntityId::as_str),value.skill_id.as_ref().map(EntityId::as_str),value.concept_id.as_ref().map(EntityId::as_str),value.started_at.as_str(),value.ended_at.as_ref().map(Iso8601Timestamp::as_str),value.status.as_str(),value.progress_before,value.progress_after,value.result,value.notes,value.is_active as i64,value.metadata_json,value.created_at.as_str(),value.updated_at.as_str()],
+    ).map_err(op)?;
+    Ok(())
 }
 fn target_exists(
     tx: &SqlTransaction<'_>,
@@ -309,6 +364,12 @@ fn event_kind(raw: String) -> Result<EventKind, StorageError> {
         "player_xp_changed" => Ok(EventKind::PlayerXpChanged),
         "stat_changed" => Ok(EventKind::StatChanged),
         "concept_progress_changed" => Ok(EventKind::ConceptProgressChanged),
+        "skill_xp_changed" => Ok(EventKind::SkillXpChanged),
+        "skill_unlocked" => Ok(EventKind::SkillUnlocked),
+        "session_started" => Ok(EventKind::SessionStarted),
+        "session_finished" => Ok(EventKind::SessionFinished),
+        "effect_created" => Ok(EventKind::EffectCreated),
+        "effect_deactivated" => Ok(EventKind::EffectDeactivated),
         _ => Err(op(format!("unknown stored rule event kind `{raw}`"))),
     }
 }
@@ -472,6 +533,136 @@ impl WorldStore for SqliteHealthStore {
                         if owner!=player_id.as_str(){return Err(op("Concept progress rule target belongs to another Player"));}
                         tx.execute("INSERT INTO concept_progress_history(id,concept_id,track_code,previous_value,current_value,level,occurred_at,captured_at,metadata_json) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",params![history.id.as_str(),history.concept_id.as_str(),history.track_code,history.previous_value,history.current_value,history.level,history.occurred_at.as_str(),history.captured_at.as_str(),history.metadata_json]).map_err(op)?;
                     }
+                    RuleOperation::SkillXp { skill, previous_xp, transaction } => {
+                        let (current_xp, current_level, owner): (i64, i32, String) = tx.query_row(
+                            "SELECT s.current_xp,s.level,t.player_id FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE s.id=?1",
+                            [skill.id.as_str()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?)),
+                        ).map_err(op)?;
+                        let applied = transaction.applied_amount.ok_or_else(|| op("Skill XP transaction is missing applied delta"))?;
+                        if current_xp != *previous_xp || current_xp.checked_add(applied) != Some(skill.current_xp)
+                            || current_level != skill.level || owner != transaction.player_id.as_str()
+                            || transaction.resource != "skill_xp" || transaction.amount == 0
+                            || transaction.transaction_type.namespace != "transaction" || transaction.transaction_type.code != "xp"
+                            || transaction.source_kind.as_deref() != Some("skill")
+                            || transaction.source_id.as_deref() != Some(skill.id.as_str())
+                            || (transaction.amount > 0 && applied != transaction.amount)
+                            || (transaction.amount < 0 && (applied > 0 || applied < transaction.amount))
+                        { return Err(op("Skill XP operation violates ownership, ledger, level, or floor invariants")); }
+                        let saved = insert_transaction(&tx, transaction)?;
+                        transaction.id = saved.id;
+                        if tx.execute("UPDATE skills SET current_xp=?2,updated_at=?3 WHERE id=?1",params![skill.id.as_str(),skill.current_xp,skill.updated_at.as_str()]).map_err(op)? != 1 {
+                            return Err(op("Skill disappeared during XP update"));
+                        }
+                    }
+                    RuleOperation::SkillAvailability { skill, expected_availability, expected_control, history } => {
+                        let (owner,current_availability,current_control,current_xp,current_level): (String,String,String,i64,i32) = tx.query_row(
+                            "SELECT t.player_id,s.availability,s.availability_control,s.current_xp,s.level FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE s.id=?1",
+                            [skill.id.as_str()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
+                        ).map_err(op)?;
+                        if owner != history.player_id.as_str() || history.skill_id != skill.id
+                            || current_availability != expected_availability.as_str()
+                            || current_control != expected_control.as_str()
+                            || current_xp != skill.current_xp || current_level != skill.level
+                        { return Err(op("Skill availability action is stale or belongs to another Player")); }
+                        let rule_unlock = history.source == SkillHistorySource::Rule
+                            && history.kind == SkillHistoryKind::AvailabilityChanged
+                            && *expected_availability == SkillAvailability::Locked
+                            && *expected_control == SkillAvailabilityControl::RuleControlled
+                            && skill.availability == SkillAvailability::Available
+                            && skill.availability_control == SkillAvailabilityControl::RuleControlled;
+                        let manual_transition = history.source == SkillHistorySource::Manual && match history.kind {
+                            SkillHistoryKind::AvailabilityChanged => skill.availability != *expected_availability
+                                && skill.availability_control == SkillAvailabilityControl::Manual,
+                            SkillHistoryKind::ControlChanged => skill.availability == *expected_availability
+                                && skill.availability_control != *expected_control,
+                        };
+                        let previous_state: Option<serde_json::Value> = history.previous_state_json.as_deref()
+                            .map(serde_json::from_str).transpose().map_err(op)?;
+                        let current_state: serde_json::Value = serde_json::from_str(&history.current_state_json).map_err(op)?;
+                        let prior_ok = previous_state.as_ref().is_some_and(|state|
+                            state.get("availability").and_then(|v|v.as_str())==Some(expected_availability.as_str())
+                            && state.get("availabilityControl").and_then(|v|v.as_str())==Some(expected_control.as_str()));
+                        let next_ok = current_state.get("availability").and_then(|v|v.as_str())==Some(skill.availability.as_str())
+                            && current_state.get("availabilityControl").and_then(|v|v.as_str())==Some(skill.availability_control.as_str());
+                        if !(rule_unlock || manual_transition) || !prior_ok || !next_ok {
+                            return Err(op("Skill availability policy or history transition is not authorized"));
+                        }
+                        if tx.execute("UPDATE skills SET availability=?2,availability_control=?3,updated_at=?4 WHERE id=?1",params![skill.id.as_str(),skill.availability.as_str(),skill.availability_control.as_str(),skill.updated_at.as_str()]).map_err(op)? != 1 {
+                            return Err(op("Skill disappeared during availability update"));
+                        }
+                        insert_skill_history(&tx, history)?;
+                    }
+                    RuleOperation::CreateEffect { effect, history, session_link } => {
+                        if effect.deactivated_at.is_some() != effect.deactivation_source.is_some()
+                            || effect.deactivated_at.is_some()
+                            || history.is_empty()
+                            || !history.iter().any(|entry| entry.kind == EffectHistoryKind::Created
+                                && entry.effect_id == effect.id && entry.player_id == effect.player_id)
+                        { return Err(op("Effect creation operation is incomplete or has invalid lifecycle state")); }
+                        if let Some(link) = session_link {
+                            if link.effect_id != effect.id || link.player_id != effect.player_id
+                                || !history.iter().any(|entry| entry.kind == EffectHistoryKind::SessionLinked
+                                    && entry.session_id.as_ref() == Some(&link.session_id))
+                            { return Err(op("Effect Session link and history disagree")); }
+                        }
+                        let target_kind = if effect.target_concept_id.is_some() { "concept" } else { "player" };
+                        tx.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id,deactivation_source) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",params![effect.id.as_str(),effect.player_id.as_str(),effect.effect_type.namespace,effect.effect_type.code,effect.name,effect.description,effect.started_at.as_str(),effect.expires_at.as_ref().map(Iso8601Timestamp::as_str),effect.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),effect.intensity,effect.source_kind,effect.source_id,effect.metadata_json,effect.created_at.as_str(),effect.updated_at.as_str(),target_kind,effect.target_concept_id.as_ref().map(EntityId::as_str),effect.deactivation_source.map(|source|source.as_str())]).map_err(op)?;
+                        for entry in history { insert_effect_history(&tx, entry)?; }
+                        if let Some(link) = session_link { insert_session_effect(&tx, link)?; }
+                    }
+                    RuleOperation::DeactivateEffect { effect, expected_deactivated_at, history, session_link } => {
+                        let (owner,current_deactivated,current_source,started_at,expires_at): (String,Option<String>,Option<String>,String,Option<String>) = tx.query_row(
+                            "SELECT player_id,deactivated_at,deactivation_source,started_at,expires_at FROM effects WHERE id=?1",
+                            [effect.id.as_str()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)),
+                        ).map_err(op)?;
+                        let expected_kind = match effect.deactivation_source {
+                            Some(EffectDeactivationSource::Rule) => EffectHistoryKind::RuleDeactivated,
+                            Some(EffectDeactivationSource::Manual) => EffectHistoryKind::ManuallyDeactivated,
+                            None => return Err(op("Effect deactivation source is missing")),
+                        };
+                        let deactivation_history = history.iter().find(|entry| entry.kind == expected_kind)
+                            .ok_or_else(||op("Effect deactivation history is missing its attributed lifecycle fact"))?;
+                        let recorded_deactivation = effect.deactivated_at.as_ref().map(Iso8601Timestamp::as_str);
+                        let expected_matches = current_deactivated.as_deref() == expected_deactivated_at.as_ref().map(Iso8601Timestamp::as_str);
+                        let at = effect.deactivated_at.as_ref().ok_or_else(||op("Effect deactivation is missing its timestamp"))?;
+                        let active_at_write = started_at.as_str() <= at.as_str() && expires_at.as_deref().is_none_or(|expiry| expiry > at.as_str());
+                        if owner != effect.player_id.as_str() || !expected_matches || current_deactivated.is_some() || current_source.is_some()
+                            || !active_at_write || effect.deactivation_source.is_none()
+                            || recorded_deactivation != Some(deactivation_history.recorded_at.as_str())
+                            || deactivation_history.effect_id != effect.id || deactivation_history.player_id != effect.player_id
+                            || history.iter().any(|entry|entry.effect_id!=effect.id||entry.player_id!=effect.player_id)
+                        { return Err(op("Effect deactivation no longer matches an active lifecycle or its attributed history")); }
+                        if let Some(link) = session_link {
+                            if link.effect_id != effect.id || link.player_id != effect.player_id
+                                || !history.iter().any(|entry| entry.kind == EffectHistoryKind::SessionLinked
+                                    && entry.session_id.as_ref() == Some(&link.session_id))
+                            { return Err(op("Effect Session link and history disagree")); }
+                        }
+                        if tx.execute("UPDATE effects SET deactivated_at=?2,deactivation_source=?3,updated_at=?2 WHERE id=?1 AND deactivated_at IS NULL",params![effect.id.as_str(),at.as_str(),effect.deactivation_source.map(|source|source.as_str())]).map_err(op)? != 1 {
+                            return Err(op("Effect changed before deactivation"));
+                        }
+                        if let Some(link) = session_link { insert_session_effect(&tx, link)?; }
+                        for entry in history { insert_effect_history(&tx, entry)?; }
+                    }
+                    RuleOperation::StartSession { session } => {
+                        if session.status != SessionStatus::InProgress || session.ended_at.is_some() {
+                            return Err(op("Session start operation must represent an actual in-progress Session"));
+                        }
+                        insert_session(&tx, session)?;
+                    }
+                    RuleOperation::FinishSession { session, expected_status } => {
+                        let (owner,current_status,current_ended,started_at): (String,String,Option<String>,String) = tx.query_row(
+                            "SELECT player_id,status,ended_at,started_at FROM quest_sessions WHERE id=?1",
+                            [session.id.as_str()], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
+                        ).map_err(op)?;
+                        if owner != session.player_id.as_str() || current_status != expected_status.as_str()
+                            || current_ended.is_some() || session.status == SessionStatus::InProgress
+                            || session.ended_at.is_none() || started_at != session.started_at.as_str()
+                        { return Err(op("Session finish operation is stale, incomplete, or belongs to another Player")); }
+                        if tx.execute("UPDATE quest_sessions SET ended_at=?2,status=?3,progress_before=?4,progress_after=?5,result=?6,notes=?7,is_active=?8,metadata_json=?9,updated_at=?10 WHERE id=?1 AND status=?11 AND ended_at IS NULL",params![session.id.as_str(),session.ended_at.as_ref().map(Iso8601Timestamp::as_str),session.status.as_str(),session.progress_before,session.progress_after,session.result,session.notes,session.is_active as i64,session.metadata_json,session.updated_at.as_str(),expected_status.as_str()]).map_err(op)? != 1 {
+                            return Err(op("Session changed before finish"));
+                        }
+                    }
                     RuleOperation::ResolveProgressSuggestion{suggestion_id,player_id,accepted_at}=>{
                         let (concept_id,track_code,value,created_at,status):(String,String,f64,String,String)=tx.query_row("SELECT concept_id,track_code,proposed_value,created_at,status FROM progress_suggestions WHERE id=?1 AND player_id=?2",params![suggestion_id.as_str(),player_id.as_str()],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).map_err(op)?;
                         if status!="pending"{return Err(op("progress suggestion is not pending"));}
@@ -589,7 +780,7 @@ impl WorldStore for SqliteHealthStore {
         })
     }
     fn insert_skill(&self, s: &Skill) -> Result<(), StorageError> {
-        self.with_conn(|conn|{conn.execute("INSERT INTO skills(id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20)",params![s.id.as_str(),s.skill_tree_id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.skill_type.namespace,s.skill_type.code,s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.created_at.as_str(),s.updated_at.as_str(),s.level_name,s.progression_label]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{conn.execute("INSERT INTO skills(id,skill_tree_id,parent_skill_id,skill_type_namespace,skill_type_code,name,description,story,instructions,level,current_xp,invested_minutes,status,started_at,completed_at,metadata_json,created_at,updated_at,level_name,progression_label,availability,availability_control)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22)",params![s.id.as_str(),s.skill_tree_id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.skill_type.namespace,s.skill_type.code,s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.created_at.as_str(),s.updated_at.as_str(),s.level_name,s.progression_label,s.availability.as_str(),s.availability_control.as_str()]).map_err(op)?;Ok(())})
     }
     fn get_skill(&self, key: &EntityId) -> Result<Option<Skill>, StorageError> {
         self.with_conn(|conn| {
@@ -603,7 +794,7 @@ impl WorldStore for SqliteHealthStore {
         })
     }
     fn update_skill(&self, s: &Skill) -> Result<(), StorageError> {
-        self.with_conn(|conn|{let changed=conn.execute("UPDATE skills SET parent_skill_id=?2,name=?3,description=?4,story=?5,instructions=?6,level=?7,current_xp=?8,invested_minutes=?9,status=?10,started_at=?11,completed_at=?12,metadata_json=?13,updated_at=?14,level_name=?15,progression_label=?16 WHERE id=?1",params![s.id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.updated_at.as_str(),s.level_name,s.progression_label]).map_err(op)?;if changed==0{Err(op("skill not found"))}else{Ok(())}})
+        self.with_conn(|conn|{let changed=conn.execute("UPDATE skills SET parent_skill_id=?2,name=?3,description=?4,story=?5,instructions=?6,level=?7,current_xp=?8,invested_minutes=?9,status=?10,started_at=?11,completed_at=?12,metadata_json=?13,updated_at=?14,level_name=?15,progression_label=?16,availability=?17,availability_control=?18 WHERE id=?1",params![s.id.as_str(),s.parent_skill_id.as_ref().map(EntityId::as_str),s.name,s.description,s.story,s.instructions,s.level,s.current_xp,s.invested_minutes,s.status.as_str(),s.started_at.as_ref().map(Iso8601Timestamp::as_str),s.completed_at.as_ref().map(Iso8601Timestamp::as_str),s.metadata_json,s.updated_at.as_str(),s.level_name,s.progression_label,s.availability.as_str(),s.availability_control.as_str()]).map_err(op)?;if changed==0{Err(op("skill not found"))}else{Ok(())}})
     }
     fn list_skills(&self, tree_id: &EntityId) -> Result<Vec<Skill>, StorageError> {
         self.with_conn(|conn| {
@@ -621,7 +812,7 @@ impl WorldStore for SqliteHealthStore {
     }
 
     fn insert_effect(&self, e: &Effect) -> Result<(), StorageError> {
-        self.with_conn(|conn|{let target_kind=if e.target_concept_id.is_some(){"concept"}else{"player"};conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str(),target_kind,e.target_concept_id.as_ref().map(EntityId::as_str)]).map_err(op)?;Ok(())})
+        self.with_conn(|conn|{let target_kind=if e.target_concept_id.is_some(){"concept"}else{"player"};conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,description,started_at,expires_at,deactivated_at,intensity,source_kind,source_id,metadata_json,created_at,updated_at,target_kind,target_concept_id,deactivation_source)VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18)",params![e.id.as_str(),e.player_id.as_str(),e.effect_type.namespace,e.effect_type.code,e.name,e.description,e.started_at.as_str(),e.expires_at.as_ref().map(Iso8601Timestamp::as_str),e.deactivated_at.as_ref().map(Iso8601Timestamp::as_str),e.intensity,e.source_kind,e.source_id,e.metadata_json,e.created_at.as_str(),e.updated_at.as_str(),target_kind,e.target_concept_id.as_ref().map(EntityId::as_str),e.deactivation_source.map(|source|source.as_str())]).map_err(op)?;Ok(())})
     }
     fn list_effects(
         &self,
@@ -635,7 +826,7 @@ impl WorldStore for SqliteHealthStore {
         effect_id: &EntityId,
         at: &Iso8601Timestamp,
     ) -> Result<Effect, StorageError> {
-        self.with_conn_mut(|conn| { let tx=conn.transaction().map_err(op)?; let sql=format!("SELECT {EFFECT_SQL} FROM effects WHERE id=?1"); let current={let mut stmt=tx.prepare(&sql).map_err(op)?;let mut rows=stmt.query([effect_id.as_str()]).map_err(op)?;match rows.next().map_err(op)?{Some(r)=>effect(r)?,None=>return Err(op("effect not found"))}}; let mut changed=current; changed.deactivate(at.clone()).map_err(op)?; let n=tx.execute("UPDATE effects SET deactivated_at=?2,updated_at=?2 WHERE id=?1 AND deactivated_at IS NULL",params![effect_id.as_str(),at.as_str()]).map_err(op)?; if n!=1{return Err(op("effect is already deactivated"));} tx.commit().map_err(op)?; Ok(changed) })
+        self.with_conn_mut(|conn| { let tx=conn.transaction().map_err(op)?; let sql=format!("SELECT {EFFECT_SQL} FROM effects WHERE id=?1"); let current={let mut stmt=tx.prepare(&sql).map_err(op)?;let mut rows=stmt.query([effect_id.as_str()]).map_err(op)?;match rows.next().map_err(op)?{Some(r)=>effect(r)?,None=>return Err(op("effect not found"))}}; let mut changed=current; changed.deactivate(at.clone()).map_err(op)?; let n=tx.execute("UPDATE effects SET deactivated_at=?2,deactivation_source='manual',updated_at=?2 WHERE id=?1 AND deactivated_at IS NULL",params![effect_id.as_str(),at.as_str()]).map_err(op)?; if n!=1{return Err(op("effect is already deactivated"));} tx.commit().map_err(op)?; Ok(changed) })
     }
 
     fn append_transaction(&self, value: &Transaction) -> Result<Transaction, StorageError> {
@@ -1102,6 +1293,54 @@ mod tests {
             .iter()
             .filter(|r| r.status == "guard_aborted")
             .all(|r| r.error.is_some()));
+    }
+
+    #[test]
+    fn skill_xp_self_trigger_cycle_is_stopped_by_depth_guard_and_rolls_back() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let tree = service
+            .create_skill_tree(player.id.as_str(), "programming", "Programming")
+            .unwrap();
+        let skill = service
+            .add_skill(tree.id.as_str(), "core", "Rust", None)
+            .unwrap();
+        service
+            .create_rule(
+                "self-triggering Skill XP",
+                None,
+                0,
+                EventKind::SkillXpChanged,
+                RuleCondition::Always,
+                vec![RuleAction::AwardSkillXp {
+                    skill_id: skill.id.to_string(),
+                    delta: 1,
+                    reason: Some("cycle".into()),
+                }],
+            )
+            .unwrap();
+
+        let error = service
+            .adjust_skill_xp(skill.id.as_str(), 1, None)
+            .unwrap_err();
+        assert!(
+            matches!(
+                error,
+                lr_application::AppError::RuleExecution(
+                    lr_application::RuleExecutionError::MaxDepth(_)
+                )
+            ),
+            "unexpected Skill cycle guard: {error:?}"
+        );
+        assert_eq!(store.get_skill(&skill.id).unwrap().unwrap().current_xp, 0);
+        assert_eq!(store.list_transactions(&player.id, 100).unwrap().len(), 0);
+        let audit = service.list_rule_executions(100).unwrap();
+        assert!(audit.iter().any(|entry| entry.status == "guard_aborted"));
+        assert!(audit
+            .iter()
+            .filter(|entry| entry.status == "guard_aborted")
+            .all(|entry| entry.error.is_some()));
     }
 
     #[test]
@@ -1975,6 +2214,254 @@ mod tests {
         assert!(
             store.update_quest(&q1).is_err(),
             "cross-player parent update must be rejected"
+        );
+    }
+
+    #[test]
+    fn skill_xp_unlock_and_effect_actions_chain_in_one_persisted_rule_transaction() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let tree = service
+            .create_skill_tree(player.id.as_str(), "programming", "Programming")
+            .unwrap();
+        let skill = service
+            .add_skill(tree.id.as_str(), "core", "Rust", None)
+            .unwrap();
+        service
+            .set_skill_availability(skill.id.as_str(), false)
+            .unwrap();
+        service
+            .set_skill_availability_control(
+                skill.id.as_str(),
+                lr_domain::SkillAvailabilityControl::RuleControlled,
+            )
+            .unwrap();
+
+        service
+            .create_rule(
+                "unlock after Skill XP",
+                None,
+                20,
+                EventKind::SkillXpChanged,
+                RuleCondition::NumberCompare {
+                    subject: NumericSubject::CurrentSkillXp,
+                    comparison: Comparison::GreaterOrEqual,
+                    value: 10.0,
+                },
+                vec![RuleAction::UnlockSkill {
+                    skill_id: skill.id.to_string(),
+                }],
+            )
+            .unwrap();
+        service
+            .create_rule(
+                "reward unlocked Skill",
+                None,
+                10,
+                EventKind::SkillUnlocked,
+                RuleCondition::Always,
+                vec![
+                    RuleAction::AwardSkillXp {
+                        skill_id: skill.id.to_string(),
+                        delta: 5,
+                        reason: Some("unlock_bonus".into()),
+                    },
+                    RuleAction::ApplyEffect {
+                        type_code: "buff".into(),
+                        name: "Focused practice".into(),
+                        description: Some("Applied by a bounded gameplay Rule".into()),
+                        target_concept_id: None,
+                        intensity: 1,
+                        expires_in_seconds: Some(3600),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let outcome = service
+            .adjust_skill_xp(skill.id.as_str(), 15, Some("manual_practice".into()))
+            .unwrap();
+        assert_eq!(outcome.skill.current_xp, 20);
+        assert_eq!(
+            outcome.skill.level, 1,
+            "Skill XP must not auto-change authored level"
+        );
+        assert_eq!(
+            outcome.skill.availability,
+            lr_domain::SkillAvailability::Available
+        );
+        let ledger = store.list_transactions(&player.id, 10).unwrap();
+        assert_eq!(ledger.len(), 2);
+        assert!(ledger.iter().all(|entry| entry.resource == "skill_xp"));
+        assert_eq!(ledger.iter().map(|entry| entry.amount).sum::<i64>(), 20);
+        assert!(ledger.iter().any(|entry| {
+            serde_json::from_str::<serde_json::Value>(&entry.metadata_json)
+                .is_ok_and(|metadata| metadata["source"] == "rule")
+        }));
+
+        let effects = store.list_effects(&player.id, None).unwrap();
+        assert_eq!(effects.len(), 1);
+        assert_eq!(effects[0].source_kind.as_deref(), Some("rule"));
+        assert!(effects[0].source_id.is_some());
+        assert!(effects[0].expires_at.is_some());
+        let audit = service.list_rule_executions(100).unwrap();
+        assert!(audit
+            .iter()
+            .any(|entry| entry.event_kind == EventKind::SkillXpChanged
+                && entry.status == "succeeded"));
+        assert!(audit.iter().any(
+            |entry| entry.event_kind == EventKind::SkillUnlocked && entry.status == "succeeded"
+        ));
+    }
+
+    #[test]
+    fn manually_controlled_skill_lock_aborts_the_entire_rule_chain_without_partial_xp() {
+        let store = std::sync::Arc::new(store());
+        let service = WorldService::new(store.clone(), FrozenClock);
+        let player = service.create_player("Ada", None).unwrap();
+        let tree = service
+            .create_skill_tree(player.id.as_str(), "programming", "Programming")
+            .unwrap();
+        let skill = service
+            .add_skill(tree.id.as_str(), "core", "Rust", None)
+            .unwrap();
+        service
+            .set_skill_availability(skill.id.as_str(), false)
+            .unwrap();
+        service
+            .create_rule(
+                "cannot override a manual lock",
+                None,
+                0,
+                EventKind::SkillXpChanged,
+                RuleCondition::Always,
+                vec![
+                    RuleAction::AwardSkillXp {
+                        skill_id: skill.id.to_string(),
+                        delta: 5,
+                        reason: None,
+                    },
+                    RuleAction::UnlockSkill {
+                        skill_id: skill.id.to_string(),
+                    },
+                ],
+            )
+            .unwrap();
+
+        let error = service
+            .adjust_skill_xp(skill.id.as_str(), 10, None)
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            lr_application::AppError::RuleExecution(
+                lr_application::RuleExecutionError::ActionFailed { .. }
+            )
+        ));
+        let unchanged = store.get_skill(&skill.id).unwrap().unwrap();
+        assert_eq!(unchanged.current_xp, 0);
+        assert_eq!(unchanged.availability, lr_domain::SkillAvailability::Locked);
+        assert_eq!(store.list_transactions(&player.id, 10).unwrap().len(), 0);
+        assert!(service
+            .list_rule_executions(20)
+            .unwrap()
+            .iter()
+            .any(|entry| entry.status == "failed"));
+    }
+
+    #[test]
+    fn explicit_session_finish_event_can_rule_deactivate_an_active_effect_with_history() {
+        let store = std::sync::Arc::new(store());
+        let world = WorldService::new(store.clone(), FrozenClock);
+        let semantics = lr_application::SemanticsService::new(store.clone(), FrozenClock);
+        let player = world.create_player("Ada", None).unwrap();
+        let effect = semantics
+            .create_effect(
+                player.id.as_str(),
+                lr_application::EffectWrite {
+                    type_code: "buff".into(),
+                    name: "Focus".into(),
+                    description: None,
+                    target_concept_id: None,
+                    intensity: 1,
+                    started_at: None,
+                    expires_at: None,
+                },
+                None,
+            )
+            .unwrap();
+        world
+            .create_rule(
+                "end session cleanup",
+                None,
+                0,
+                EventKind::SessionFinished,
+                RuleCondition::TextCompare {
+                    subject: lr_application::TextSubject::SessionStatus,
+                    comparison: lr_application::TextComparison::Equal,
+                    value: "completed".into(),
+                },
+                vec![RuleAction::DeactivateEffect {
+                    effect_id: effect.id.to_string(),
+                }],
+            )
+            .unwrap();
+
+        let quest = world
+            .create_quest(
+                player.id.as_str(),
+                "main",
+                "Practice",
+                None,
+                None,
+                None,
+                None,
+                Some(0),
+            )
+            .unwrap();
+        let session = semantics
+            .start_session(
+                player.id.as_str(),
+                Some(quest.id.as_str()),
+                None,
+                None,
+                None,
+                None,
+                Some(T0),
+            )
+            .unwrap();
+        let finished = semantics
+            .finish_session(
+                session.id.as_str(),
+                Some(T0),
+                lr_domain::SessionStatus::Completed,
+                Some("Recorded success".into()),
+                None,
+            )
+            .unwrap();
+        assert_eq!(finished.status, lr_domain::SessionStatus::Completed);
+        let persisted_effect = store.list_effects(&player.id, None).unwrap().pop().unwrap();
+        assert_eq!(
+            persisted_effect.deactivation_source,
+            Some(lr_domain::EffectDeactivationSource::Rule)
+        );
+        let history =
+            lr_application::SemanticsStore::list_effect_history(&*store, &player.id, &effect.id)
+                .unwrap();
+        assert!(history
+            .iter()
+            .any(|entry| entry.kind == lr_domain::EffectHistoryKind::RuleDeactivated));
+        let audit = world.list_rule_executions(50).unwrap();
+        let finish_event = audit
+            .iter()
+            .find(|entry| entry.event_kind == EventKind::SessionFinished)
+            .unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&finish_event.event_json).unwrap();
+        assert_eq!(payload["result"], "Recorded success");
+        assert_eq!(payload["ended_at"], T0);
+        assert!(
+            payload.get("duration").is_none(),
+            "duration must not be inferred or emitted"
         );
     }
 }

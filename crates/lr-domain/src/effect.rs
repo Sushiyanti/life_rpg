@@ -8,6 +8,30 @@ pub enum EffectLifecycle {
     Active,
     Expired,
     ManuallyDeactivated,
+    RuleDeactivated,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectDeactivationSource {
+    Manual,
+    Rule,
+}
+impl EffectDeactivationSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Rule => "rule",
+        }
+    }
+    pub fn parse(value: &str) -> DomainResult<Self> {
+        match value {
+            "manual" => Ok(Self::Manual),
+            "rule" => Ok(Self::Rule),
+            _ => Err(DomainError::invalid_value(
+                "Effect deactivation source",
+                "unknown value",
+            )),
+        }
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EffectTargetKind {
@@ -26,6 +50,7 @@ pub struct Effect {
     pub started_at: Iso8601Timestamp,
     pub expires_at: Option<Iso8601Timestamp>,
     pub deactivated_at: Option<Iso8601Timestamp>,
+    pub deactivation_source: Option<EffectDeactivationSource>,
     pub intensity: i32,
     pub source_kind: Option<String>,
     pub source_id: Option<String>,
@@ -63,6 +88,7 @@ impl Effect {
             started_at: started_at.clone(),
             expires_at: None,
             deactivated_at: None,
+            deactivation_source: None,
             intensity: 1,
             source_kind: None,
             source_id: None,
@@ -91,23 +117,39 @@ impl Effect {
         let deactivated = self.deactivated_at.as_ref().filter(|at| *at <= now);
         let expired = self.expires_at.as_ref().filter(|at| *at <= now);
         match (deactivated, expired) {
-            (Some(manual), Some(expiration)) => {
-                return if manual < expiration {
-                    EffectLifecycle::ManuallyDeactivated
+            (Some(deactivation), Some(expiration)) => {
+                return if deactivation < expiration {
+                    self.deactivation_lifecycle()
                 } else {
                     EffectLifecycle::Expired
                 }
             }
-            (Some(_), None) => return EffectLifecycle::ManuallyDeactivated,
+            (Some(_), None) => return self.deactivation_lifecycle(),
             (None, Some(_)) => return EffectLifecycle::Expired,
             (None, None) => {}
         }
         EffectLifecycle::Active
     }
     pub fn deactivate(&mut self, now: Iso8601Timestamp) -> DomainResult<()> {
+        self.deactivate_as(now, EffectDeactivationSource::Manual)
+    }
+    pub fn deactivate_by_rule(&mut self, now: Iso8601Timestamp) -> DomainResult<()> {
+        self.deactivate_as(now, EffectDeactivationSource::Rule)
+    }
+    fn deactivation_lifecycle(&self) -> EffectLifecycle {
+        match self.deactivation_source {
+            Some(EffectDeactivationSource::Rule) => EffectLifecycle::RuleDeactivated,
+            Some(EffectDeactivationSource::Manual) | None => EffectLifecycle::ManuallyDeactivated,
+        }
+    }
+    fn deactivate_as(
+        &mut self,
+        now: Iso8601Timestamp,
+        source: EffectDeactivationSource,
+    ) -> DomainResult<()> {
         if self.deactivated_at.is_some() {
             return Err(DomainError::Invariant(
-                "effect is already manually deactivated".into(),
+                "effect is already deactivated".into(),
             ));
         }
         if now < self.started_at {
@@ -125,6 +167,7 @@ impl Effect {
             ));
         }
         self.deactivated_at = Some(now.clone());
+        self.deactivation_source = Some(source);
         self.updated_at = now;
         Ok(())
     }
@@ -184,5 +227,48 @@ mod tests {
             assert!(e.deactivate(time(now)).is_err());
             assert_eq!(e.deactivated_at, None);
         }
+    }
+
+    #[test]
+    fn rule_deactivation_is_distinct_and_cannot_target_scheduled_or_expired_effects() {
+        let now = time("2026-09-26T00:00:00Z");
+        let mut rule_effect = effect();
+        rule_effect.deactivate_by_rule(now.clone()).unwrap();
+        assert_eq!(
+            rule_effect.deactivation_source,
+            Some(EffectDeactivationSource::Rule)
+        );
+        assert_eq!(
+            rule_effect.lifecycle_at(&now),
+            EffectLifecycle::RuleDeactivated
+        );
+
+        let mut manual_effect = effect();
+        manual_effect.deactivate(now.clone()).unwrap();
+        assert_eq!(
+            manual_effect.deactivation_source,
+            Some(EffectDeactivationSource::Manual)
+        );
+        assert_eq!(
+            manual_effect.lifecycle_at(&now),
+            EffectLifecycle::ManuallyDeactivated
+        );
+
+        let mut scheduled = effect();
+        scheduled.started_at = time("2026-09-27T00:00:00Z");
+        assert_eq!(scheduled.lifecycle_at(&now), EffectLifecycle::Scheduled);
+        assert!(scheduled.deactivate_by_rule(now.clone()).is_err());
+        assert!(scheduled.deactivate(now.clone()).is_err());
+        assert_eq!(scheduled.deactivated_at, None);
+
+        let mut expired = effect();
+        expired.expires_at = Some(time("2026-09-26T00:00:00Z"));
+        assert_eq!(expired.lifecycle_at(&now), EffectLifecycle::Expired);
+        assert!(expired.deactivate_by_rule(now.clone()).is_err());
+        assert!(expired.deactivate(now).is_err());
+        assert_eq!(
+            expired.deactivated_at, None,
+            "expiry is derived and never synthesized as deactivation"
+        );
     }
 }

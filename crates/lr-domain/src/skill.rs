@@ -38,6 +38,56 @@ impl SkillStatus {
     }
 }
 
+/// Availability is independent of the Skill's active/paused/completed lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillAvailability {
+    Locked,
+    Available,
+}
+impl SkillAvailability {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Locked => "locked",
+            Self::Available => "available",
+        }
+    }
+    pub fn parse(value: &str) -> DomainResult<Self> {
+        match value {
+            "locked" => Ok(Self::Locked),
+            "available" => Ok(Self::Available),
+            _ => Err(DomainError::invalid_value(
+                "Skill availability",
+                "unknown value",
+            )),
+        }
+    }
+}
+
+/// The Player may explicitly delegate unlock authority to Rules per Skill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillAvailabilityControl {
+    Manual,
+    RuleControlled,
+}
+impl SkillAvailabilityControl {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::RuleControlled => "rule_controlled",
+        }
+    }
+    pub fn parse(value: &str) -> DomainResult<Self> {
+        match value {
+            "manual" => Ok(Self::Manual),
+            "rule_controlled" => Ok(Self::RuleControlled),
+            _ => Err(DomainError::invalid_value(
+                "Skill availability control",
+                "unknown value",
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillTree {
     pub id: EntityId,
@@ -95,6 +145,8 @@ pub struct Skill {
     pub level_name: Option<String>,
     pub progression_label: Option<String>,
     pub current_xp: i64,
+    pub availability: SkillAvailability,
+    pub availability_control: SkillAvailabilityControl,
     pub invested_minutes: i64,
     pub status: SkillStatus,
     pub started_at: Option<Iso8601Timestamp>,
@@ -136,6 +188,8 @@ impl Skill {
             level_name: None,
             progression_label: None,
             current_xp: 0,
+            availability: SkillAvailability::Available,
+            availability_control: SkillAvailabilityControl::Manual,
             invested_minutes: 0,
             status: SkillStatus::Active,
             started_at: Some(now.clone()),
@@ -160,6 +214,53 @@ impl Skill {
         Ok(())
     }
     /// Skill level is player-authored; XP is optional and never implies a level.
+    /// Apply Skill XP with a zero floor. The Player-authored level is untouched.
+    pub fn adjust_xp(&mut self, requested: i64, now: Iso8601Timestamp) -> DomainResult<i64> {
+        if requested == 0 {
+            return Err(DomainError::invalid_value(
+                "Skill XP adjustment",
+                "must not be zero",
+            ));
+        }
+        let attempted = self
+            .current_xp
+            .checked_add(requested)
+            .ok_or_else(|| DomainError::Invariant("Skill XP adjustment overflow".into()))?;
+        let next = attempted.max(0);
+        let applied = next - self.current_xp;
+        self.current_xp = next;
+        self.updated_at = now;
+        Ok(applied)
+    }
+    /// An explicit Player lock/unlock reclaims availability authority.
+    pub fn set_availability(&mut self, value: SkillAvailability, now: Iso8601Timestamp) {
+        self.availability = value;
+        self.availability_control = SkillAvailabilityControl::Manual;
+        self.updated_at = now;
+    }
+    pub fn set_availability_control(
+        &mut self,
+        value: SkillAvailabilityControl,
+        now: Iso8601Timestamp,
+    ) {
+        self.availability_control = value;
+        self.updated_at = now;
+    }
+    /// A Rule may unlock only after the Player has explicitly delegated this axis.
+    /// Returns `false` for an already available Skill and never changes level.
+    pub fn unlock_by_rule(&mut self, now: Iso8601Timestamp) -> DomainResult<bool> {
+        if self.availability == SkillAvailability::Available {
+            return Ok(false);
+        }
+        if self.availability_control != SkillAvailabilityControl::RuleControlled {
+            return Err(DomainError::Invariant(
+                "manually controlled Skill availability cannot be changed by a Rule".into(),
+            ));
+        }
+        self.availability = SkillAvailability::Available;
+        self.updated_at = now;
+        Ok(true)
+    }
     pub fn set_progression(
         &mut self,
         level: i32,
@@ -189,5 +290,73 @@ impl Skill {
         self.completed_at = Some(now.clone());
         self.updated_at = now;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod phase10_tests {
+    use super::*;
+
+    fn time() -> Iso8601Timestamp {
+        Iso8601Timestamp::parse("2026-09-28T12:00:00Z").unwrap()
+    }
+    fn skill() -> Skill {
+        Skill::new(
+            EntityId::new("skill-1").unwrap(),
+            EntityId::new("tree-1").unwrap(),
+            TypeRef::skill("core").unwrap(),
+            "Practice",
+            time(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn skill_xp_has_a_zero_floor_and_never_changes_player_authored_level() {
+        let mut value = skill();
+        value
+            .set_progression(7, Some("Expert".into()), Some("Authored".into()), time())
+            .unwrap();
+        assert_eq!(value.adjust_xp(25, time()).unwrap(), 25);
+        assert_eq!(value.current_xp, 25);
+        assert_eq!(value.adjust_xp(-40, time()).unwrap(), -25);
+        assert_eq!(value.current_xp, 0);
+        assert_eq!(value.level, 7);
+        assert_eq!(value.level_name.as_deref(), Some("Expert"));
+        assert!(value.adjust_xp(0, time()).is_err());
+        value.current_xp = i64::MAX;
+        assert!(value.adjust_xp(1, time()).is_err());
+        assert_eq!(
+            value.current_xp,
+            i64::MAX,
+            "overflow must not partially mutate XP"
+        );
+    }
+
+    #[test]
+    fn manual_lock_is_separate_from_lifecycle_and_rule_authority_is_explicit() {
+        let mut value = skill();
+        value.set_availability(SkillAvailability::Locked, time());
+        assert_eq!(value.availability, SkillAvailability::Locked);
+        assert_eq!(value.status, SkillStatus::Active);
+        assert!(
+            value.unlock_by_rule(time()).is_err(),
+            "a manually controlled lock must fail closed"
+        );
+
+        value.set_availability_control(SkillAvailabilityControl::RuleControlled, time());
+        assert!(value.unlock_by_rule(time()).unwrap());
+        assert_eq!(value.availability, SkillAvailability::Available);
+        assert!(
+            !value.unlock_by_rule(time()).unwrap(),
+            "an already-unlocked Skill is a deterministic no-op"
+        );
+
+        value.set_availability(SkillAvailability::Locked, time());
+        assert_eq!(value.availability_control, SkillAvailabilityControl::Manual);
+        assert!(
+            value.unlock_by_rule(time()).is_err(),
+            "manual lock reclaims authority"
+        );
     }
 }

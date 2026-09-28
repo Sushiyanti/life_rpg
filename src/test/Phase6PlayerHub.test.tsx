@@ -11,7 +11,7 @@ afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 const player: Player = { id: 'player-1', name: 'Rin', description: null, level: 3, levelName: 'Wayfinder', progressionLabel: null, currentXp: 90, isActive: true, metadataJson: '{}', createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-27T00:00:00Z' };
 const quest: Quest = { id: 'quest-1', playerId: player.id, typeCode: 'main', parentQuestId: null, skillId: null, title: 'Prepare the garden', status: 'active', difficulty: null, progress: 20, xpReward: 0, dueAt: null, startedAt: '2026-09-27T08:00:00Z', completedAt: null, description: 'A recorded outcome' };
 const tree: SkillTree = { id: 'tree-1', playerId: player.id, typeCode: 'life', name: 'Practice', description: null, isActive: true };
-const skill: Skill = { id: 'skill-1', skillTreeId: tree.id, parentSkillId: null, typeCode: 'core', name: 'Observation', level: 2, levelName: null, progressionLabel: null, currentXp: 0, investedMinutes: 0, status: 'active' };
+const skill: Skill = { id: 'skill-1', skillTreeId: tree.id, parentSkillId: null, typeCode: 'core', name: 'Observation', story: null, instructions: null, level: 2, levelName: null, progressionLabel: null, currentXp: 0, investedMinutes: 0, status: 'active', availability: 'available', availabilityControl: 'manual' };
 const concept: Concept = { id: 'concept-1', playerId: player.id, transferKey: 'concept-key', typeCode: 'subject', name: 'Garden', description: null, isActive: true, metadataJson: '{}', createdAt: '2026-09-20T00:00:00Z', updatedAt: '2026-09-27T09:00:00Z' };
 const overview: WorldOverview = { player, quests: [quest], skillTrees: [tree], skills: [skill], effects: [], recentTransactions: [], narratives: [] };
 const activeSession: QuestSession = { id: 'session-1', playerId: player.id, questId: quest.id, stageId: null, branchId: null, skillId: null, conceptId: null, startedAt: '2026-09-27T09:00:00Z', endedAt: null, status: 'in_progress', progressBefore: null, progressAfter: null, result: null, notes: null, isActive: true, metadataJson: '{}', createdAt: '2026-09-27T09:00:00Z', updatedAt: '2026-09-27T09:00:00Z' };
@@ -115,7 +115,7 @@ describe('Phase 6 current state and contextual actions', () => {
   });
 
   it('shows an actually active Effect, distinguishes a past expiry without changing it, and supports explicit deactivation', async () => {
-    const effect: Effect = { id: 'effect-1', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'condition', name: 'Rested', description: null, startedAt: '2001-01-01T10:00:00Z', expiresAt: null, deactivatedAt: null, intensity: 1 };
+    const effect: Effect = { id: 'effect-1', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'condition', name: 'Rested', description: null, startedAt: '2001-01-01T10:00:00Z', expiresAt: null, deactivatedAt: null, deactivationSource: null, intensity: 1 };
     const deactivateEffect = vi.fn(async () => ({ ...effect, deactivatedAt: '2026-09-27T12:00:00Z' }));
     render(<PlayerCharacter {...common} overview={{ ...overview, effects: [effect] }} client={client({ deactivateEffect })} />);
     expect(await screen.findByText('Rested', { selector: 'strong' })).toBeInTheDocument();
@@ -126,10 +126,10 @@ describe('Phase 6 current state and contextual actions', () => {
   });
 
   it('derives active, expired, scheduled and manual-off states without mutating records during display', async () => {
-    const active: Effect = { id: 'indefinite', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'buff', name: 'Indefinite', description: null, startedAt: '2026-09-01T00:00:00Z', expiresAt: null, deactivatedAt: null, intensity: 1 };
+    const active: Effect = { id: 'indefinite', playerId: player.id, targetKind: 'player', targetConceptId: null, typeCode: 'buff', name: 'Indefinite', description: null, startedAt: '2026-09-01T00:00:00Z', expiresAt: null, deactivatedAt: null, deactivationSource: null, intensity: 1 };
     const expired: Effect = { ...active, id: 'expired', name: 'Expired', startedAt: '2001-01-01T00:00:00Z', expiresAt: '2001-01-02T00:00:00Z' };
     const scheduled: Effect = { ...active, id: 'scheduled', name: 'Scheduled', startedAt: '2099-01-01T00:00:00Z' };
-    const manual: Effect = { ...active, id: 'manual', name: 'Manual off', deactivatedAt: '2026-09-02T00:00:00Z' };
+    const manual: Effect = { ...active, id: 'manual', name: 'Manual off', deactivatedAt: '2026-09-02T00:00:00Z', deactivationSource: 'manual' };
     const deactivateEffect = vi.fn();
     render(<PlayerCharacter {...common} overview={{ ...overview, effects: [active, expired, scheduled, manual] }} client={client({ deactivateEffect })} />);
     expect(await screen.findByText('Indefinite', { selector: 'strong' })).toBeInTheDocument();

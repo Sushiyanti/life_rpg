@@ -15,7 +15,7 @@ const types: EffectType[] = [{ code: 'buff', label: 'Buff', description: 'An aut
 const effect: Effect = {
   id: 'e1', playerId: 'p1', targetKind: 'player', targetConceptId: null,
   typeCode: 'buff', name: 'Focus', description: 'A recorded state',
-  startedAt: '2026-01-01T00:00:00Z', expiresAt: null, deactivatedAt: null, intensity: 2,
+  startedAt: '2026-01-01T00:00:00Z', expiresAt: null, deactivatedAt: null, deactivationSource: null, intensity: 2,
 };
 const concepts: Concept[] = [];
 const sessions: QuestSession[] = [];

@@ -19,13 +19,14 @@ import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import type { CommandError, HealthReport } from '../domain/health';
 import { toCommandError } from '../domain/health';
 import type {
-  AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Rule,
+  AwardSkillXpOutcome, AwardXpOutcome, Comment, Effect, NarrativeEntry, Player, PlayerSnapshot, PlayerStat, Quest, Rule,
   RuleDefinition, RuleExecution, Skill, SkillSnapshot, SkillTree, StatDefinition, Transaction,
   WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
   ProgressSuggestion, SearchHit, SearchQuery, EffectType, EffectHistoryEntry, SessionEffect,
   SessionEffectRole, TimelineQuery, TimelineItem,
   Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType, TypeDefinition,
+  SkillAvailabilityControl,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -104,6 +105,9 @@ export const COMMANDS = {
   rejectProgressSuggestion: 'reject_progress_suggestion',
   setPlayerProgression: 'set_player_progression',
   setSkillProgression: 'set_skill_progression',
+  adjustSkillXp: 'adjust_skill_xp',
+  setSkillAvailability: 'set_skill_availability',
+  setSkillAvailabilityControl: 'set_skill_availability_control',
   setConceptProgressControl: 'set_concept_progress_control',
   createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', setDefaultWorkspace: 'set_default_workspace', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
   listWorkspacePanels: 'list_workspace_panels', saveWorkspacePanel: 'save_workspace_panel', deleteWorkspacePanel: 'delete_workspace_panel',
@@ -176,6 +180,7 @@ export class CoreClient {
   async awardXp(playerId: string, amount: number, reason?: string, description?: string): Promise<AwardXpOutcome> {
     return this.invoke<AwardXpOutcome>(COMMANDS.awardXp, { playerId, amount, reason: reason ?? null, description: description ?? null });
   }
+  async adjustSkillXp(skillId:string,requestedDelta:number,reason?:string):Promise<AwardSkillXpOutcome>{return this.invoke<AwardSkillXpOutcome>(COMMANDS.adjustSkillXp,{skillId,requestedDelta,reason:reason??null});}
   async createQuest(playerId:string,typeCode:string,title:string,options:{description?:string;parentQuestId?:string;skillId?:string;difficulty?:number;xpReward?:number}={}):Promise<Quest>{
     return this.invoke<Quest>(COMMANDS.createQuest,{playerId,typeCode,title,description:options.description??null,parentQuestId:options.parentQuestId??null,skillId:options.skillId??null,difficulty:options.difficulty??null,xpReward:options.xpReward??null});
   }
@@ -248,6 +253,8 @@ export class CoreClient {
   async rejectProgressSuggestion(playerId:string,suggestionId:string):Promise<ProgressSuggestion>{return this.invoke(COMMANDS.rejectProgressSuggestion,{playerId,suggestionId});}
   async setPlayerProgression(playerId:string,level:number,levelName?:string,progressionLabel?:string):Promise<Player>{return this.invoke(COMMANDS.setPlayerProgression,{playerId,level,levelName:levelName??null,progressionLabel:progressionLabel??null});}
   async setSkillProgression(skillId:string,level:number,levelName?:string,progressionLabel?:string):Promise<Skill>{return this.invoke(COMMANDS.setSkillProgression,{skillId,level,levelName:levelName??null,progressionLabel:progressionLabel??null});}
+  async setSkillAvailability(skillId:string,available:boolean):Promise<Skill>{return this.invoke(COMMANDS.setSkillAvailability,{skillId,available});}
+  async setSkillAvailabilityControl(skillId:string,control:SkillAvailabilityControl):Promise<Skill>{return this.invoke(COMMANDS.setSkillAvailabilityControl,{skillId,control});}
   async setConceptProgressControl(conceptId:string,trackCode:string,control:'manual'|'rule_controlled'):Promise<ConceptProgressTrack>{return this.invoke(COMMANDS.setConceptProgressControl,{conceptId,trackCode,control});}
   async captureSkillSnapshot(skillId:string):Promise<SkillSnapshot>{return this.invoke<SkillSnapshot>(COMMANDS.captureSkillSnapshot,{skillId});}
   async listPlayerSnapshots(playerId:string):Promise<PlayerSnapshot[]>{return this.invoke<PlayerSnapshot[]>(COMMANDS.listPlayerSnapshots,{playerId});}

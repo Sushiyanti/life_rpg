@@ -1,6 +1,8 @@
 //! Phase 3.6 use cases. This is an application API only; it deliberately adds no UI.
 use crate::{
-    rules::{ProgressMutationSource, RuleEvent, RuleOperation},
+    rules::{
+        ProgressMutationSource, RuleEvent, RuleEventSource, RuleOperation, SessionStatusEvent,
+    },
     AppError, Clock, ConceptStore, EffectWrite, SearchQuery, SearchStore, SemanticsStore,
     WorldStore,
 };
@@ -186,10 +188,11 @@ where
         let optional = |v: Option<&str>| -> Result<Option<EntityId>, AppError> {
             v.map(EntityId::new).transpose().map_err(Into::into)
         };
+        let now = self.now()?;
         let at = started_at
             .map(Iso8601Timestamp::parse)
             .transpose()?
-            .unwrap_or(self.now()?);
+            .unwrap_or_else(|| now.clone());
         let session = QuestSession::new(
             self.id("session")?,
             p,
@@ -199,9 +202,25 @@ where
             optional(skill_id)?,
             optional(concept_id)?,
             at,
-            self.now()?,
+            now.clone(),
         )?;
-        self.store.insert_session(&session)?;
+        let event = RuleEvent::SessionStarted {
+            player_id: session.player_id.to_string(),
+            session_id: session.id.to_string(),
+            started_at: session.started_at.to_string(),
+            quest_id: session.quest_id.as_ref().map(ToString::to_string),
+            stage_id: session.stage_id.as_ref().map(ToString::to_string),
+            branch_id: session.branch_id.as_ref().map(ToString::to_string),
+            skill_id: session.skill_id.as_ref().map(ToString::to_string),
+            concept_id: session.concept_id.as_ref().map(ToString::to_string),
+        };
+        self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::StartSession {
+                session: session.clone(),
+            }],
+            now,
+        )?;
         Ok(session)
     }
     pub fn finish_session(
@@ -217,15 +236,40 @@ where
             .store
             .get_session(&id)?
             .ok_or_else(|| AppError::Internal("Quest Session not found".into()))?;
+        let expected_status = session.status;
         let end = ended_at
             .map(Iso8601Timestamp::parse)
             .transpose()?
             .unwrap_or(self.now()?);
         let now = self.now()?;
-        session.finish(end, status, now)?;
+        session.finish(end, status, now.clone())?;
         session.result = result;
         session.notes = notes;
-        self.store.update_session(&session)?;
+        let event = RuleEvent::SessionFinished {
+            player_id: session.player_id.to_string(),
+            session_id: session.id.to_string(),
+            started_at: session.started_at.to_string(),
+            ended_at: session
+                .ended_at
+                .as_ref()
+                .expect("finished Session has end time")
+                .to_string(),
+            status: SessionStatusEvent::from_domain(session.status)?,
+            result: session.result.clone(),
+            quest_id: session.quest_id.as_ref().map(ToString::to_string),
+            stage_id: session.stage_id.as_ref().map(ToString::to_string),
+            branch_id: session.branch_id.as_ref().map(ToString::to_string),
+            skill_id: session.skill_id.as_ref().map(ToString::to_string),
+            concept_id: session.concept_id.as_ref().map(ToString::to_string),
+        };
+        self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::FinishSession {
+                session: session.clone(),
+                expected_status,
+            }],
+            now,
+        )?;
         Ok(session)
     }
     pub fn list_sessions(
@@ -308,6 +352,22 @@ where
             .into());
         }
         Ok(session)
+    }
+    fn execute_rule_events(
+        &self,
+        events: Vec<RuleEvent>,
+        operations: Vec<RuleOperation>,
+        now: Iso8601Timestamp,
+    ) -> Result<Vec<RuleOperation>, AppError> {
+        let chain_id = self.id("rule-chain")?.to_string();
+        crate::services::rule_engine::execute(
+            &self.store,
+            events,
+            operations,
+            chain_id,
+            now,
+            || self.id("rule-exec").map(|id| id.to_string()),
+        )
     }
     pub fn list_effect_types(&self) -> Result<Vec<lr_domain::TypeDefinition>, AppError> {
         Ok(self
@@ -402,13 +462,27 @@ where
                 &effect,
                 Some(link.session_id.clone()),
                 EffectHistoryKind::SessionLinked,
-                now,
+                now.clone(),
                 None,
                 linked_snapshot,
             )?);
         }
-        self.store
-            .create_effect_with_history(&effect, &history, link.as_ref())?;
+        let event = RuleEvent::EffectCreated {
+            player_id: effect.player_id.to_string(),
+            effect_id: effect.id.to_string(),
+            type_code: effect.effect_type.code.clone(),
+            target_concept_id: effect.target_concept_id.as_ref().map(ToString::to_string),
+            source: RuleEventSource::Manual,
+        };
+        self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::CreateEffect {
+                effect: effect.clone(),
+                history,
+                session_link: link,
+            }],
+            now,
+        )?;
         Ok(effect)
     }
     pub fn update_effect(
@@ -547,13 +621,27 @@ where
                 &changed,
                 Some(link.session_id.clone()),
                 EffectHistoryKind::SessionLinked,
-                now,
+                now.clone(),
                 None,
                 linked_snapshot,
             )?);
         }
-        self.store
-            .deactivate_effect_with_history(&changed, &history, link.as_ref())?;
+        let event = RuleEvent::EffectDeactivated {
+            player_id: changed.player_id.to_string(),
+            effect_id: changed.id.to_string(),
+            type_code: changed.effect_type.code.clone(),
+            source: RuleEventSource::Manual,
+        };
+        self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::DeactivateEffect {
+                effect: changed.clone(),
+                expected_deactivated_at: old.deactivated_at.clone(),
+                history,
+                session_link: link,
+            }],
+            now,
+        )?;
         Ok(changed)
     }
     pub fn effect_history(

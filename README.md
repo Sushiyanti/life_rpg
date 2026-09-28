@@ -6,14 +6,14 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 8 — Unified World Timeline.**
-> The dedicated Timeline is a Player-scoped, read-only chronology over existing
-> timestamped world and history records. The Player Hub’s compact recent-activity
-> view uses the same bounded query; no duplicate event store or synthetic days are
-> created. Reusable Content and its explicit relationship history remain on their
-> canonical records. See the [Phase 8 report](docs/PHASE-8-REPORT.md), [Phase 7
-> report](docs/PHASE-7-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
-> and [Architecture](docs/ARCHITECTURE.md).
+> **Status: Phase 10 — Explicit Gameplay Rules & Skill Progression (complete).**
+> The bounded declarative Rule Engine now supports explicit Skill XP and unlock
+> automation plus immediate Effect actions. Skill levels remain Player-authored,
+> rule chains are atomic, and changes retain auditable history; no scheduler,
+> automatic leveling, or inferred prerequisite graph is introduced. See the
+> [Phase 10 report](docs/PHASE-10-REPORT.md), [Phase 9 report](docs/PHASE-9-REPORT.md),
+> [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md), and
+> [Architecture](docs/ARCHITECTURE.md).
 
 ---
 

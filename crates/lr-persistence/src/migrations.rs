@@ -117,6 +117,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0015_phase9_timeline_workspace_panels",
         sql: include_str!("migrations/0015_phase9_timeline_workspace_panels.sql"),
     },
+    Migration {
+        version: 16,
+        name: "0016_phase10_gameplay_rules_progression",
+        sql: include_str!("migrations/0016_phase10_gameplay_rules_progression.sql"),
+    },
 ];
 
 /// Highest version this build ships.
@@ -269,7 +274,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).expect("migrate");
         assert_eq!(
             applied,
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         );
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
@@ -278,7 +283,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 15);
+        assert_eq!(first.len(), 16);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -286,7 +291,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 15, "ledger must not accumulate duplicates");
+        assert_eq!(count, 16, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -296,7 +301,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 15);
+        assert_eq!(report.migrations.len(), 16);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -322,7 +327,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).unwrap();
         assert_eq!(
             applied,
-            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
             "must apply only the missing steps"
         );
 
@@ -356,7 +361,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            vec![4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         );
         assert!(schema_report(&conn).unwrap().is_current());
 
@@ -404,7 +409,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![7, 8, 9, 10, 11, 12, 13, 14, 15]
+            vec![7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         );
         assert!(schema_report(&conn).unwrap().is_current());
         let player: (i64, i32) = conn
@@ -479,7 +484,7 @@ mod tests {
         conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+            vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
         );
         let player: (i64, i32) = conn
             .query_row(
@@ -515,7 +520,7 @@ mod tests {
         conn.execute("INSERT INTO quest_sessions(id,player_id,concept_id,started_at,status,is_active,created_at,updated_at) VALUES('old-session','p','c',?1,'in_progress',1,?1,?1)",[T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![10, 11, 12, 13, 14, 15]
+            vec![10, 11, 12, 13, 14, 15, 16]
         );
         let legacy_key: String = conn
             .query_row("SELECT transfer_key FROM concepts WHERE id='c'", [], |r| {
@@ -556,7 +561,7 @@ mod tests {
         conn.execute("INSERT INTO concepts(id,player_id,concept_type_code,name,created_at,updated_at) VALUES('c1','p','subject','Reading',?1,?1),('c2','p','subject','Reading',?1,?1)",[T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![11, 12, 13, 14, 15]
+            vec![11, 12, 13, 14, 15, 16]
         );
         let keys: Vec<String> = conn
             .prepare("SELECT transfer_key FROM concepts ORDER BY id")
@@ -581,7 +586,7 @@ mod tests {
                 []
             )
             .is_err());
-        assert_eq!(applied_version(&conn).unwrap(), 15);
+        assert_eq!(applied_version(&conn).unwrap(), 16);
     }
 
     #[test]
@@ -605,7 +610,10 @@ mod tests {
             [T0],
         ).unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![12, 13, 14, 15]);
+        assert_eq!(
+            run_migrations(&mut conn, T0).unwrap(),
+            vec![12, 13, 14, 15, 16]
+        );
         let preserved: (String, Option<String>) = conn
             .query_row(
                 "SELECT name,expires_at FROM effects WHERE id='e'",
@@ -624,7 +632,7 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "missing {table}");
         }
-        assert_eq!(applied_version(&conn).unwrap(), 15);
+        assert_eq!(applied_version(&conn).unwrap(), 16);
     }
 
     #[test]
@@ -664,7 +672,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![13, 14, 15]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![13, 14, 15, 16]);
         let rows: Vec<(String, Option<String>)> = conn
             .prepare("SELECT role_code,removed_at FROM content_attachments ORDER BY role_code")
             .unwrap()
@@ -729,8 +737,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![14, 15]);
-        assert_eq!(applied_version(&conn).unwrap(), 15);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![14, 15, 16]);
+        assert_eq!(applied_version(&conn).unwrap(), 16);
         let preserved: String = conn
             .query_row("SELECT name FROM players WHERE id='p'", [], |row| {
                 row.get(0)
@@ -812,8 +820,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![15]);
-        assert_eq!(applied_version(&conn).unwrap(), 15);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![15, 16]);
+        assert_eq!(applied_version(&conn).unwrap(), 16);
         let preserved: (String, String, String, i64, i64, i64, String, i64) = conn
             .query_row(
                 "SELECT title,filter_status,filter_concept_id,is_visible,is_pinned,grid_span,sort_by,item_limit FROM workspace_panels WHERE id='existing'",
@@ -970,5 +978,97 @@ mod tests {
             [],
         );
         assert!(dup.is_err(), "UNIQUE(namespace, code) must be enforced");
+    }
+
+    #[test]
+    fn schema_15_upgrade_preserves_gameplay_records_and_backfills_manual_authority() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+        for migration in &MIGRATIONS[..15] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES(?1,?2,?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p10','Ada',3,42,?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO skill_trees(id,player_id,tree_type_namespace,tree_type_code,name,created_at,updated_at) VALUES('tree10','p10','skill_tree','programming','Programming',?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO skills(id,skill_tree_id,skill_type_namespace,skill_type_code,name,level,current_xp,created_at,updated_at) VALUES('skill10','tree10','skill','core','Rust',4,120,?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO effects(id,player_id,effect_type_namespace,effect_type_code,name,started_at,deactivated_at,created_at,updated_at) VALUES('effect10','p10','effect','buff','Focus',?1,?1,?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO effect_history(id,player_id,effect_id,event_kind,recorded_at,previous_state_json,current_state_json) VALUES('effect-created','p10','effect10','created',?1,NULL,'{}'),('effect-off','p10','effect10','manually_deactivated',?1,'{}','{}')", [T0]).unwrap();
+        conn.execute("INSERT INTO rules(id,name,trigger_kind,schema_version,definition_json,created_at,updated_at) VALUES('legacy-rule','Legacy rule','quest_completed',1,'{\"schemaVersion\":1,\"trigger\":\"quest_completed\",\"condition\":{\"op\":\"always\"},\"actions\":[{\"kind\":\"award_xp\",\"amount\":5,\"reason\":null}]}',?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO rule_execution_history(id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,depth,executed_at) VALUES('legacy-audit','legacy-chain','legacy-rule','quest_completed','{}',1,'[]','succeeded',0,?1)", [T0]).unwrap();
+
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![16]);
+        assert_eq!(applied_version(&conn).unwrap(), 16);
+        let skill: (i32, i64, String, String) = conn.query_row(
+            "SELECT level,current_xp,availability,availability_control FROM skills WHERE id='skill10'",
+            [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?)),
+        ).unwrap();
+        assert_eq!(skill, (4, 120, "available".into(), "manual".into()));
+        let effect_source: String = conn
+            .query_row(
+                "SELECT deactivation_source FROM effects WHERE id='effect10'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(effect_source, "manual");
+        let old_history: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM effect_history WHERE effect_id='effect10'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(old_history, 2, "append-only lifecycle facts remain present");
+        let rule_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rules WHERE id='legacy-rule'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let audit_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rule_execution_history WHERE id='legacy-audit'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!((rule_count, audit_count), (1, 1));
+
+        conn.execute("INSERT INTO skill_history(id,player_id,skill_id,event_kind,source,recorded_at,previous_state_json,current_state_json) VALUES('skill-hist','p10','skill10','availability_changed','manual',?1,'{}','{}')", [T0]).unwrap();
+        assert!(
+            conn.execute(
+                "UPDATE skill_history SET source='rule' WHERE id='skill-hist'",
+                []
+            )
+            .is_err(),
+            "Skill history is append-only"
+        );
+        assert!(
+            conn.execute(
+                "UPDATE effects SET deactivated_at=NULL WHERE id='effect10'",
+                []
+            )
+            .is_err(),
+            "source and deactivation timestamp must remain paired"
+        );
+
+        conn.execute("INSERT INTO rules(id,name,trigger_kind,schema_version,definition_json,created_at,updated_at) VALUES('new-rule','Skill XP rule','skill_xp_changed',1,'{\"schemaVersion\":1,\"trigger\":\"skill_xp_changed\",\"condition\":{\"op\":\"always\"},\"actions\":[]}',?1,?1)", [T0]).unwrap();
+        conn.execute("INSERT INTO rule_execution_history(id,chain_id,rule_id,event_kind,event_json,condition_passed,actions_json,status,depth,executed_at) VALUES('new-audit','new-chain','new-rule','skill_xp_changed','{}',1,'[]','succeeded',0,?1)", [T0]).unwrap();
+        let new_rule: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rule_execution_history WHERE event_kind='skill_xp_changed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            new_rule, 1,
+            "schema 16 admits new typed gameplay event kinds"
+        );
     }
 }

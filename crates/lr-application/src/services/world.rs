@@ -7,8 +7,9 @@ use crate::{
 };
 use lr_domain::{
     Comment, CommentTargetKind, DateValue, Effect, EntityId, Iso8601Timestamp, NarrativeEntry,
-    Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillStateSnapshot, SkillTree,
-    StatDefinition, Transaction, TypeDefinition, TypeRef,
+    Player, PlayerStat, PlayerStateSnapshot, Quest, Skill, SkillAvailability,
+    SkillAvailabilityControl, SkillHistoryEntry, SkillHistoryKind, SkillHistorySource,
+    SkillStateSnapshot, SkillTree, StatDefinition, Transaction, TypeDefinition, TypeRef,
 };
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -27,6 +28,11 @@ pub struct WorldOverview {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AwardXpOutcome {
     pub player: Player,
+    pub transaction: Transaction,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AwardSkillXpOutcome {
+    pub skill: Skill,
     pub transaction: Transaction,
 }
 
@@ -124,6 +130,223 @@ where
         self.store.update_skill(&skill)?;
         Ok(skill)
     }
+    fn skill_availability_state(skill: &Skill) -> Result<String, AppError> {
+        serde_json::to_string(&serde_json::json!({
+            "availability": skill.availability.as_str(),
+            "availabilityControl": skill.availability_control.as_str(),
+        }))
+        .map_err(|error| AppError::Internal(format!("cannot serialize Skill history: {error}")))
+    }
+
+    /// Explicit Skill XP adjustment. The transaction and any Rule follow-ons
+    /// commit atomically, while the manually-authored level is unchanged.
+    pub fn adjust_skill_xp(
+        &self,
+        skill_id: &str,
+        requested_delta: i64,
+        reason: Option<String>,
+    ) -> Result<AwardSkillXpOutcome, AppError> {
+        let now = self.now()?;
+        let id = EntityId::new(skill_id)?;
+        let mut skill = self
+            .store
+            .get_skill(&id)?
+            .ok_or_else(|| AppError::Internal("skill not found".into()))?;
+        let tree = self
+            .store
+            .get_skill_tree(&skill.skill_tree_id)?
+            .ok_or_else(|| AppError::Internal("skill tree not found".into()))?;
+        let previous_xp = skill.current_xp;
+        let applied_delta = skill.adjust_xp(requested_delta, now.clone())?;
+        let mut transaction = Transaction::skill_xp_adjustment(
+            tree.player_id.clone(),
+            &skill.id,
+            requested_delta,
+            applied_delta,
+            now.clone(),
+        )?;
+        transaction.reason = reason.filter(|value| !value.trim().is_empty());
+        transaction.metadata_json = serde_json::json!({
+            "schemaVersion": 1,
+            "previousXp": previous_xp,
+            "currentXp": skill.current_xp,
+            "requestedDelta": requested_delta,
+            "appliedDelta": applied_delta,
+            "source": "manual",
+        })
+        .to_string();
+        let event = RuleEvent::SkillXpChanged {
+            player_id: tree.player_id.to_string(),
+            skill_id: skill.id.to_string(),
+            previous_xp,
+            current_xp: skill.current_xp,
+            requested_delta,
+            applied_delta,
+            source: crate::RuleEventSource::Manual,
+        };
+        let stored = self.execute_rule_events(
+            vec![event],
+            vec![RuleOperation::SkillXp {
+                skill,
+                previous_xp,
+                transaction,
+            }],
+            now,
+        )?;
+        let mut final_skill = None;
+        let mut root_transaction = None;
+        for operation in stored {
+            if let RuleOperation::SkillXp {
+                skill, transaction, ..
+            } = operation
+            {
+                final_skill = Some(skill);
+                if root_transaction.is_none() {
+                    root_transaction = Some(transaction);
+                }
+            }
+        }
+        match (final_skill, root_transaction) {
+            (Some(skill), Some(transaction)) => Ok(AwardSkillXpOutcome { skill, transaction }),
+            _ => Err(AppError::Internal(
+                "Skill XP root operation was not persisted".into(),
+            )),
+        }
+    }
+
+    /// A Player's explicit lock/unlock reclaims authority. A manual lock can
+    /// never be overwritten by Rules unless the Player later delegates again.
+    pub fn set_skill_availability(
+        &self,
+        skill_id: &str,
+        available: bool,
+    ) -> Result<Skill, AppError> {
+        let now = self.now()?;
+        let id = EntityId::new(skill_id)?;
+        let mut skill = self
+            .store
+            .get_skill(&id)?
+            .ok_or_else(|| AppError::Internal("skill not found".into()))?;
+        let previous_availability = skill.availability;
+        let previous_control = skill.availability_control;
+        let next = if available {
+            SkillAvailability::Available
+        } else {
+            SkillAvailability::Locked
+        };
+        if previous_availability == next && previous_control == SkillAvailabilityControl::Manual {
+            return Ok(skill);
+        }
+        let previous_state = Self::skill_availability_state(&skill)?;
+        skill.set_availability(next, now.clone());
+        let player_id = self
+            .store
+            .get_skill_tree(&skill.skill_tree_id)?
+            .ok_or_else(|| AppError::Internal("skill tree not found".into()))?
+            .player_id;
+        let history = SkillHistoryEntry {
+            id: self.new_id("skill-history")?,
+            player_id: player_id.clone(),
+            skill_id: skill.id.clone(),
+            kind: if previous_availability != next {
+                SkillHistoryKind::AvailabilityChanged
+            } else {
+                SkillHistoryKind::ControlChanged
+            },
+            source: SkillHistorySource::Manual,
+            recorded_at: now.clone(),
+            previous_state_json: Some(previous_state),
+            current_state_json: Self::skill_availability_state(&skill)?,
+        };
+        let events = if previous_availability == SkillAvailability::Locked
+            && next == SkillAvailability::Available
+        {
+            vec![RuleEvent::SkillUnlocked {
+                player_id: player_id.to_string(),
+                skill_id: skill.id.to_string(),
+                was_available: false,
+                source: crate::RuleEventSource::Manual,
+            }]
+        } else {
+            Vec::new()
+        };
+        let stored = self.execute_rule_events(
+            events,
+            vec![RuleOperation::SkillAvailability {
+                skill,
+                expected_availability: previous_availability,
+                expected_control: previous_control,
+                history,
+            }],
+            now,
+        )?;
+        stored
+            .into_iter()
+            .find_map(|operation| match operation {
+                RuleOperation::SkillAvailability { skill, .. } => Some(skill),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::Internal("Skill availability root operation was not persisted".into())
+            })
+    }
+
+    /// Opt a Skill into or out of explicit Rule authority. Policy changes are
+    /// Player-authored history, not gameplay events.
+    pub fn set_skill_availability_control(
+        &self,
+        skill_id: &str,
+        control: SkillAvailabilityControl,
+    ) -> Result<Skill, AppError> {
+        let now = self.now()?;
+        let id = EntityId::new(skill_id)?;
+        let mut skill = self
+            .store
+            .get_skill(&id)?
+            .ok_or_else(|| AppError::Internal("skill not found".into()))?;
+        let previous_availability = skill.availability;
+        let previous_control = skill.availability_control;
+        if previous_control == control {
+            return Ok(skill);
+        }
+        let previous_state = Self::skill_availability_state(&skill)?;
+        skill.set_availability_control(control, now.clone());
+        let player_id = self
+            .store
+            .get_skill_tree(&skill.skill_tree_id)?
+            .ok_or_else(|| AppError::Internal("skill tree not found".into()))?
+            .player_id;
+        let history = SkillHistoryEntry {
+            id: self.new_id("skill-history")?,
+            player_id,
+            skill_id: skill.id.clone(),
+            kind: SkillHistoryKind::ControlChanged,
+            source: SkillHistorySource::Manual,
+            recorded_at: now.clone(),
+            previous_state_json: Some(previous_state),
+            current_state_json: Self::skill_availability_state(&skill)?,
+        };
+        let stored = self.execute_rule_events(
+            Vec::new(),
+            vec![RuleOperation::SkillAvailability {
+                skill,
+                expected_availability: previous_availability,
+                expected_control: previous_control,
+                history,
+            }],
+            now,
+        )?;
+        stored
+            .into_iter()
+            .find_map(|operation| match operation {
+                RuleOperation::SkillAvailability { skill, .. } => Some(skill),
+                _ => None,
+            })
+            .ok_or_else(|| {
+                AppError::Internal("Skill availability policy operation was not persisted".into())
+            })
+    }
+
     fn execute_rule_events(
         &self,
         events: Vec<RuleEvent>,
@@ -775,6 +998,19 @@ mod tests {
             operations: &[RuleOperation],
             _: &[RuleExecutionRecord],
         ) -> Result<Vec<RuleOperation>, StorageError> {
+            if operations.iter().any(|operation| {
+                matches!(
+                    operation,
+                    RuleOperation::CreateEffect { .. }
+                        | RuleOperation::DeactivateEffect { .. }
+                        | RuleOperation::StartSession { .. }
+                        | RuleOperation::FinishSession { .. }
+                )
+            }) {
+                return Err(StorageError::Operation(
+                    "test store does not persist Effect or Session operations".into(),
+                ));
+            }
             for operation in operations {
                 match operation {
                     RuleOperation::PlayerXp {
@@ -801,6 +1037,21 @@ mod tests {
                         return Err(StorageError::Operation(
                             "test store does not persist progress suggestions".into(),
                         ));
+                    }
+                    RuleOperation::SkillXp {
+                        skill, transaction, ..
+                    } => {
+                        *self.skill.lock().unwrap() = Some(skill.clone());
+                        self.tx.lock().unwrap().push(transaction.clone());
+                    }
+                    RuleOperation::SkillAvailability { skill, .. } => {
+                        *self.skill.lock().unwrap() = Some(skill.clone());
+                    }
+                    RuleOperation::CreateEffect { .. }
+                    | RuleOperation::DeactivateEffect { .. }
+                    | RuleOperation::StartSession { .. }
+                    | RuleOperation::FinishSession { .. } => {
+                        unreachable!("preflight rejected unsupported operation")
                     }
                 }
             }

@@ -255,6 +255,9 @@ impl QuestSession {
         status: SessionStatus,
         now: Iso8601Timestamp,
     ) -> DomainResult<()> {
+        if self.status != SessionStatus::InProgress || self.ended_at.is_some() {
+            return Err(DomainError::Invariant("Session is already finished".into()));
+        }
         if status == SessionStatus::InProgress {
             return Err(DomainError::invalid_value(
                 "session status",

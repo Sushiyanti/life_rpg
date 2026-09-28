@@ -18,6 +18,7 @@ pub mod quest;
 pub mod quest_activity;
 pub mod recovery;
 pub mod skill;
+pub mod skill_history;
 pub mod snapshot;
 pub mod stat;
 pub mod transaction;
@@ -32,7 +33,7 @@ pub use concept::{
     ConceptRelationship, ConceptStateSnapshot, ProgressControl, ProgressSemantics,
     ProgressTrackDefinition,
 };
-pub use effect::{Effect, EffectLifecycle, EffectTargetKind};
+pub use effect::{Effect, EffectDeactivationSource, EffectLifecycle, EffectTargetKind};
 pub use effect_history::{EffectHistoryEntry, EffectHistoryKind, SessionEffect, SessionEffectRole};
 pub use error::{DomainError, DomainResult};
 pub use narrative::NarrativeEntry;
@@ -45,7 +46,8 @@ pub use quest_activity::{
     SessionStatus, StageStatus,
 };
 pub use recovery::{EntityRevision, LifecycleState, RevisionTargetKind};
-pub use skill::{Skill, SkillStatus, SkillTree};
+pub use skill::{Skill, SkillAvailability, SkillAvailabilityControl, SkillStatus, SkillTree};
+pub use skill_history::{SkillHistoryEntry, SkillHistoryKind, SkillHistorySource};
 pub use snapshot::{PlayerStateSnapshot, SkillStateSnapshot};
 pub use stat::{PlayerStat, StatDefinition};
 pub use transaction::Transaction;

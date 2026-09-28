@@ -1,7 +1,8 @@
 //! Serializable Phase 2 DTOs. Domain structs remain serialization-free.
 
 use lr_application::{
-    AwardXpOutcome, Rule as AppRule, RuleDefinition, RuleExecutionRecord, WorldOverview,
+    AwardSkillXpOutcome, AwardXpOutcome, Rule as AppRule, RuleDefinition, RuleExecutionRecord,
+    WorldOverview,
 };
 use lr_domain::{
     Comment, Concept, ConceptRelationship, Effect, NarrativeEntry, Player, PlayerStat,
@@ -249,12 +250,16 @@ pub struct SkillDto {
     pub parent_skill_id: Option<String>,
     pub type_code: String,
     pub name: String,
+    pub story: Option<String>,
+    pub instructions: Option<String>,
     pub level: i32,
     pub level_name: Option<String>,
     pub progression_label: Option<String>,
     pub current_xp: i64,
     pub invested_minutes: i64,
     pub status: String,
+    pub availability: String,
+    pub availability_control: String,
 }
 impl From<Skill> for SkillDto {
     fn from(v: Skill) -> Self {
@@ -264,12 +269,16 @@ impl From<Skill> for SkillDto {
             parent_skill_id: v.parent_skill_id.map(|x| x.to_string()),
             type_code: v.skill_type.code,
             name: v.name,
+            story: v.story,
+            instructions: v.instructions,
             level: v.level,
             level_name: v.level_name,
             progression_label: v.progression_label,
             current_xp: v.current_xp,
             invested_minutes: v.invested_minutes,
             status: v.status.as_str().into(),
+            availability: v.availability.as_str().into(),
+            availability_control: v.availability_control.as_str().into(),
         }
     }
 }
@@ -286,6 +295,7 @@ pub struct EffectDto {
     pub started_at: String,
     pub expires_at: Option<String>,
     pub deactivated_at: Option<String>,
+    pub deactivation_source: Option<String>,
     pub intensity: i32,
 }
 impl From<Effect> for EffectDto {
@@ -305,6 +315,7 @@ impl From<Effect> for EffectDto {
             started_at: v.started_at.to_string(),
             expires_at: v.expires_at.map(|x| x.to_string()),
             deactivated_at: v.deactivated_at.map(|x| x.to_string()),
+            deactivation_source: v.deactivation_source.map(|source| source.as_str().into()),
             intensity: v.intensity,
         }
     }
@@ -433,6 +444,20 @@ impl From<AwardXpOutcome> for AwardXpOutcomeDto {
     fn from(v: AwardXpOutcome) -> Self {
         Self {
             player: v.player.into(),
+            transaction: v.transaction.into(),
+        }
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AwardSkillXpOutcomeDto {
+    pub skill: SkillDto,
+    pub transaction: TransactionDto,
+}
+impl From<AwardSkillXpOutcome> for AwardSkillXpOutcomeDto {
+    fn from(v: AwardSkillXpOutcome) -> Self {
+        Self {
+            skill: v.skill.into(),
             transaction: v.transaction.into(),
         }
     }

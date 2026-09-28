@@ -31,6 +31,7 @@ fn source_queries(query: &TimelineQuery) -> Vec<&'static str> {
             r#"SELECT 'record:skill:'||s.id||':started',t.player_id,'record_change','skill',s.id,s.started_at,NULL,'occurred','Skill started · '||s.name,COALESCE(s.description,''),NULL,s.skill_type_code,s.status,NULL FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE t.player_id=?1 AND s.started_at IS NOT NULL AND (?3 IS NULL OR s.started_at>=?3) AND (?4 IS NULL OR s.started_at<=?4)"#,
             r#"SELECT 'record:skill:'||s.id||':completed',t.player_id,'record_change','skill',s.id,s.completed_at,NULL,'occurred','Skill completed · '||s.name,COALESCE(s.description,''),NULL,s.skill_type_code,s.status,NULL FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE t.player_id=?1 AND s.completed_at IS NOT NULL AND (?3 IS NULL OR s.completed_at>=?3) AND (?4 IS NULL OR s.completed_at<=?4)"#,
         ]);
+        sources.push(r#"SELECT 'record:skill_history:'||h.id,h.player_id,'record_change','skill',s.id,h.recorded_at,NULL,'recorded',CASE WHEN h.source='rule' THEN 'Skill unlocked by Rule · '||s.name WHEN h.event_kind='availability_changed' AND s.availability='available' THEN 'Skill manually unlocked · '||s.name WHEN h.event_kind='availability_changed' THEN 'Skill manually locked · '||s.name ELSE 'Skill unlock authority changed · '||s.name END,COALESCE(json_extract(h.previous_state_json,'$.availability'),'first')||' / '||COALESCE(json_extract(h.previous_state_json,'$.availabilityControl'),'first')||' → '||json_extract(h.current_state_json,'$.availability')||' / '||json_extract(h.current_state_json,'$.availabilityControl')||' · '||h.source,NULL,s.skill_type_code,h.source,NULL FROM skill_history h JOIN skills s ON s.id=h.skill_id WHERE h.player_id=?1 AND (?3 IS NULL OR h.recorded_at>=?3) AND (?4 IS NULL OR h.recorded_at<=?4)"#);
     }
 
     if wants(TimelineCategory::Session) {
@@ -38,11 +39,11 @@ fn source_queries(query: &TimelineQuery) -> Vec<&'static str> {
     }
 
     if wants(TimelineCategory::Transaction) {
-        sources.push(r#"SELECT 'transaction:'||x.id,x.player_id,'transaction','transaction',CAST(x.id AS TEXT),x.occurred_at,x.captured_at,'occurred','Transaction · '||x.resource,(CASE WHEN x.amount>0 THEN '+' ELSE '' END)||x.amount||CASE WHEN x.reason IS NOT NULL THEN ' · '||x.reason ELSE '' END,NULL,x.transaction_type_code,NULL,CASE WHEN x.captured_at IS NOT NULL THEN 'captured' END FROM transactions x WHERE x.player_id=?1 AND (?3 IS NULL OR x.occurred_at>=?3) AND (?4 IS NULL OR x.occurred_at<=?4)"#);
+        sources.push(r#"SELECT 'transaction:'||x.id,x.player_id,'transaction',CASE WHEN x.resource='skill_xp' AND x.source_kind='skill' THEN 'skill' ELSE 'transaction' END,CASE WHEN x.resource='skill_xp' AND x.source_kind='skill' THEN x.source_id ELSE CAST(x.id AS TEXT) END,x.occurred_at,x.captured_at,'occurred',CASE WHEN x.resource='skill_xp' AND x.source_kind='skill' THEN 'Skill XP changed · '||COALESCE(s.name,'Skill') ELSE 'Transaction · '||x.resource END,CASE WHEN x.resource='skill_xp' AND x.source_kind='skill' THEN 'requested '||x.amount||' · applied '||COALESCE(x.applied_amount,0)||' · '||COALESCE(CAST(json_extract(x.metadata_json,'$.previousXp') AS TEXT),'?')||' → '||COALESCE(CAST(json_extract(x.metadata_json,'$.currentXp') AS TEXT),'?')||CASE WHEN x.reason IS NOT NULL THEN ' · '||x.reason ELSE '' END ELSE (CASE WHEN x.amount>0 THEN '+' ELSE '' END)||x.amount||CASE WHEN x.reason IS NOT NULL THEN ' · '||x.reason ELSE '' END END,NULL,x.transaction_type_code,NULL,CASE WHEN x.captured_at IS NOT NULL THEN 'captured' END FROM transactions x LEFT JOIN skills s ON x.resource='skill_xp' AND x.source_kind='skill' AND s.id=x.source_id WHERE x.player_id=?1 AND (?3 IS NULL OR x.occurred_at>=?3) AND (?4 IS NULL OR x.occurred_at<=?4)"#);
     }
 
     if wants(TimelineCategory::EffectHistory) {
-        sources.push(r#"SELECT 'effect_history:'||h.id,h.player_id,'effect_history','effect',h.effect_id,h.recorded_at,NULL,'recorded',CASE h.event_kind WHEN 'created' THEN 'Effect recorded' WHEN 'details_changed' THEN 'Effect details changed' WHEN 'expiry_changed' THEN 'Effect expiry changed' WHEN 'manually_deactivated' THEN 'Effect manually deactivated' WHEN 'session_linked' THEN 'Effect linked to Session' WHEN 'session_unlinked' THEN 'Effect unlinked from Session' ELSE 'Effect history' END||' · '||e.name,CASE WHEN h.session_id IS NOT NULL THEN 'Session '||h.session_id ELSE '' END,NULL,e.effect_type_code,h.event_kind,NULL FROM effect_history h JOIN effects e ON e.id=h.effect_id WHERE h.player_id=?1 AND (?3 IS NULL OR h.recorded_at>=?3) AND (?4 IS NULL OR h.recorded_at<=?4)"#);
+        sources.push(r#"SELECT 'effect_history:'||h.id,h.player_id,'effect_history','effect',h.effect_id,h.recorded_at,NULL,'recorded',CASE h.event_kind WHEN 'created' THEN 'Effect recorded' WHEN 'details_changed' THEN 'Effect details changed' WHEN 'expiry_changed' THEN 'Effect expiry changed' WHEN 'manually_deactivated' THEN 'Effect manually deactivated' WHEN 'rule_deactivated' THEN 'Effect deactivated by Rule' WHEN 'session_linked' THEN 'Effect linked to Session' WHEN 'session_unlinked' THEN 'Effect unlinked from Session' ELSE 'Effect history' END||' · '||e.name,CASE WHEN h.session_id IS NOT NULL THEN 'Session '||h.session_id ELSE '' END,NULL,e.effect_type_code,h.event_kind,NULL FROM effect_history h JOIN effects e ON e.id=h.effect_id WHERE h.player_id=?1 AND (?3 IS NULL OR h.recorded_at>=?3) AND (?4 IS NULL OR h.recorded_at<=?4)"#);
     }
 
     if wants(TimelineCategory::Content) {
@@ -307,10 +308,15 @@ mod tests {
                           ('p1','xp','experience',15,'{T2}',NULL,'legacy capture unavailable'),
                           ('p1','xp','experience',5,'{T2}',NULL,'tied occurrence'),
                           ('p2','xp','experience',20,'{T3}',NULL,'other world');
-                        INSERT INTO effects(id,player_id,effect_type_code,name,started_at,expires_at,target_kind,target_concept_id,created_at,updated_at) VALUES
-                          ('effect1','p1','buff','Focus','{T1}','{T2}','concept','c1','{T1}','{T1}');
+                        INSERT INTO effects(id,player_id,effect_type_code,name,started_at,expires_at,target_kind,target_concept_id,created_at,updated_at,deactivated_at,deactivation_source) VALUES
+                          ('effect1','p1','buff','Focus','{T1}',NULL,'concept','c1','{T1}','{T4}','{T4}','rule');
                         INSERT INTO effect_history(id,player_id,effect_id,event_kind,recorded_at,current_state_json) VALUES
-                          ('eh1','p1','effect1','created','{T2}','{{}}');
+                          ('eh1','p1','effect1','created','{T2}','{{}}'),
+                          ('eh2','p1','effect1','rule_deactivated','{T4}','{{"deactivationSource":"rule"}}');
+                        INSERT INTO skill_history(id,player_id,skill_id,event_kind,source,recorded_at,previous_state_json,current_state_json) VALUES
+                          ('sh1','p1','skill1','availability_changed','rule','{T3}','{{"availability":"locked","availabilityControl":"rule_controlled"}}','{{"availability":"available","availabilityControl":"rule_controlled"}}');
+                        INSERT INTO transactions(player_id,transaction_type_code,resource,amount,applied_amount,occurred_at,captured_at,reason,source_kind,source_id,metadata_json) VALUES
+                          ('p1','xp','skill_xp',5,5,'{T3}','{T4}','lesson','skill','skill1','{{"previousXp":0,"currentXp":5,"source":"manual"}}');
                         INSERT INTO narrative_entries(id,player_id,kind_namespace,kind_code,title,content,metadata_json,created_at,updated_at) VALUES
                           ('content1','p1','narrative_entry','guide','Garden guide','A reusable guide.','{{}}','{T1}','{T3}');
                         INSERT INTO comments(author_player_id,target_kind,target_id,body,created_at,updated_at) VALUES
@@ -411,6 +417,29 @@ mod tests {
         assert!(items
             .iter()
             .any(|item| item.source_id == "record:quest_branch:branch1:created"));
+        let skill_xp = items
+            .iter()
+            .find(|item| {
+                item.category == TimelineCategory::Transaction
+                    && item.title.contains("Skill XP changed")
+            })
+            .unwrap();
+        assert_eq!(skill_xp.entity_kind, TimelineEntityKind::Skill);
+        assert_eq!(skill_xp.entity_id, "skill1");
+        assert!(skill_xp.summary.contains("requested 5 · applied 5 · 0 → 5"));
+        let skill_unlock = items
+            .iter()
+            .find(|item| item.source_id == "record:skill_history:sh1")
+            .unwrap();
+        assert!(skill_unlock.title.contains("Skill unlocked by Rule"));
+        let rule_deactivation = items
+            .iter()
+            .find(|item| item.source_id == "effect_history:eh2")
+            .unwrap();
+        assert!(rule_deactivation
+            .title
+            .contains("Effect deactivated by Rule"));
+        assert_eq!(rule_deactivation.state.as_deref(), Some("rule_deactivated"));
         let session_without_end = items
             .iter()
             .find(|item| item.source_id == "session:session2")
@@ -421,7 +450,10 @@ mod tests {
 
         let legacy_transaction = items
             .iter()
-            .find(|item| item.category == TimelineCategory::Transaction)
+            .find(|item| {
+                item.category == TimelineCategory::Transaction
+                    && !item.title.contains("Skill XP changed")
+            })
             .unwrap();
         assert_eq!(legacy_transaction.timestamp.as_str(), T2);
         assert!(legacy_transaction.secondary_timestamp.is_none());
@@ -500,7 +532,7 @@ mod tests {
 
         let effect = items
             .iter()
-            .find(|item| item.category == TimelineCategory::EffectHistory)
+            .find(|item| item.source_id == "effect_history:eh1")
             .unwrap();
         assert_eq!(effect.type_code.as_deref(), Some("buff"));
         assert_eq!(effect.state.as_deref(), Some("created"));
@@ -509,16 +541,21 @@ mod tests {
                 .iter()
                 .filter(|item| item.category == TimelineCategory::EffectHistory)
                 .count(),
-            1,
-            "elapsed expiry does not synthesize a history item"
+            2,
+            "only explicitly persisted Effect lifecycle facts appear; expiry creates none"
         );
 
         let mut tied = base_query("p1");
         tied.category = Some(TimelineCategory::Transaction);
         let tied_rows = store.query_timeline(&tied).unwrap();
-        assert_eq!(tied_rows.len(), 2);
+        assert_eq!(tied_rows.len(), 3);
+        let equal_timestamp_rows: Vec<_> = tied_rows
+            .iter()
+            .filter(|item| item.timestamp.as_str() == T2)
+            .collect();
+        assert_eq!(equal_timestamp_rows.len(), 2);
         assert!(
-            tied_rows[0].source_id < tied_rows[1].source_id,
+            equal_timestamp_rows[0].source_id < equal_timestamp_rows[1].source_id,
             "source identity deterministically breaks timestamp ties"
         );
     }

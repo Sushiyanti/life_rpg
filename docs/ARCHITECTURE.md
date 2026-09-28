@@ -7,7 +7,7 @@ decisions that will matter in later phases.
 For the product-specific vocabulary and current invariants, see the [Domain
 Design Codex](DOMAIN-DESIGN-CODEX.md), [Phase 2.1 report](PHASE-2.1-REPORT.md),
 the [Phase 3 report](PHASE-3-REPORT.md), [Phase 3.5 report](PHASE-3.5-REPORT.md),
-[Phase 3.6 report](PHASE-3.6-REPORT.md), and [Phase 4 report](PHASE-4-REPORT.md).
+[Phase 3.6 report](PHASE-3.6-REPORT.md), [Phase 4 report](PHASE-4-REPORT.md), [Phase 9 report](PHASE-9-REPORT.md), and [Phase 10 report](PHASE-10-REPORT.md).
 
 ---
 
@@ -246,15 +246,15 @@ blocking on a question. These were chosen during Phase 1:
 
 ### Vocabulary and trigger semantics
 
-The event is the trusted trigger source, distinct from a scheduled/state-only query. Version 1 emits `quest_completed`, `player_xp_changed`, `stat_changed`, and (Phase 3.5) `concept_progress_changed`; each Rust event variant has structured semantic fields. The event is serialized only for audit. A Rule definition has a schema version (currently 1), event-kind trigger, typed condition tree, and ordered closed action list. No rule column or payload is interpreted as executable code.
+The event is the trusted trigger source, distinct from a scheduled/state-only query. Phase 3 introduced `quest_completed`, `player_xp_changed`, `stat_changed`, and (Phase 3.5) `concept_progress_changed`; Phase 10 extends the same closed, typed vocabulary as described below. The event is serialized only for audit. A Rule definition has a schema version (currently 1), event-kind trigger, typed condition tree, and ordered closed action list. No rule column or payload is interpreted as executable code.
 
-Conditions support event-kind matching, numeric/text comparisons, `ALL`, `ANY`, and `NOT`. Numeric subjects are selected from event fields; asking an event for a subject it does not carry returns no match. This version does not query arbitrary current entity state or schedule evaluations. Actions support XP award/removal, valid Quest completion, setting/modifying a data-defined Player Stat, and the constrained `set_concept_progress` action. Concept actions check same-Player ownership, active data-defined track semantics/bounds, and finite values. Other action families remain deferred until their behavior is designed.
+Conditions support event-kind matching, numeric/text comparisons, `ALL`, `ANY`, and `NOT`. Numeric/text subjects are selected from event fields; a mismatched or absent field fails closed. Rules do not query arbitrary current entity state or schedule evaluations. Phase 3 actions include Player XP, Quest completion, Player Stats and constrained Concept progress; Phase 10 adds bounded Skill and Effect actions.
 
 ### Ordering and atomicity
 
 For a given event, enabled rules are ordered by priority descending, then stable Rule ID ascending. Rules are evaluated in that order. Ordered actions append follow-on typed events, processed FIFO after the current event's rule set. Iteration does not depend on SQL row order, frontend ordering, map iteration, or randomness. IDs/timestamps are supplied by application services, with event source order retained.
 
-The evaluator plans root and derived changes using validated domain values (`Player::apply_xp`, `Quest::complete`, `PlayerStat::new`, and Concept Progress Track transitions). It sends typed `RuleOperation`s and successful/condition-failed audit records through `WorldStore::apply_rule_chain`. The SQLite adapter rechecks expected prior values and ownership, inserts related XP Transactions and immutable Concept progress history, applies all Player/Quest/Stat/Concept state, and appends audit records in one transaction. Failure in a later action therefore commits none of the initiating state change or earlier planned actions. When the batch itself fails, the adapter transaction rolls back; the application attempts a separate failure-audit insert. No SQL or game-rule branches are placed in Tauri commands or React.
+The evaluator plans root and derived changes using validated domain values. It sends typed `RuleOperation`s and audit records through `WorldStore::apply_rule_chain`. SQLite rechecks expected prior values and ownership, inserts related Transactions and append-only history, applies all state and appends audit records in one transaction. Failure in a later action therefore commits none of the initiating state change or earlier planned actions. When the batch itself fails, the transaction rolls back; the application attempts a separate failure-audit insert. No SQL or game-rule branches are placed in Tauri commands or React.
 
 The execution audit is debugging history, not a replacement for Transactions or daily snapshots. It records Rule ID, chain ID, typed event kind/payload, condition result, configured actions, status/error, depth, and time; SQLite rejects updates/deletes to those rows.
 
@@ -262,7 +262,7 @@ The execution audit is debugging history, not a replacement for Transactions or 
 
 Conditions are nested at most 8 levels, each logical group has at most 16 children and the full tree at most 128 nodes; a Rule has at most 16 actions, a chain at most 32 actions and 64 evaluations, and maximum accepted chain depth is 8. The evaluator also rejects a repeated `(Rule ID, canonical event payload)` pair. A guard abort records its reason and leaves root/domain writes unapplied. These limits also bound malformed or accidental trigger cycles.
 
-There is no evaluator for arbitrary expressions, no script/action plug-in mechanism, no scheduler/daemon, and no distributed event bus. Conditions read only the typed event payload, not arbitrary live entity state. No skill XP/unlock, Effect activation, start/abandon/fail Quest action, or narrative action is exposed yet. Those omissions are deliberate; the Phase 4 UI consumes only supported operations and does not add gameplay rules.
+There is no evaluator for arbitrary expressions, no script/action plug-in mechanism, no scheduler/daemon, and no distributed event bus. Conditions read only typed event payloads, not arbitrary live state. Phase 10 adds only the documented Skill, explicit Session, and Effect operations; other action families remain deferred until their behavior is designed.
 
 ---
 
@@ -335,6 +335,7 @@ The first-generation scope intentionally defers unrestricted workspace authoring
 | **7** | Reusable authored Content/Guidance, timestamped closed-world relationships, Guidebook UI, and content-aware search | **complete in `phase-7-content-guidance`** |
 | **8** | Unified read-only, Player-scoped Timeline over persisted timestamp sources | **complete in `phase-8-timeline`** |
 | **9** | Reusable declarative Timeline workspace panels, exact-source/date filters, and relationship context navigation | **implemented on `phase-9-workspaces-presentation`** |
+| **10** | Explicit Skill XP/unlock and immediate Effect Rule actions, with bounded atomic chains and auditable history | **complete in `phase-10-gameplay-rules-progression`** |
 
 ### Phase 2.1 integrity decisions
 
@@ -407,3 +408,18 @@ The Timeline is now a reusable panel source in the Workspace registry and Builde
 Migration **15** adds nullable Timeline filter columns to `workspace_panels`, with source-specific closed-value, range, and non-Timeline guard constraints. Existing rows and their IDs/options remain intact and receive neutral (`NULL`) Timeline filters. Exact identity is scoped to the selected Player by the Timeline query; domain validation requires a closed entity kind when an exact ID is supplied. Relationship-history rows carry the persisted Content attachment ID, Content title, role, created/removed timestamps and existing target identity, so the Timeline can expose navigation to both records without changing either.
 
 Workspace transfer format **3** carries Timeline category, entity kind and inclusive date filters. Like other source-world-local entity IDs, an exact Timeline ID is never exported: it is represented by a non-identifying “specific local record” descriptor. Import previews call this out and leave that filter neutral until the player reselects a local record. Strict v1 and v2 files are validated and upgraded to v3; unknown versions, extra keys, unsupported source filters and invalid ranges fail closed. The application import remains one atomic declarative configuration write and imports no world records. See [Phase 9 report](PHASE-9-REPORT.md) for checks and native-smoke results.
+
+
+## 11. Phase 10 — explicit gameplay Rules and progression
+
+Phase 10 extends the existing interpreter; it does not add a second execution path. Its closed `RuleEvent`, `RuleCondition`, `RuleAction`, and `RuleOperation` types add Skill XP/unlock and explicit Session/Effect lifecycle operations. Rule conditions project only each typed event's declared values; unsupported or absent subjects evaluate false and invalid trigger/subject combinations fail validation. Serde rejects unknown fields and variants. The Rule authoring surface remains typed controls, not raw executable data.
+
+Skill XP is a separate ledger resource (`skill_xp`) with a Skill source ID. Requested and applied signed amounts, before/after XP, reason/source, occurrence and capture values remain inspectable. XP floors at zero and is independent from manually authored Skill level, label, invested time and lifecycle. Skill availability is separate from lifecycle. A small `manual`/`rule_controlled` authority field fails closed: explicit Player lock/unlock always works and returns authority to manual, while a Rule unlock is permitted only for Rule-controlled Skills. Already-unlocked is a successful audited no-op with no repeated history or follow-on event. No hierarchy-derived prerequisite or automatic level behavior exists.
+
+The new Rule actions are Skill XP adjustment, policy-checked Skill unlock, immediate Effect creation and actionable Effect deactivation. Effect creation uses the application clock and ordinary canonical identity/history, optional registered type/Concept target/intensity/expiry bounds, and no invented Session association. Manual and Rule deactivation write separate append-only Effect history and explicit source values. Expiration remains derived; it never writes, emits a Rule event or triggers a scheduler. Scheduled and expired Effects reject explicit deactivation. Session start/finish triggers are emitted only by actual Player commands and include only recorded values; optional result stays absent when not authored, and no duration/outcome is inferred.
+
+`WorldStore::apply_rule_chain` remains the sole persistence boundary for the root operation, all planned Skill/Effect/Session/Player/Quest/Stat/Concept changes, ledger/history rows and successful execution audits. The SQLite adapter validates owner and expected prior state and writes the entire successful plan in one SQLite transaction; later failure leaves no partial root or derived state. Guard/failure audit is handled by the established post-rollback path. Deterministic Rule priority/ID order, FIFO events, depth 8, action 32, evaluation 64, per-rule action 16, bounded conditions and repeated Rule/event detection remain unchanged. A Skill-XP self-trigger regression proves depth abort and full state/ledger rollback.
+
+Migration 16 is forward-only. It safely defaults historic Skills to available/manual and tags existing explicit Effect off records as manual, adds a narrow append-only Skill availability-history table, expands only closed Rule and Effect history values, and rebuilds the Transaction applied-delta constraint for Skill XP while preserving IDs, rows, FKs, search/Concept guards, and indexes. Tests cover fresh creation, schema-15 preservation and downgrade refusal. The existing Timeline query now projects Skill XP Transactions, Skill availability history and distinctly attributed Effect history; it remains a read-only composition of canonical records, with no copied event store.
+
+The feature remains inside the existing local boundary: React uses typed `CoreClient` methods, Tauri commands adapt DTOs, application services own decisions and injected time, and SQLite is confined to `lr-persistence`. No scheduler, daemon, external integration, code evaluation, general prerequisite graph, synthetic activity or Phase 11 feature is part of this change. See [Phase 10 report](PHASE-10-REPORT.md) for exact verification and native smoke results.

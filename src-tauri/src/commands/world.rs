@@ -3,9 +3,10 @@
 use crate::state::AppState;
 use lr_application::{NarrativeWrite, RuleDefinition, DEFAULT_LEDGER_LIMIT};
 use lr_contracts::world::{
-    AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
-    QuestDto, RuleDto, RuleExecutionDto, SkillDto, SkillSnapshotDto, SkillTreeDto,
-    StatDefinitionDto, TransactionDto, TypeDefinitionDto, WorldOverviewDto,
+    AwardSkillXpOutcomeDto, AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto,
+    PlayerSnapshotDto, PlayerStatDto, QuestDto, RuleDto, RuleExecutionDto, SkillDto,
+    SkillSnapshotDto, SkillTreeDto, StatDefinitionDto, TransactionDto, TypeDefinitionDto,
+    WorldOverviewDto,
 };
 use lr_contracts::CommandErrorDto;
 use tauri::State;
@@ -118,6 +119,46 @@ pub fn set_skill_progression(
     state
         .world
         .set_skill_progression(&skill_id, level, level_name, progression_label)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn adjust_skill_xp(
+    state: State<'_, AppState>,
+    skill_id: String,
+    requested_delta: i64,
+    reason: Option<String>,
+) -> Result<AwardSkillXpOutcomeDto, CommandErrorDto> {
+    state
+        .world
+        .adjust_skill_xp(&skill_id, requested_delta, reason)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn set_skill_availability(
+    state: State<'_, AppState>,
+    skill_id: String,
+    available: bool,
+) -> Result<SkillDto, CommandErrorDto> {
+    state
+        .world
+        .set_skill_availability(&skill_id, available)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn set_skill_availability_control(
+    state: State<'_, AppState>,
+    skill_id: String,
+    control: String,
+) -> Result<SkillDto, CommandErrorDto> {
+    let control = lr_domain::SkillAvailabilityControl::parse(&control)
+        .map_err(lr_application::AppError::from)
+        .map_err(CommandErrorDto::from)?;
+    state
+        .world
+        .set_skill_availability_control(&skill_id, control)
         .map(Into::into)
         .map_err(Into::into)
 }

@@ -18,9 +18,10 @@ pub use ports::{
 };
 pub use rules::{
     Comparison, EventKind, NumericSubject, ProgressMutationSource, Rule, RuleAction, RuleCondition,
-    RuleDefinition, RuleEvent, RuleExecutionError, RuleExecutionRecord, RuleOperation,
-    TextComparison, TextSubject, MAX_ACTIONS_PER_CHAIN, MAX_ACTIONS_PER_RULE, MAX_CONDITION_DEPTH,
-    MAX_RULE_CHAIN_DEPTH, MAX_RULE_EVALUATIONS_PER_CHAIN, RULE_SCHEMA_VERSION,
+    RuleDefinition, RuleEvent, RuleEventSource, RuleExecutionError, RuleExecutionRecord,
+    RuleOperation, SessionStatusEvent, TextComparison, TextSubject, MAX_ACTIONS_PER_CHAIN,
+    MAX_ACTIONS_PER_RULE, MAX_CONDITION_DEPTH, MAX_RULE_CHAIN_DEPTH,
+    MAX_RULE_EVALUATIONS_PER_CHAIN, RULE_SCHEMA_VERSION,
 };
 pub use search::{SearchEntityKind, SearchHit, SearchQuery, SearchSort};
 pub use semantics::{EffectWrite, SemanticsStore, WorkspacePanelImport};
@@ -31,7 +32,8 @@ pub use services::health::{
 pub use services::semantics::{QuestActivityDetail, QuestDetail, SemanticsService, SkillDetail};
 pub use services::timeline::TimelineService;
 pub use services::world::{
-    AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService, DEFAULT_LEDGER_LIMIT,
+    AwardSkillXpOutcome, AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService,
+    DEFAULT_LEDGER_LIMIT,
 };
 pub use timeline::{
     TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineRelationshipContext,

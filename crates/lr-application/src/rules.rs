@@ -1,8 +1,9 @@
 //! Declarative, versioned rule vocabulary. These types contain data only; they
 //! never contain source code or executable callbacks.
 use lr_domain::{
-    DomainError, DomainResult, EntityId, Iso8601Timestamp, Player, PlayerStat, Quest, QuestStatus,
-    Transaction,
+    DomainError, DomainResult, Effect, EffectHistoryEntry, EntityId, Iso8601Timestamp, Player,
+    PlayerStat, Quest, QuestSession, QuestStatus, SessionStatus, Skill, SkillAvailability,
+    SkillAvailabilityControl, SkillHistoryEntry, Transaction,
 };
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +23,12 @@ pub enum EventKind {
     PlayerXpChanged,
     StatChanged,
     ConceptProgressChanged,
+    SkillXpChanged,
+    SkillUnlocked,
+    SessionStarted,
+    SessionFinished,
+    EffectCreated,
+    EffectDeactivated,
 }
 impl EventKind {
     pub fn as_str(self) -> &'static str {
@@ -30,6 +37,12 @@ impl EventKind {
             Self::PlayerXpChanged => "player_xp_changed",
             Self::StatChanged => "stat_changed",
             Self::ConceptProgressChanged => "concept_progress_changed",
+            Self::SkillXpChanged => "skill_xp_changed",
+            Self::SkillUnlocked => "skill_unlocked",
+            Self::SessionStarted => "session_started",
+            Self::SessionFinished => "session_finished",
+            Self::EffectCreated => "effect_created",
+            Self::EffectDeactivated => "effect_deactivated",
         }
     }
 }
@@ -67,6 +80,97 @@ pub enum RuleEvent {
         current_value: f64,
         level: Option<i32>,
     },
+    SkillXpChanged {
+        player_id: String,
+        skill_id: String,
+        previous_xp: i64,
+        current_xp: i64,
+        requested_delta: i64,
+        applied_delta: i64,
+        source: RuleEventSource,
+    },
+    SkillUnlocked {
+        player_id: String,
+        skill_id: String,
+        was_available: bool,
+        source: RuleEventSource,
+    },
+    SessionStarted {
+        player_id: String,
+        session_id: String,
+        started_at: String,
+        quest_id: Option<String>,
+        stage_id: Option<String>,
+        branch_id: Option<String>,
+        skill_id: Option<String>,
+        concept_id: Option<String>,
+    },
+    SessionFinished {
+        player_id: String,
+        session_id: String,
+        started_at: String,
+        ended_at: String,
+        status: SessionStatusEvent,
+        result: Option<String>,
+        quest_id: Option<String>,
+        stage_id: Option<String>,
+        branch_id: Option<String>,
+        skill_id: Option<String>,
+        concept_id: Option<String>,
+    },
+    EffectCreated {
+        player_id: String,
+        effect_id: String,
+        type_code: String,
+        target_concept_id: Option<String>,
+        source: RuleEventSource,
+    },
+    EffectDeactivated {
+        player_id: String,
+        effect_id: String,
+        type_code: String,
+        source: RuleEventSource,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleEventSource {
+    Manual,
+    Rule,
+}
+impl RuleEventSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::Rule => "rule",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionStatusEvent {
+    Completed,
+    Interrupted,
+}
+impl SessionStatusEvent {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Interrupted => "interrupted",
+        }
+    }
+    pub fn from_domain(value: SessionStatus) -> DomainResult<Self> {
+        match value {
+            SessionStatus::Completed => Ok(Self::Completed),
+            SessionStatus::Interrupted => Ok(Self::Interrupted),
+            SessionStatus::InProgress => Err(DomainError::invalid_value(
+                "Session event status",
+                "a finished Session must be completed or interrupted",
+            )),
+        }
+    }
 }
 impl RuleEvent {
     pub fn kind(&self) -> EventKind {
@@ -75,6 +179,12 @@ impl RuleEvent {
             Self::PlayerXpChanged { .. } => EventKind::PlayerXpChanged,
             Self::StatChanged { .. } => EventKind::StatChanged,
             Self::ConceptProgressChanged { .. } => EventKind::ConceptProgressChanged,
+            Self::SkillXpChanged { .. } => EventKind::SkillXpChanged,
+            Self::SkillUnlocked { .. } => EventKind::SkillUnlocked,
+            Self::SessionStarted { .. } => EventKind::SessionStarted,
+            Self::SessionFinished { .. } => EventKind::SessionFinished,
+            Self::EffectCreated { .. } => EventKind::EffectCreated,
+            Self::EffectDeactivated { .. } => EventKind::EffectDeactivated,
         }
     }
     pub fn player_id(&self) -> &str {
@@ -82,7 +192,13 @@ impl RuleEvent {
             Self::QuestCompleted { player_id, .. }
             | Self::PlayerXpChanged { player_id, .. }
             | Self::StatChanged { player_id, .. } => player_id,
-            Self::ConceptProgressChanged { player_id, .. } => player_id,
+            Self::ConceptProgressChanged { player_id, .. }
+            | Self::SkillXpChanged { player_id, .. }
+            | Self::SkillUnlocked { player_id, .. }
+            | Self::SessionStarted { player_id, .. }
+            | Self::SessionFinished { player_id, .. }
+            | Self::EffectCreated { player_id, .. }
+            | Self::EffectDeactivated { player_id, .. } => player_id,
         }
     }
     pub(crate) fn loop_key(&self) -> String {
@@ -135,6 +251,21 @@ impl RuleEvent {
                 },
                 NumericSubject::ConceptProgressLevel,
             ) => Some(*value as f64),
+            (Self::SkillXpChanged { previous_xp, .. }, NumericSubject::PreviousSkillXp) => {
+                Some(*previous_xp as f64)
+            }
+            (Self::SkillXpChanged { current_xp, .. }, NumericSubject::CurrentSkillXp) => {
+                Some(*current_xp as f64)
+            }
+            (
+                Self::SkillXpChanged {
+                    requested_delta, ..
+                },
+                NumericSubject::RequestedSkillXpDelta,
+            ) => Some(*requested_delta as f64),
+            (Self::SkillXpChanged { applied_delta, .. }, NumericSubject::AppliedSkillXpDelta) => {
+                Some(*applied_delta as f64)
+            }
             _ => None,
         }
     }
@@ -148,6 +279,96 @@ impl RuleEvent {
             (Self::ConceptProgressChanged { track_code, .. }, TextSubject::ConceptTrackCode) => {
                 Some(track_code)
             }
+            (
+                Self::SkillXpChanged { skill_id, .. } | Self::SkillUnlocked { skill_id, .. },
+                TextSubject::SkillId,
+            ) => Some(skill_id),
+            (
+                Self::SessionStarted { session_id, .. } | Self::SessionFinished { session_id, .. },
+                TextSubject::SessionId,
+            ) => Some(session_id),
+            (
+                Self::SessionStarted {
+                    skill_id: Some(value),
+                    ..
+                }
+                | Self::SessionFinished {
+                    skill_id: Some(value),
+                    ..
+                },
+                TextSubject::SkillId,
+            ) => Some(value),
+            (
+                Self::SessionStarted {
+                    quest_id: Some(value),
+                    ..
+                }
+                | Self::SessionFinished {
+                    quest_id: Some(value),
+                    ..
+                },
+                TextSubject::QuestId,
+            ) => Some(value),
+            (
+                Self::SessionStarted {
+                    stage_id: Some(value),
+                    ..
+                }
+                | Self::SessionFinished {
+                    stage_id: Some(value),
+                    ..
+                },
+                TextSubject::QuestStageId,
+            ) => Some(value),
+            (
+                Self::SessionStarted {
+                    branch_id: Some(value),
+                    ..
+                }
+                | Self::SessionFinished {
+                    branch_id: Some(value),
+                    ..
+                },
+                TextSubject::QuestBranchId,
+            ) => Some(value),
+            (
+                Self::SessionStarted {
+                    concept_id: Some(value),
+                    ..
+                }
+                | Self::SessionFinished {
+                    concept_id: Some(value),
+                    ..
+                },
+                TextSubject::ConceptId,
+            ) => Some(value),
+            (Self::SessionFinished { status, .. }, TextSubject::SessionStatus) => {
+                Some(status.as_str())
+            }
+            (
+                Self::SessionFinished {
+                    result: Some(value),
+                    ..
+                },
+                TextSubject::SessionResult,
+            ) => Some(value),
+            (Self::SkillUnlocked { source, .. }, TextSubject::EventSource)
+            | (Self::SkillXpChanged { source, .. }, TextSubject::EventSource)
+            | (Self::EffectCreated { source, .. }, TextSubject::EffectSource)
+            | (Self::EffectDeactivated { source, .. }, TextSubject::EffectSource) => {
+                Some(source.as_str())
+            }
+            (
+                Self::EffectCreated { type_code, .. } | Self::EffectDeactivated { type_code, .. },
+                TextSubject::EffectTypeCode,
+            ) => Some(type_code),
+            (
+                Self::EffectCreated {
+                    target_concept_id: Some(value),
+                    ..
+                },
+                TextSubject::ConceptId,
+            ) => Some(value),
             _ => None,
         }
     }
@@ -189,6 +410,10 @@ pub enum NumericSubject {
     PreviousProgress,
     CurrentProgress,
     ConceptProgressLevel,
+    PreviousSkillXp,
+    CurrentSkillXp,
+    RequestedSkillXpDelta,
+    AppliedSkillXpDelta,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -197,6 +422,17 @@ pub enum TextSubject {
     StatCode,
     ConceptType,
     ConceptTrackCode,
+    SkillId,
+    SessionId,
+    QuestId,
+    QuestStageId,
+    QuestBranchId,
+    ConceptId,
+    SessionStatus,
+    SessionResult,
+    EventSource,
+    EffectTypeCode,
+    EffectSource,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -314,6 +550,13 @@ impl RuleCondition {
                                 | NumericSubject::CurrentProgress
                                 | NumericSubject::ConceptProgressLevel
                         )
+                        | (
+                            EventKind::SkillXpChanged,
+                            NumericSubject::PreviousSkillXp
+                                | NumericSubject::CurrentSkillXp
+                                | NumericSubject::RequestedSkillXpDelta
+                                | NumericSubject::AppliedSkillXpDelta
+                        )
                 ) =>
             {
                 Err(DomainError::invalid_value(
@@ -335,6 +578,44 @@ impl RuleCondition {
                         | (
                             EventKind::ConceptProgressChanged,
                             TextSubject::ConceptType | TextSubject::ConceptTrackCode
+                        )
+                        | (
+                            EventKind::SkillXpChanged,
+                            TextSubject::SkillId | TextSubject::EventSource
+                        )
+                        | (
+                            EventKind::SkillUnlocked,
+                            TextSubject::SkillId | TextSubject::EventSource
+                        )
+                        | (
+                            EventKind::SessionStarted,
+                            TextSubject::SessionId
+                                | TextSubject::QuestId
+                                | TextSubject::QuestStageId
+                                | TextSubject::QuestBranchId
+                                | TextSubject::SkillId
+                                | TextSubject::ConceptId
+                        )
+                        | (
+                            EventKind::SessionFinished,
+                            TextSubject::SessionId
+                                | TextSubject::QuestId
+                                | TextSubject::QuestStageId
+                                | TextSubject::QuestBranchId
+                                | TextSubject::SkillId
+                                | TextSubject::ConceptId
+                                | TextSubject::SessionStatus
+                                | TextSubject::SessionResult
+                        )
+                        | (
+                            EventKind::EffectCreated,
+                            TextSubject::ConceptId
+                                | TextSubject::EffectTypeCode
+                                | TextSubject::EffectSource
+                        )
+                        | (
+                            EventKind::EffectDeactivated,
+                            TextSubject::EffectTypeCode | TextSubject::EffectSource
                         )
                 ) =>
             {
@@ -390,6 +671,25 @@ pub enum RuleAction {
         value: f64,
         level: Option<i32>,
     },
+    AwardSkillXp {
+        skill_id: String,
+        delta: i64,
+        reason: Option<String>,
+    },
+    UnlockSkill {
+        skill_id: String,
+    },
+    ApplyEffect {
+        type_code: String,
+        name: String,
+        description: Option<String>,
+        target_concept_id: Option<String>,
+        intensity: i32,
+        expires_in_seconds: Option<u32>,
+    },
+    DeactivateEffect {
+        effect_id: String,
+    },
 }
 impl RuleAction {
     fn validate(&self) -> DomainResult<()> {
@@ -432,6 +732,50 @@ impl RuleAction {
             Self::SetConceptProgress { concept_id, track_code, value, level }
                 if concept_id.trim().is_empty() || concept_id.len()>160 || track_code.trim().is_empty() || track_code.len()>160 || !value.is_finite() || level.is_some_and(|n|n<1) =>
             { Err(DomainError::invalid_value("rule Concept progress action","requires valid Concept/track identifiers, a finite value, and positive optional level")) }
+            Self::AwardSkillXp { skill_id, delta, reason }
+                if skill_id.trim().is_empty()
+                    || skill_id.len() > 160
+                    || *delta == 0
+                    || reason.as_ref().is_some_and(|v| v.len() > 512) =>
+            {
+                Err(DomainError::invalid_value(
+                    "rule Skill XP action",
+                    "requires a Skill ID, nonzero delta, and at most 512 reason bytes",
+                ))
+            }
+            Self::UnlockSkill { skill_id }
+                if skill_id.trim().is_empty() || skill_id.len() > 160 =>
+            {
+                Err(DomainError::invalid_value("rule Skill unlock action", "requires a Skill ID"))
+            }
+            Self::ApplyEffect {
+                type_code,
+                name,
+                description,
+                target_concept_id,
+                intensity,
+                expires_in_seconds,
+            } if type_code.trim().is_empty()
+                || type_code.len() > 160
+                || name.trim().is_empty()
+                || name.len() > 160
+                || description.as_ref().is_some_and(|v| v.len() > 2000)
+                || target_concept_id
+                    .as_ref()
+                    .is_some_and(|v| v.trim().is_empty() || v.len() > 160)
+                || *intensity <= 0
+                || expires_in_seconds.is_some_and(|v| v == 0 || v > 31_536_000) =>
+            {
+                Err(DomainError::invalid_value(
+                    "rule Effect action",
+                    "requires valid identifiers, name, positive intensity, and an optional duration up to one year",
+                ))
+            }
+            Self::DeactivateEffect { effect_id }
+                if effect_id.trim().is_empty() || effect_id.len() > 160 =>
+            {
+                Err(DomainError::invalid_value("rule Effect deactivation action", "requires an Effect ID"))
+            }
             _ => Ok(()),
         }
     }
@@ -571,6 +915,35 @@ pub enum RuleOperation {
         track: lr_domain::ConceptProgressTrack,
         expected_previous: Option<f64>,
         history: lr_domain::ConceptProgressEntry,
+    },
+    SkillXp {
+        skill: Skill,
+        previous_xp: i64,
+        transaction: Transaction,
+    },
+    SkillAvailability {
+        skill: Skill,
+        expected_availability: SkillAvailability,
+        expected_control: SkillAvailabilityControl,
+        history: SkillHistoryEntry,
+    },
+    CreateEffect {
+        effect: Effect,
+        history: Vec<EffectHistoryEntry>,
+        session_link: Option<lr_domain::SessionEffect>,
+    },
+    DeactivateEffect {
+        effect: Effect,
+        expected_deactivated_at: Option<Iso8601Timestamp>,
+        history: Vec<EffectHistoryEntry>,
+        session_link: Option<lr_domain::SessionEffect>,
+    },
+    StartSession {
+        session: QuestSession,
+    },
+    FinishSession {
+        session: QuestSession,
+        expected_status: SessionStatus,
     },
     ResolveProgressSuggestion {
         suggestion_id: EntityId,

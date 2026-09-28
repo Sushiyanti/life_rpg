@@ -6,7 +6,7 @@ import { SessionEffectsPanel } from '../features/world/SessionEffectsPanel';
 
 afterEach(cleanup);
 const player:Player={id:'p1',name:'Test Player',description:null,level:1,levelName:null,progressionLabel:null,currentXp:0,isActive:true,metadataJson:'{}',createdAt:'2026-01-01T00:00:00Z',updatedAt:'2026-01-01T00:00:00Z'};
-const effect:Effect={id:'e1',playerId:'p1',targetKind:'player',targetConceptId:null,typeCode:'buff',name:'Focus',description:'Recorded state',startedAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-02T00:00:00Z',deactivatedAt:null,intensity:1};
+const effect:Effect={id:'e1',playerId:'p1',targetKind:'player',targetConceptId:null,typeCode:'buff',name:'Focus',description:'Recorded state',startedAt:'2026-01-01T00:00:00Z',expiresAt:'2026-01-02T00:00:00Z',deactivatedAt:null,deactivationSource:null,intensity:1};
 const link:SessionEffect={id:'se1',playerId:'p1',sessionId:'s1',effectId:'e1',role:'relevant',addedAt:'2026-01-01T00:00:00Z',removedAt:null};
 const types:EffectType[]=[{code:'buff',label:'Buff',description:null,sortOrder:0}];const concepts:Concept[]=[];
 
