@@ -29,6 +29,7 @@ pub mod migrations;
 pub mod pragma;
 pub mod semantics_store;
 pub mod sqlite_store;
+pub mod tag_store;
 pub mod timeline_store;
 pub mod world_store;
 

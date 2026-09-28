@@ -21,6 +21,7 @@ pub mod skill;
 pub mod skill_history;
 pub mod snapshot;
 pub mod stat;
+pub mod tag;
 pub mod transaction;
 pub mod type_definition;
 pub mod value;
@@ -50,6 +51,10 @@ pub use skill::{Skill, SkillAvailability, SkillAvailabilityControl, SkillStatus,
 pub use skill_history::{SkillHistoryEntry, SkillHistoryKind, SkillHistorySource};
 pub use snapshot::{PlayerStateSnapshot, SkillStateSnapshot};
 pub use stat::{PlayerStat, StatDefinition};
+pub use tag::{
+    normalize_tag_name, validate_tag_filter, Tag, TagMatchMode, TagRelationship, TagTargetKind,
+    TagTargetReference, TaggedRecord,
+};
 pub use transaction::Transaction;
 pub use type_definition::{TypeDefinition, TypeRef};
 pub use value::{DateValue, EntityId, Iso8601Timestamp, SchemaVersion};

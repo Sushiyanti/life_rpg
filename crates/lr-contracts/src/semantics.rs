@@ -98,6 +98,8 @@ pub struct WorkspacePanelDto {
     pub filter_active: Option<bool>,
     pub filter_type_code: Option<String>,
     pub filter_concept_id: Option<String>,
+    pub filter_tag_ids: Vec<String>,
+    pub filter_tag_match: String,
     pub filter_recent_days: Option<i32>,
     pub filter_timeline_category: Option<String>,
     pub filter_timeline_entity_kind: Option<String>,
@@ -127,6 +129,12 @@ impl From<WorkspacePanel> for WorkspacePanelDto {
             filter_active: v.filter_active,
             filter_type_code: v.filter_type_code,
             filter_concept_id: v.filter_concept_id.map(|x| x.to_string()),
+            filter_tag_ids: v
+                .filter_tag_ids
+                .into_iter()
+                .map(|id| id.to_string())
+                .collect(),
+            filter_tag_match: v.filter_tag_match.as_str().into(),
             filter_recent_days: v.filter_recent_days,
             filter_timeline_category: v.filter_timeline_category,
             filter_timeline_entity_kind: v.filter_timeline_entity_kind,
@@ -478,6 +486,8 @@ pub struct SearchQueryDto {
     pub kind: Option<String>,
     pub player_id: Option<String>,
     pub concept_id: Option<String>,
+    pub tag_ids: Vec<String>,
+    pub tag_match: String,
     pub type_code: Option<String>,
     pub status: Option<String>,
     pub active: Option<bool>,
@@ -499,6 +509,8 @@ impl From<SearchQuery> for SearchQueryDto {
             kind: v.kind.map(|x| x.as_str().into()),
             player_id: v.player_id.map(|x| x.to_string()),
             concept_id: v.concept_id.map(|x| x.to_string()),
+            tag_ids: v.tag_ids.into_iter().map(|id| id.to_string()).collect(),
+            tag_match: v.tag_match.as_str().into(),
             type_code: v.type_code,
             status: v.status,
             active: v.active,
@@ -563,6 +575,94 @@ impl From<SearchHit> for SearchHitDto {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagDto {
+    pub id: String,
+    pub player_id: String,
+    pub transfer_key: String,
+    pub name: String,
+    pub normalized_name: String,
+    pub description: Option<String>,
+    pub lifecycle: String,
+    pub usage_count: u32,
+    pub created_at: String,
+    pub updated_at: String,
+}
+impl From<lr_domain::Tag> for TagDto {
+    fn from(v: lr_domain::Tag) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            transfer_key: v.transfer_key,
+            name: v.name,
+            normalized_name: v.normalized_name,
+            description: v.description,
+            lifecycle: v.lifecycle.as_str().into(),
+            usage_count: v.usage_count,
+            created_at: v.created_at.to_string(),
+            updated_at: v.updated_at.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagRelationshipDto {
+    pub id: String,
+    pub player_id: String,
+    pub tag_id: String,
+    pub target_kind: String,
+    pub target_id: String,
+    pub added_at: String,
+    pub removed_at: Option<String>,
+}
+impl From<lr_domain::TagRelationship> for TagRelationshipDto {
+    fn from(v: lr_domain::TagRelationship) -> Self {
+        Self {
+            id: v.id.to_string(),
+            player_id: v.player_id.to_string(),
+            tag_id: v.tag_id.to_string(),
+            target_kind: v.target_kind.as_str().into(),
+            target_id: v.target_id,
+            added_at: v.added_at.to_string(),
+            removed_at: v.removed_at.map(|at| at.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaggedRecordDto {
+    pub relationship: TagRelationshipDto,
+    pub tag: TagDto,
+}
+impl From<lr_domain::TaggedRecord> for TaggedRecordDto {
+    fn from(v: lr_domain::TaggedRecord) -> Self {
+        Self {
+            relationship: v.relationship.into(),
+            tag: v.tag.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagTargetReferenceDto {
+    pub relationship: TagRelationshipDto,
+    pub target_name: String,
+    pub target_lifecycle: Option<String>,
+}
+impl From<lr_domain::TagTargetReference> for TagTargetReferenceDto {
+    fn from(v: lr_domain::TagTargetReference) -> Self {
+        Self {
+            relationship: v.relationship.into(),
+            target_name: v.target_name,
+            target_lifecycle: v.target_lifecycle.map(|state| state.as_str().into()),
+        }
+    }
+}
+
 /// One declarative panel sent only after portable Concept references are resolved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -575,6 +675,9 @@ pub struct WorkspaceImportPanelDto {
     pub filter_active: Option<bool>,
     pub filter_type_code: Option<String>,
     pub filter_concept_id: Option<String>,
+    /// Destination-local Tag IDs after explicit transfer-reference resolution.
+    pub filter_tag_ids: Vec<String>,
+    pub filter_tag_match: String,
     pub filter_recent_days: Option<i32>,
     pub filter_timeline_category: Option<String>,
     pub filter_timeline_entity_kind: Option<String>,

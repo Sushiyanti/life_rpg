@@ -15,5 +15,6 @@
 pub mod concepts;
 pub mod semantics;
 pub mod status;
+pub mod tags;
 pub mod timeline;
 pub mod world;

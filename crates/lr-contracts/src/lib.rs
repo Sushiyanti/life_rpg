@@ -410,6 +410,8 @@ mod tests {
             filter_active: None,
             filter_type_code: Some("main".into()),
             filter_concept_id: Some(EntityId::new("concept-1").unwrap()),
+            filter_tag_ids: vec![EntityId::new("tag-1").unwrap()],
+            filter_tag_match: lr_domain::TagMatchMode::All,
             filter_recent_days: Some(30),
             filter_timeline_category: None,
             filter_timeline_entity_kind: None,
@@ -444,6 +446,8 @@ mod tests {
             "filterActive",
             "filterTypeCode",
             "filterConceptId",
+            "filterTagIds",
+            "filterTagMatch",
             "filterRecentDays",
             "filterTimelineCategory",
             "filterTimelineEntityKind",
@@ -463,6 +467,8 @@ mod tests {
             assert!(keys.contains(&key), "workspace panel DTO missing `{key}`");
         }
         assert_eq!(json["filterConceptId"], "concept-1");
+        assert_eq!(json["filterTagIds"], serde_json::json!(["tag-1"]));
+        assert_eq!(json["filterTagMatch"], "all");
         assert_eq!(json["gridSpan"], 2);
         assert!(json.get("executable").is_none());
     }

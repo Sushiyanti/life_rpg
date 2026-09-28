@@ -3,15 +3,15 @@ use crate::{
     rules::{
         ProgressMutationSource, RuleEvent, RuleEventSource, RuleOperation, SessionStatusEvent,
     },
-    AppError, Clock, ConceptStore, EffectWrite, SearchQuery, SearchStore, SemanticsStore,
+    AppError, Clock, ConceptStore, EffectWrite, SearchQuery, SearchStore, SemanticsStore, TagStore,
     WorldStore,
 };
 use lr_domain::{
     AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, DateValue,
     Effect, EffectHistoryEntry, EffectHistoryKind, EntityId, EntityRevision, Iso8601Timestamp,
     LifecycleState, PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession,
-    QuestStage, RevisionTargetKind, SessionEffect, SessionEffectRole, SessionStatus, TypeRef,
-    Workspace, WorkspacePanel,
+    QuestStage, RevisionTargetKind, SessionEffect, SessionEffectRole, SessionStatus, TagMatchMode,
+    TypeRef, Workspace, WorkspacePanel,
 };
 use std::{
     collections::HashSet,
@@ -92,7 +92,7 @@ pub struct SemanticsService<S, C> {
 }
 impl<S, C> SemanticsService<S, C>
 where
-    S: WorldStore + ConceptStore + SearchStore + SemanticsStore,
+    S: WorldStore + ConceptStore + SearchStore + SemanticsStore + TagStore,
     C: Clock,
 {
     pub fn new(store: S, clock: C) -> Self {
@@ -1152,6 +1152,12 @@ where
                 filter_active: import.filter_active,
                 filter_type_code: import.filter_type_code,
                 filter_concept_id: import.filter_concept_id.map(EntityId::new).transpose()?,
+                filter_tag_ids: import
+                    .filter_tag_ids
+                    .iter()
+                    .map(|id| EntityId::new(id.clone()))
+                    .collect::<Result<Vec<_>, _>>()?,
+                filter_tag_match: import.filter_tag_match,
                 filter_recent_days: import.filter_recent_days,
                 filter_timeline_category: import.filter_timeline_category,
                 filter_timeline_entity_kind: import.filter_timeline_entity_kind,
@@ -1189,6 +1195,17 @@ where
                     )
                     .into());
                 }
+            }
+            if !panel.filter_tag_ids.is_empty()
+                && !self
+                    .store
+                    .tag_ids_belong_to_player(&player_id, &panel.filter_tag_ids, true)?
+            {
+                return Err(lr_domain::DomainError::invalid_value(
+                    "workspace Tag filter",
+                    "every selected Tag must be active and belong to the destination Player world",
+                )
+                .into());
             }
             panels.push(panel);
         }
@@ -1248,6 +1265,8 @@ where
         filter_active: Option<bool>,
         filter_type_code: Option<&str>,
         filter_concept_id: Option<&str>,
+        filter_tag_ids: Vec<String>,
+        filter_tag_match: TagMatchMode,
         filter_recent_days: Option<i32>,
         filter_timeline_category: Option<&str>,
         filter_timeline_entity_kind: Option<&str>,
@@ -1278,6 +1297,11 @@ where
             filter_active,
             filter_type_code: filter_type_code.map(str::to_string),
             filter_concept_id: filter_concept_id.map(EntityId::new).transpose()?,
+            filter_tag_ids: filter_tag_ids
+                .iter()
+                .map(|id| EntityId::new(id.clone()))
+                .collect::<Result<Vec<_>, _>>()?,
+            filter_tag_match,
             filter_recent_days,
             filter_timeline_category: filter_timeline_category.map(str::to_string),
             filter_timeline_entity_kind: filter_timeline_entity_kind.map(str::to_string),
@@ -1295,8 +1319,19 @@ where
             updated_at: now,
         };
         panel.validate()?;
-        self.store
-            .save_workspace_panel(&EntityId::new(player_id)?, &panel)?;
+        let player = EntityId::new(player_id)?;
+        if !panel.filter_tag_ids.is_empty()
+            && !self
+                .store
+                .tag_ids_belong_to_player(&player, &panel.filter_tag_ids, true)?
+        {
+            return Err(lr_domain::DomainError::invalid_value(
+                "workspace Tag filter",
+                "every selected Tag must be active and belong to the active Player world",
+            )
+            .into());
+        }
+        self.store.save_workspace_panel(&player, &panel)?;
         Ok(panel)
     }
     pub fn list_workspace_panels(

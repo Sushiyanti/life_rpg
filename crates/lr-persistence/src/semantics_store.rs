@@ -600,9 +600,19 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
                         return Err(op("imported Concept filter does not belong to the destination Player world"));
                     }
                 }
+                let tag_ids_json = serde_json::to_string(&panel.filter_tag_ids.iter().map(EntityId::as_str).collect::<Vec<_>>()).map_err(op)?;
+                if !panel.filter_tag_ids.is_empty() {
+                    let tag_count: i64 = tx.query_row(
+                        "SELECT COUNT(DISTINCT t.id) FROM json_each(?2) j JOIN tags t ON t.id=j.value AND t.player_id=?1 LEFT JOIN entity_lifecycle el ON el.target_kind='tag' AND el.target_id=t.id WHERE COALESCE(el.state,'active')='active'",
+                        params![workspace.player_id.as_str(),tag_ids_json],|r|r.get(0),
+                    ).map_err(op)?;
+                    if tag_count != panel.filter_tag_ids.len() as i64 {
+                        return Err(op("imported Tag filter must resolve to active Tags in the destination Player world"));
+                    }
+                }
                 tx.execute(
-                    "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?19)",
-                    params![panel.id.as_str(),workspace.id.as_str(),panel.panel_type,panel.title,panel.variant,panel.density,panel.filter_status,panel.filter_active.map(i64::from),panel.filter_type_code,panel.filter_concept_id.as_ref().map(EntityId::as_str),panel.filter_recent_days,panel.sort_by,panel.item_limit,panel.sort_order,panel.grid_span,panel.is_visible as i64,panel.is_pinned as i64,panel.is_collapsed as i64,panel.created_at.as_str()],
+                    "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,filter_timeline_category,filter_timeline_entity_kind,filter_timeline_entity_id,filter_timeline_from,filter_timeline_through,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at,filter_tag_ids_json,filter_tag_match) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?24,?25,?26)",
+                    params![panel.id.as_str(),workspace.id.as_str(),panel.panel_type,panel.title,panel.variant,panel.density,panel.filter_status,panel.filter_active.map(i64::from),panel.filter_type_code,panel.filter_concept_id.as_ref().map(EntityId::as_str),panel.filter_recent_days,panel.filter_timeline_category,panel.filter_timeline_entity_kind,panel.filter_timeline_entity_id,panel.filter_timeline_from.as_ref().map(DateValue::as_str),panel.filter_timeline_through.as_ref().map(DateValue::as_str),panel.sort_by,panel.item_limit,panel.sort_order,panel.grid_span,panel.is_visible as i64,panel.is_pinned as i64,panel.is_collapsed as i64,panel.created_at.as_str(),tag_ids_json,panel.filter_tag_match.as_str()],
                 ).map_err(op)?;
             }
             tx.commit().map_err(op)
@@ -731,9 +741,17 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
                 ).map_err(op)?;
                 if concept_owner != 1 { return Err(op("Concept filter must belong to the workspace Player")); }
             }
+            let tag_ids_json = serde_json::to_string(&v.filter_tag_ids.iter().map(EntityId::as_str).collect::<Vec<_>>()).map_err(op)?;
+            if !v.filter_tag_ids.is_empty() {
+                let tag_count: i64 = d.query_row(
+                    "SELECT COUNT(DISTINCT t.id) FROM json_each(?2) j JOIN tags t ON t.id=j.value AND t.player_id=?1 LEFT JOIN entity_lifecycle el ON el.target_kind='tag' AND el.target_id=t.id WHERE COALESCE(el.state,'active')='active'",
+                    params![player.as_str(),tag_ids_json],|r|r.get(0),
+                ).map_err(op)?;
+                if tag_count != v.filter_tag_ids.len() as i64 { return Err(op("Tag filters must belong to the workspace Player and be active")); }
+            }
             let n=d.execute(
-                "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,filter_timeline_category,filter_timeline_entity_kind,filter_timeline_entity_id,filter_timeline_from,filter_timeline_through,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25) ON CONFLICT(id) DO UPDATE SET panel_type=excluded.panel_type,title=excluded.title,variant=excluded.variant,density=excluded.density,filter_status=excluded.filter_status,filter_active=excluded.filter_active,filter_type_code=excluded.filter_type_code,filter_concept_id=excluded.filter_concept_id,filter_recent_days=excluded.filter_recent_days,filter_timeline_category=excluded.filter_timeline_category,filter_timeline_entity_kind=excluded.filter_timeline_entity_kind,filter_timeline_entity_id=excluded.filter_timeline_entity_id,filter_timeline_from=excluded.filter_timeline_from,filter_timeline_through=excluded.filter_timeline_through,sort_by=excluded.sort_by,item_limit=excluded.item_limit,sort_order=excluded.sort_order,grid_span=excluded.grid_span,is_visible=excluded.is_visible,is_pinned=excluded.is_pinned,is_collapsed=excluded.is_collapsed,updated_at=excluded.updated_at WHERE workspace_panels.workspace_id=excluded.workspace_id",
-                params![v.id.as_str(),v.workspace_id.as_str(),v.panel_type,v.title,v.variant,v.density,v.filter_status,v.filter_active.map(i64::from),v.filter_type_code,v.filter_concept_id.as_ref().map(EntityId::as_str),v.filter_recent_days,v.filter_timeline_category,v.filter_timeline_entity_kind,v.filter_timeline_entity_id,v.filter_timeline_from.as_ref().map(DateValue::as_str),v.filter_timeline_through.as_ref().map(DateValue::as_str),v.sort_by,v.item_limit,v.sort_order,v.grid_span,v.is_visible as i64,v.is_pinned as i64,v.is_collapsed as i64,v.created_at.as_str(),v.updated_at.as_str()]
+                "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,filter_timeline_category,filter_timeline_entity_kind,filter_timeline_entity_id,filter_timeline_from,filter_timeline_through,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at,filter_tag_ids_json,filter_tag_match) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27) ON CONFLICT(id) DO UPDATE SET panel_type=excluded.panel_type,title=excluded.title,variant=excluded.variant,density=excluded.density,filter_status=excluded.filter_status,filter_active=excluded.filter_active,filter_type_code=excluded.filter_type_code,filter_concept_id=excluded.filter_concept_id,filter_recent_days=excluded.filter_recent_days,filter_timeline_category=excluded.filter_timeline_category,filter_timeline_entity_kind=excluded.filter_timeline_entity_kind,filter_timeline_entity_id=excluded.filter_timeline_entity_id,filter_timeline_from=excluded.filter_timeline_from,filter_timeline_through=excluded.filter_timeline_through,sort_by=excluded.sort_by,item_limit=excluded.item_limit,sort_order=excluded.sort_order,grid_span=excluded.grid_span,is_visible=excluded.is_visible,is_pinned=excluded.is_pinned,is_collapsed=excluded.is_collapsed,filter_tag_ids_json=excluded.filter_tag_ids_json,filter_tag_match=excluded.filter_tag_match,updated_at=excluded.updated_at WHERE workspace_panels.workspace_id=excluded.workspace_id",
+                params![v.id.as_str(),v.workspace_id.as_str(),v.panel_type,v.title,v.variant,v.density,v.filter_status,v.filter_active.map(i64::from),v.filter_type_code,v.filter_concept_id.as_ref().map(EntityId::as_str),v.filter_recent_days,v.filter_timeline_category,v.filter_timeline_entity_kind,v.filter_timeline_entity_id,v.filter_timeline_from.as_ref().map(DateValue::as_str),v.filter_timeline_through.as_ref().map(DateValue::as_str),v.sort_by,v.item_limit,v.sort_order,v.grid_span,v.is_visible as i64,v.is_pinned as i64,v.is_collapsed as i64,v.created_at.as_str(),v.updated_at.as_str(),tag_ids_json,v.filter_tag_match.as_str()]
             ).map_err(op)?;
             if n != 1 { return Err(op("panel id belongs to another workspace")); }
             Ok(())
@@ -757,12 +775,12 @@ RevisionTargetKind::ConceptProgress=>tx.execute("UPDATE concept_progress_tracks 
         w: &EntityId,
     ) -> Result<Vec<WorkspacePanel>, StorageError> {
         self.with_conn(|d| {
-            let mut s=d.prepare("SELECT p.id,p.workspace_id,p.panel_type,p.title,p.variant,p.density,p.filter_status,p.filter_active,p.filter_type_code,p.filter_concept_id,p.filter_recent_days,p.sort_by,p.item_limit,p.sort_order,p.grid_span,p.is_visible,p.is_pinned,p.is_collapsed,p.created_at,p.updated_at,p.filter_timeline_category,p.filter_timeline_entity_kind,p.filter_timeline_entity_id,p.filter_timeline_from,p.filter_timeline_through FROM workspace_panels p JOIN workspaces w ON w.id=p.workspace_id WHERE p.workspace_id=?1 AND w.player_id=?2 ORDER BY p.is_pinned DESC,p.sort_order,p.id").map_err(op)?;
+            let mut s=d.prepare("SELECT p.id,p.workspace_id,p.panel_type,p.title,p.variant,p.density,p.filter_status,p.filter_active,p.filter_type_code,p.filter_concept_id,p.filter_recent_days,p.sort_by,p.item_limit,p.sort_order,p.grid_span,p.is_visible,p.is_pinned,p.is_collapsed,p.created_at,p.updated_at,p.filter_timeline_category,p.filter_timeline_entity_kind,p.filter_timeline_entity_id,p.filter_timeline_from,p.filter_timeline_through,p.filter_tag_ids_json,p.filter_tag_match FROM workspace_panels p JOIN workspaces w ON w.id=p.workspace_id WHERE p.workspace_id=?1 AND w.player_id=?2 ORDER BY p.is_pinned DESC,p.sort_order,p.id").map_err(op)?;
             let mut rows=s.query(params![w.as_str(),player.as_str()]).map_err(op)?;
             let mut out=vec![];
             while let Some(r)=rows.next().map_err(op)? {
                 out.push(WorkspacePanel {
-                    id:eid(r.get(0).map_err(op)?)?, workspace_id:eid(r.get(1).map_err(op)?)?, panel_type:r.get(2).map_err(op)?, title:r.get(3).map_err(op)?, variant:r.get(4).map_err(op)?, density:r.get(5).map_err(op)?, filter_status:r.get(6).map_err(op)?, filter_active:r.get::<_,Option<i64>>(7).map_err(op)?.map(|v|v!=0), filter_type_code:r.get(8).map_err(op)?, filter_concept_id:r.get::<_,Option<String>>(9).map_err(op)?.map(eid).transpose()?, filter_recent_days:r.get(10).map_err(op)?, sort_by:r.get(11).map_err(op)?, item_limit:r.get(12).map_err(op)?, sort_order:r.get(13).map_err(op)?, grid_span:r.get(14).map_err(op)?, is_visible:r.get::<_,i64>(15).map_err(op)?!=0, is_pinned:r.get::<_,i64>(16).map_err(op)?!=0, is_collapsed:r.get::<_,i64>(17).map_err(op)?!=0, created_at:ts(r.get(18).map_err(op)?)?, updated_at:ts(r.get(19).map_err(op)?)?, filter_timeline_category:r.get(20).map_err(op)?, filter_timeline_entity_kind:r.get(21).map_err(op)?, filter_timeline_entity_id:r.get(22).map_err(op)?, filter_timeline_from:r.get::<_,Option<String>>(23).map_err(op)?.map(dv).transpose()?, filter_timeline_through:r.get::<_,Option<String>>(24).map_err(op)?.map(dv).transpose()?
+                    id:eid(r.get(0).map_err(op)?)?, workspace_id:eid(r.get(1).map_err(op)?)?, panel_type:r.get(2).map_err(op)?, title:r.get(3).map_err(op)?, variant:r.get(4).map_err(op)?, density:r.get(5).map_err(op)?, filter_status:r.get(6).map_err(op)?, filter_active:r.get::<_,Option<i64>>(7).map_err(op)?.map(|v|v!=0), filter_type_code:r.get(8).map_err(op)?, filter_concept_id:r.get::<_,Option<String>>(9).map_err(op)?.map(eid).transpose()?, filter_tag_ids:serde_json::from_str::<Vec<String>>(&r.get::<_,String>(25).map_err(op)?).map_err(op)?.into_iter().map(eid).collect::<Result<Vec<_>,_>>()?, filter_tag_match:TagMatchMode::parse(&r.get::<_,String>(26).map_err(op)?).map_err(op)?, filter_recent_days:r.get(10).map_err(op)?, sort_by:r.get(11).map_err(op)?, item_limit:r.get(12).map_err(op)?, sort_order:r.get(13).map_err(op)?, grid_span:r.get(14).map_err(op)?, is_visible:r.get::<_,i64>(15).map_err(op)?!=0, is_pinned:r.get::<_,i64>(16).map_err(op)?!=0, is_collapsed:r.get::<_,i64>(17).map_err(op)?!=0, created_at:ts(r.get(18).map_err(op)?)?, updated_at:ts(r.get(19).map_err(op)?)?, filter_timeline_category:r.get(20).map_err(op)?, filter_timeline_entity_kind:r.get(21).map_err(op)?, filter_timeline_entity_id:r.get(22).map_err(op)?, filter_timeline_from:r.get::<_,Option<String>>(23).map_err(op)?.map(dv).transpose()?, filter_timeline_through:r.get::<_,Option<String>>(24).map_err(op)?.map(dv).transpose()?
                 });
             }
             Ok(out)
@@ -863,6 +881,8 @@ mod tests {
                 None,
                 None,
                 Some(own_concept.id.as_str()),
+                Vec::new(),
+                lr_domain::TagMatchMode::Any,
                 None,
                 None,
                 None,
@@ -891,6 +911,8 @@ mod tests {
                 None,
                 None,
                 None,
+                Vec::new(),
+                lr_domain::TagMatchMode::Any,
                 Some(14),
                 None,
                 None,
@@ -931,6 +953,8 @@ mod tests {
                 None,
                 None,
                 None,
+                Vec::new(),
+                lr_domain::TagMatchMode::Any,
                 None,
                 None,
                 None,
@@ -960,6 +984,8 @@ mod tests {
                     None,
                     None,
                     Some(foreign_concept.id.as_str()),
+                    Vec::new(),
+                    lr_domain::TagMatchMode::Any,
                     None,
                     None,
                     None,
@@ -990,6 +1016,8 @@ mod tests {
                 None,
                 None,
                 None,
+                Vec::new(),
+                lr_domain::TagMatchMode::Any,
                 None,
                 None,
                 None,
@@ -1048,6 +1076,8 @@ mod tests {
                 None,
                 None,
                 None,
+                Vec::new(),
+                lr_domain::TagMatchMode::Any,
                 None,
                 None,
                 None,
@@ -1121,6 +1151,8 @@ mod tests {
                     None,
                     Some("main"),
                     None,
+                    Vec::new(),
+                    lr_domain::TagMatchMode::Any,
                     Some(21),
                     None,
                     None,
@@ -1938,6 +1970,8 @@ mod tests {
             filter_active: None,
             filter_type_code: None,
             filter_concept_id: Some(concept_id.clone()),
+            filter_tag_ids: Vec::new(),
+            filter_tag_match: lr_domain::TagMatchMode::Any,
             filter_recent_days: None,
             filter_timeline_category: None,
             filter_timeline_entity_kind: None,
@@ -2017,6 +2051,8 @@ mod tests {
             filter_active: None,
             filter_type_code: None,
             filter_concept_id: Some(concept_id.to_string()),
+            filter_tag_ids: Vec::new(),
+            filter_tag_match: lr_domain::TagMatchMode::Any,
             filter_recent_days: None,
             filter_timeline_category: None,
             filter_timeline_entity_kind: None,

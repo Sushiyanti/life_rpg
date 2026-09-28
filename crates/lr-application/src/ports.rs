@@ -442,6 +442,155 @@ impl<T: ConceptStore + ?Sized> ConceptStore for std::sync::Arc<T> {
         (**self).list_concept_snapshots(id)
     }
 }
+/// Persistence port for Player-owned Tags and their closed, explicit assignments.
+pub trait TagStore: Send + Sync {
+    fn insert_tag(&self, value: &lr_domain::Tag) -> Result<(), StorageError>;
+    fn get_tag(&self, id: &EntityId) -> Result<Option<lr_domain::Tag>, StorageError>;
+    fn find_tag_by_normalized_name(
+        &self,
+        player_id: &EntityId,
+        normalized_name: &str,
+        excluding_id: Option<&EntityId>,
+    ) -> Result<Option<lr_domain::Tag>, StorageError>;
+    fn update_tag(&self, value: &lr_domain::Tag) -> Result<(), StorageError>;
+    fn list_tags(
+        &self,
+        player_id: &EntityId,
+        search: Option<&str>,
+        include_archived: bool,
+        include_trashed: bool,
+        limit: u32,
+    ) -> Result<Vec<lr_domain::Tag>, StorageError>;
+    fn tag_target_belongs_to_player(
+        &self,
+        player_id: &EntityId,
+        target_kind: lr_domain::TagTargetKind,
+        target_id: &str,
+    ) -> Result<bool, StorageError>;
+    fn insert_tag_relationship(
+        &self,
+        value: &lr_domain::TagRelationship,
+    ) -> Result<(), StorageError>;
+    fn remove_tag_relationship(
+        &self,
+        player_id: &EntityId,
+        relationship_id: &EntityId,
+        removed_at: &Iso8601Timestamp,
+    ) -> Result<lr_domain::TagRelationship, StorageError>;
+    fn list_tagged_records(
+        &self,
+        player_id: &EntityId,
+        target_kind: lr_domain::TagTargetKind,
+        target_id: &str,
+    ) -> Result<Vec<lr_domain::TaggedRecord>, StorageError>;
+    fn list_tag_targets(
+        &self,
+        player_id: &EntityId,
+        tag_id: &EntityId,
+        include_removed: bool,
+        limit: u32,
+    ) -> Result<Vec<lr_domain::TagTargetReference>, StorageError>;
+    fn set_tag_lifecycle(
+        &self,
+        player_id: &EntityId,
+        tag_id: &EntityId,
+        state: lr_domain::LifecycleState,
+        occurred_at: &Iso8601Timestamp,
+        captured_at: &Iso8601Timestamp,
+        reason: Option<&str>,
+    ) -> Result<(), StorageError>;
+    fn tag_ids_belong_to_player(
+        &self,
+        player_id: &EntityId,
+        tag_ids: &[EntityId],
+        require_active: bool,
+    ) -> Result<bool, StorageError>;
+}
+impl<T: TagStore + ?Sized> TagStore for std::sync::Arc<T> {
+    fn insert_tag(&self, v: &lr_domain::Tag) -> Result<(), StorageError> {
+        (**self).insert_tag(v)
+    }
+    fn get_tag(&self, id: &EntityId) -> Result<Option<lr_domain::Tag>, StorageError> {
+        (**self).get_tag(id)
+    }
+    fn find_tag_by_normalized_name(
+        &self,
+        p: &EntityId,
+        n: &str,
+        x: Option<&EntityId>,
+    ) -> Result<Option<lr_domain::Tag>, StorageError> {
+        (**self).find_tag_by_normalized_name(p, n, x)
+    }
+    fn update_tag(&self, v: &lr_domain::Tag) -> Result<(), StorageError> {
+        (**self).update_tag(v)
+    }
+    fn list_tags(
+        &self,
+        p: &EntityId,
+        s: Option<&str>,
+        a: bool,
+        t: bool,
+        l: u32,
+    ) -> Result<Vec<lr_domain::Tag>, StorageError> {
+        (**self).list_tags(p, s, a, t, l)
+    }
+    fn tag_target_belongs_to_player(
+        &self,
+        p: &EntityId,
+        k: lr_domain::TagTargetKind,
+        id: &str,
+    ) -> Result<bool, StorageError> {
+        (**self).tag_target_belongs_to_player(p, k, id)
+    }
+    fn insert_tag_relationship(&self, v: &lr_domain::TagRelationship) -> Result<(), StorageError> {
+        (**self).insert_tag_relationship(v)
+    }
+    fn remove_tag_relationship(
+        &self,
+        p: &EntityId,
+        r: &EntityId,
+        at: &Iso8601Timestamp,
+    ) -> Result<lr_domain::TagRelationship, StorageError> {
+        (**self).remove_tag_relationship(p, r, at)
+    }
+    fn list_tagged_records(
+        &self,
+        p: &EntityId,
+        k: lr_domain::TagTargetKind,
+        id: &str,
+    ) -> Result<Vec<lr_domain::TaggedRecord>, StorageError> {
+        (**self).list_tagged_records(p, k, id)
+    }
+    fn list_tag_targets(
+        &self,
+        p: &EntityId,
+        tag: &EntityId,
+        removed: bool,
+        limit: u32,
+    ) -> Result<Vec<lr_domain::TagTargetReference>, StorageError> {
+        (**self).list_tag_targets(p, tag, removed, limit)
+    }
+    fn set_tag_lifecycle(
+        &self,
+        p: &EntityId,
+        tag: &EntityId,
+        state: lr_domain::LifecycleState,
+        occurred: &Iso8601Timestamp,
+        captured: &Iso8601Timestamp,
+        reason: Option<&str>,
+    ) -> Result<(), StorageError> {
+        (**self).set_tag_lifecycle(p, tag, state, occurred, captured, reason)
+    }
+    fn tag_ids_belong_to_player(
+        &self,
+        p: &EntityId,
+        ids: &[EntityId],
+        active: bool,
+    ) -> Result<bool, StorageError> {
+        (**self).tag_ids_belong_to_player(p, ids, active)
+    }
+}
+
 pub trait SearchStore: Send + Sync {
     fn search(
         &self,

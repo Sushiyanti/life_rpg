@@ -2,7 +2,7 @@
 
 use crate::SystemClock;
 use lr_application::{
-    ConceptService, HealthService, SemanticsService, TimelineService, WorldService,
+    ConceptService, HealthService, SemanticsService, TagService, TimelineService, WorldService,
 };
 use lr_persistence::SqliteHealthStore;
 use std::sync::{Arc, RwLock};
@@ -13,6 +13,7 @@ pub type WiredWorldService = WorldService<WiredStore, SystemClock>;
 pub type WiredSemanticsService = SemanticsService<WiredStore, SystemClock>;
 pub type WiredConceptService = ConceptService<WiredStore, SystemClock>;
 pub type WiredTimelineService = TimelineService<WiredStore>;
+pub type WiredTagService = TagService<WiredStore, SystemClock>;
 
 pub struct AppState {
     pub health: WiredHealthService,
@@ -20,6 +21,7 @@ pub struct AppState {
     pub semantics: WiredSemanticsService,
     pub concepts: WiredConceptService,
     pub timeline: WiredTimelineService,
+    pub tags: WiredTagService,
     startup_warning: RwLock<Option<String>>,
 }
 impl AppState {
@@ -29,6 +31,7 @@ impl AppState {
         semantics: WiredSemanticsService,
         concepts: WiredConceptService,
         timeline: WiredTimelineService,
+        tags: WiredTagService,
     ) -> Self {
         Self {
             health,
@@ -36,6 +39,7 @@ impl AppState {
             semantics,
             concepts,
             timeline,
+            tags,
             startup_warning: RwLock::new(None),
         }
     }

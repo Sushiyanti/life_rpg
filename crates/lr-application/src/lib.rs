@@ -14,7 +14,7 @@ pub mod timeline;
 pub use error::{AppError, StorageError};
 pub use ports::{
     Clock, ConceptStore, HealthStore, MigrationRecord, RoundTripProof, SchemaReport, SearchStore,
-    StoreDiagnostics, TimelineStore, WorldStore,
+    StoreDiagnostics, TagStore, TimelineStore, WorldStore,
 };
 pub use rules::{
     Comparison, EventKind, NumericSubject, ProgressMutationSource, Rule, RuleAction, RuleCondition,
@@ -30,6 +30,7 @@ pub use services::health::{
     ApplicationInfo, DatabaseInfo, HealthReport, HealthService, HealthStatus, RoundTripInfo,
 };
 pub use services::semantics::{QuestActivityDetail, QuestDetail, SemanticsService, SkillDetail};
+pub use services::tags::TagService;
 pub use services::timeline::TimelineService;
 pub use services::world::{
     AwardSkillXpOutcome, AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService,

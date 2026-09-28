@@ -27,6 +27,7 @@ import type {
   SessionEffectRole, TimelineQuery, TimelineItem,
   Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType, TypeDefinition,
   SkillAvailabilityControl,
+  Tag, TagMatchMode, TagRelationship, TagTargetKind, TaggedRecord, TagTargetReference,
 } from '../domain/world';
 
 /** Command names exposed by `src-tauri/src/commands/`. */
@@ -112,6 +113,8 @@ export const COMMANDS = {
   createWorkspace: 'create_workspace', listWorkspaces: 'list_workspaces', setDefaultWorkspace: 'set_default_workspace', renameWorkspace: 'rename_workspace', deleteWorkspace: 'delete_workspace',
   listWorkspacePanels: 'list_workspace_panels', saveWorkspacePanel: 'save_workspace_panel', deleteWorkspacePanel: 'delete_workspace_panel',
   importWorkspace: 'import_workspace',
+  listTags: 'list_tags', createTag: 'create_tag', renameTag: 'rename_tag', setTagLifecycle: 'set_tag_lifecycle',
+  attachTag: 'attach_tag', detachTag: 'detach_tag', listTagsForTarget: 'list_tags_for_target', listTagTargets: 'list_tag_targets',
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];
@@ -216,7 +219,7 @@ export class CoreClient {
   async renameWorkspace(playerId:string,workspaceId:string,name:string):Promise<void>{return this.invoke(COMMANDS.renameWorkspace,{playerId,workspaceId,name});}
   async deleteWorkspace(playerId:string,workspaceId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspace,{playerId,workspaceId});}
   async listWorkspacePanels(playerId:string,workspaceId:string):Promise<WorkspacePanel[]>{return this.invoke(COMMANDS.listWorkspacePanels,{playerId,workspaceId});}
-  async saveWorkspacePanel(value:{playerId:string;workspaceId:string;panelId?:string;panelType:WorkspacePanelType;title:string|null;variant:WorkspacePanel['variant'];density:'cozy'|'compact';filterStatus:WorkspacePanel['filterStatus'];filterActive?:boolean|null;filterTypeCode?:string|null;filterConceptId?:string|null;filterRecentDays?:number|null;filterTimelineCategory?:WorkspacePanel['filterTimelineCategory'];filterTimelineEntityKind?:WorkspacePanel['filterTimelineEntityKind'];filterTimelineEntityId?:string|null;filterTimelineFrom?:string|null;filterTimelineThrough?:string|null;sortBy?:WorkspacePanel['sortBy'];itemLimit:number;sortOrder:number;gridSpan?:number;isVisible?:boolean;isPinned:boolean;isCollapsed:boolean}):Promise<WorkspacePanel>{return this.invoke(COMMANDS.saveWorkspacePanel,{filterActive:null,filterTypeCode:null,filterConceptId:null,filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,sortBy:'name_asc',gridSpan:1,isVisible:true,...value,panelId:value.panelId??null});}
+  async saveWorkspacePanel(value:{playerId:string;workspaceId:string;panelId?:string;panelType:WorkspacePanelType;title:string|null;variant:WorkspacePanel['variant'];density:'cozy'|'compact';filterStatus:WorkspacePanel['filterStatus'];filterActive?:boolean|null;filterTypeCode?:string|null;filterConceptId?:string|null;filterTagIds?:string[];filterTagMatch?:TagMatchMode;filterRecentDays?:number|null;filterTimelineCategory?:WorkspacePanel['filterTimelineCategory'];filterTimelineEntityKind?:WorkspacePanel['filterTimelineEntityKind'];filterTimelineEntityId?:string|null;filterTimelineFrom?:string|null;filterTimelineThrough?:string|null;sortBy?:WorkspacePanel['sortBy'];itemLimit:number;sortOrder:number;gridSpan?:number;isVisible?:boolean;isPinned:boolean;isCollapsed:boolean}):Promise<WorkspacePanel>{return this.invoke(COMMANDS.saveWorkspacePanel,{filterActive:null,filterTypeCode:null,filterConceptId:null,filterTagIds:[],filterTagMatch:'any',filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,sortBy:'name_asc',gridSpan:1,isVisible:true,...value,panelId:value.panelId??null});}
   async deleteWorkspacePanel(playerId:string,workspaceId:string,panelId:string):Promise<void>{return this.invoke(COMMANDS.deleteWorkspacePanel,{playerId,workspaceId,panelId});}
   async setPresentationPreference(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'|'sortOrder'|'isPinned'|'isCollapsed'|'variant'|'density'>):Promise<PresentationPreference>{return this.invoke<PresentationPreference>(COMMANDS.setPresentationPreference,value);}
   async setPresentationVisibility(value:Pick<PresentationPreference,'playerId'|'entityKind'|'entityId'|'context'|'isVisible'>):Promise<void>{return this.invoke<void>(COMMANDS.setPresentationVisibility,value);}
@@ -259,6 +262,14 @@ export class CoreClient {
   async captureSkillSnapshot(skillId:string):Promise<SkillSnapshot>{return this.invoke<SkillSnapshot>(COMMANDS.captureSkillSnapshot,{skillId});}
   async listPlayerSnapshots(playerId:string):Promise<PlayerSnapshot[]>{return this.invoke<PlayerSnapshot[]>(COMMANDS.listPlayerSnapshots,{playerId});}
   async listSkillSnapshots(skillId:string):Promise<SkillSnapshot[]>{return this.invoke<SkillSnapshot[]>(COMMANDS.listSkillSnapshots,{skillId});}
+  async listTags(playerId:string,query?:string,includeArchived=false,includeTrashed=false):Promise<Tag[]>{return this.invoke<Tag[]>(COMMANDS.listTags,{playerId,query:query??null,includeArchived,includeTrashed});}
+  async createTag(playerId:string,name:string,description?:string):Promise<Tag>{return this.invoke<Tag>(COMMANDS.createTag,{playerId,name,description:description??null});}
+  async renameTag(playerId:string,tagId:string,name:string,description?:string):Promise<Tag>{return this.invoke<Tag>(COMMANDS.renameTag,{playerId,tagId,name,description:description??null});}
+  async setTagLifecycle(playerId:string,tagId:string,lifecycle:Tag['lifecycle'],reason?:string):Promise<Tag>{return this.invoke<Tag>(COMMANDS.setTagLifecycle,{playerId,tagId,lifecycle,reason:reason??null});}
+  async attachTag(playerId:string,tagId:string,targetKind:TagTargetKind,targetId:string):Promise<TagRelationship>{return this.invoke<TagRelationship>(COMMANDS.attachTag,{playerId,tagId,targetKind,targetId});}
+  async detachTag(playerId:string,relationshipId:string):Promise<TagRelationship>{return this.invoke<TagRelationship>(COMMANDS.detachTag,{playerId,relationshipId});}
+  async listTagsForTarget(playerId:string,targetKind:TagTargetKind,targetId:string):Promise<TaggedRecord[]>{return this.invoke<TaggedRecord[]>(COMMANDS.listTagsForTarget,{playerId,targetKind,targetId});}
+  async listTagTargets(playerId:string,tagId:string,includeRemoved=true):Promise<TagTargetReference[]>{return this.invoke<TagTargetReference[]>(COMMANDS.listTagTargets,{playerId,tagId,includeRemoved});}
   async defineStat(code:string,name:string,options:{description?:string;unit?:string;minimum?:number;maximum?:number}={}):Promise<StatDefinition>{return this.invoke<StatDefinition>(COMMANDS.defineStat,{code,name,description:options.description??null,unit:options.unit??null,minimum:options.minimum??null,maximum:options.maximum??null});}
   async listStatDefinitions():Promise<StatDefinition[]>{return this.invoke<StatDefinition[]>(COMMANDS.listStatDefinitions);}
   async setPlayerStat(playerId:string,statCode:string,value:number):Promise<PlayerStat>{return this.invoke<PlayerStat>(COMMANDS.setPlayerStat,{playerId,statCode,value});}

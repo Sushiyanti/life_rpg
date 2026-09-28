@@ -4,6 +4,7 @@ use lr_application::EffectWrite;
 use lr_contracts::{semantics::*, CommandErrorDto};
 use lr_domain::{
     AssociatedEntityKind, ContentTargetKind, LifecycleState, RevisionTargetKind, SessionStatus,
+    TagMatchMode,
 };
 use tauri::State;
 
@@ -75,6 +76,13 @@ pub fn search_world(
         kind,
         player_id: parse_id(query.player_id)?,
         concept_id: parse_id(query.concept_id)?,
+        tag_ids: query
+            .tag_ids
+            .into_iter()
+            .map(EntityId::new)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(domain_error)?,
+        tag_match: TagMatchMode::parse(&query.tag_match).map_err(domain_error)?,
         type_code: query.type_code,
         status: query.status,
         active: query.active,
@@ -683,6 +691,8 @@ pub fn save_workspace_panel(
     filter_active: Option<bool>,
     filter_type_code: Option<String>,
     filter_concept_id: Option<String>,
+    filter_tag_ids: Vec<String>,
+    filter_tag_match: String,
     filter_recent_days: Option<i32>,
     filter_timeline_category: Option<String>,
     filter_timeline_entity_kind: Option<String>,
@@ -711,6 +721,8 @@ pub fn save_workspace_panel(
             filter_active,
             filter_type_code.as_deref(),
             filter_concept_id.as_deref(),
+            filter_tag_ids,
+            TagMatchMode::parse(&filter_tag_match).map_err(domain_error)?,
             filter_recent_days,
             filter_timeline_category.as_deref(),
             filter_timeline_entity_kind.as_deref(),
@@ -750,30 +762,35 @@ pub fn import_workspace(
     let panels = request
         .panels
         .into_iter()
-        .map(|panel| lr_application::WorkspacePanelImport {
-            panel_type: panel.panel_type,
-            title: panel.title,
-            variant: panel.variant,
-            density: panel.density,
-            filter_status: panel.filter_status,
-            filter_active: panel.filter_active,
-            filter_type_code: panel.filter_type_code,
-            filter_concept_id: panel.filter_concept_id,
-            filter_recent_days: panel.filter_recent_days,
-            filter_timeline_category: panel.filter_timeline_category,
-            filter_timeline_entity_kind: panel.filter_timeline_entity_kind,
-            filter_timeline_entity_id: panel.filter_timeline_entity_id,
-            filter_timeline_from: panel.filter_timeline_from,
-            filter_timeline_through: panel.filter_timeline_through,
-            sort_by: panel.sort_by,
-            item_limit: panel.item_limit,
-            sort_order: panel.sort_order,
-            grid_span: panel.grid_span,
-            is_visible: panel.is_visible,
-            is_pinned: panel.is_pinned,
-            is_collapsed: panel.is_collapsed,
+        .map(|panel| {
+            Ok(lr_application::WorkspacePanelImport {
+                panel_type: panel.panel_type,
+                title: panel.title,
+                variant: panel.variant,
+                density: panel.density,
+                filter_status: panel.filter_status,
+                filter_active: panel.filter_active,
+                filter_type_code: panel.filter_type_code,
+                filter_concept_id: panel.filter_concept_id,
+                filter_tag_ids: panel.filter_tag_ids,
+                filter_tag_match: TagMatchMode::parse(&panel.filter_tag_match)
+                    .map_err(domain_error)?,
+                filter_recent_days: panel.filter_recent_days,
+                filter_timeline_category: panel.filter_timeline_category,
+                filter_timeline_entity_kind: panel.filter_timeline_entity_kind,
+                filter_timeline_entity_id: panel.filter_timeline_entity_id,
+                filter_timeline_from: panel.filter_timeline_from,
+                filter_timeline_through: panel.filter_timeline_through,
+                sort_by: panel.sort_by,
+                item_limit: panel.item_limit,
+                sort_order: panel.sort_order,
+                grid_span: panel.grid_span,
+                is_visible: panel.is_visible,
+                is_pinned: panel.is_pinned,
+                is_collapsed: panel.is_collapsed,
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, CommandErrorDto>>()?;
     let (workspace, panels) = state
         .semantics
         .import_workspace(&player_id, &request.name, &request.template, panels)

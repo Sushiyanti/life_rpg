@@ -55,7 +55,7 @@ export function WorkspaceCanvas(props: Props) {
         playerId: player.id, workspaceId: workspace.id, panelId: panel.id,
         panelType: panel.panelType, title: panel.title, variant: panel.variant, density: panel.density,
         filterStatus: panel.filterStatus, filterActive: panel.filterActive, filterTypeCode: panel.filterTypeCode,
-        filterConceptId: panel.filterConceptId, filterRecentDays: panel.filterRecentDays,
+        filterConceptId: panel.filterConceptId, filterTagIds: panel.filterTagIds, filterTagMatch: panel.filterTagMatch, filterRecentDays: panel.filterRecentDays,
         filterTimelineCategory: panel.filterTimelineCategory, filterTimelineEntityKind: panel.filterTimelineEntityKind,
         filterTimelineEntityId: panel.filterTimelineEntityId, filterTimelineFrom: panel.filterTimelineFrom,
         filterTimelineThrough: panel.filterTimelineThrough, sortBy: panel.sortBy,

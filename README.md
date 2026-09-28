@@ -6,14 +6,13 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 10 — Explicit Gameplay Rules & Skill Progression (complete).**
-> The bounded declarative Rule Engine now supports explicit Skill XP and unlock
-> automation plus immediate Effect actions. Skill levels remain Player-authored,
-> rule chains are atomic, and changes retain auditable history; no scheduler,
-> automatic leveling, or inferred prerequisite graph is introduced. See the
-> [Phase 10 report](docs/PHASE-10-REPORT.md), [Phase 9 report](docs/PHASE-9-REPORT.md),
-> [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md), and
-> [Architecture](docs/ARCHITECTURE.md).
+> **Status: Phase 11 — Reusable Tags & World Organization (complete).**
+> Player-owned Tags organize canonical records without changing their meaning,
+> lifecycle, progression, or history. Explicit relationships power bounded
+> Search and Workspace filters; local Tag IDs never leak through Workspace
+> transfer. Concepts describe meaning; Tags describe organization. See the
+> [Phase 11 report](docs/PHASE-11-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+> [Architecture](docs/ARCHITECTURE.md), and earlier [Phase 10 report](docs/PHASE-10-REPORT.md).
 
 ---
 

@@ -82,7 +82,7 @@ fn source_queries(query: &TimelineQuery) -> Vec<&'static str> {
     }
 
     if wants(TimelineCategory::Lifecycle) {
-        sources.push(r#"SELECT 'lifecycle:'||h.id,h.player_id,'lifecycle',h.target_kind,h.target_id,h.occurred_at,h.captured_at,'occurred','Record lifecycle · '||h.current_state,COALESCE(h.previous_state,'initial')||' → '||h.current_state||CASE WHEN h.reason IS NOT NULL THEN ' · '||h.reason ELSE '' END,NULL,NULL,h.current_state,'captured' FROM entity_lifecycle_history h WHERE h.player_id=?1 AND (?3 IS NULL OR h.occurred_at>=?3) AND (?4 IS NULL OR h.occurred_at<=?4)"#);
+        sources.push(r#"SELECT 'lifecycle:'||h.id,h.player_id,'lifecycle',h.target_kind,h.target_id,h.occurred_at,h.captured_at,'occurred','Record lifecycle · '||h.current_state,COALESCE(h.previous_state,'initial')||' → '||h.current_state||CASE WHEN h.reason IS NOT NULL THEN ' · '||h.reason ELSE '' END,NULL,NULL,h.current_state,'captured' FROM entity_lifecycle_history h WHERE h.player_id=?1 AND h.target_kind<>'tag' AND (?3 IS NULL OR h.occurred_at>=?3) AND (?4 IS NULL OR h.occurred_at<=?4)"#);
     }
 
     if wants(TimelineCategory::RelationshipHistory) {
@@ -332,7 +332,12 @@ mod tests {
                         INSERT INTO concept_state_snapshots(concept_id,snapshot_date,state_json,captured_at) VALUES
                           ('c1','2026-09-28','{{}}','{T5}');
                         INSERT INTO entity_lifecycle_history(id,target_kind,target_id,player_id,previous_state,current_state,occurred_at,captured_at,reason) VALUES
-                          ('life1','quest','q1','p1','active','archived','{T4}','{T5}','Put away for now');
+                          ('life1','quest','q1','p1','active','archived','{T4}','{T5}','Put away for now'),
+                          ('tag-life','tag','tag1','p1','active','archived','{T4}','{T5}','Tag lifecycle is separate from Timeline facts');
+                        INSERT INTO tags(id,player_id,transfer_key,name,normalized_name,created_at,updated_at) VALUES
+                          ('tag1','p1','tag-ref-test','Research','research','{T1}','{T1}');
+                        INSERT INTO tag_relationships(id,player_id,tag_id,target_kind,target_id,added_at,removed_at) VALUES
+                          ('tag-rel1','p1','tag1','quest','q1','{T2}','{T4}');
                         INSERT INTO concept_entity_links(concept_id,player_id,entity_kind,entity_id,created_at) VALUES
                           ('c1','p1','quest','q1','{T3}');
                         INSERT INTO content_attachments(id,content_id,player_id,target_kind,target_id,role_code,created_at,removed_at,updated_at) VALUES
@@ -364,6 +369,12 @@ mod tests {
         );
 
         let items = store.query_timeline(&base_query("p1")).unwrap();
+        assert!(items
+            .iter()
+            .all(|item| item.source_id != "lifecycle:tag-life"));
+        assert!(items
+            .iter()
+            .all(|item| !item.source_id.starts_with("tag_relationship:")));
         assert!(
             items.len() >= 18,
             "expected the supported persisted source categories: {items:?}"

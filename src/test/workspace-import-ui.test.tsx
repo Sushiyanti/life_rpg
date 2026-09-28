@@ -73,6 +73,6 @@ describe('WorkspaceBuilder transfer feedback', () => {
       unresolvedConcepts: 1,
       panels: [expect.objectContaining({ filterConceptId: null })],
     })));
-    expect(await screen.findByText('Workspace imported. 0 Concept filter(s) resolved; 1 left unfiltered; 0 Timeline exact identity filter(s) need to be selected again in this world.')).toBeInTheDocument();
+    expect(await screen.findByText('Workspace imported. 0 Concept filter(s) resolved; 1 left unfiltered; 0 Tag filter(s) left neutral where no safe match existed; 0 Timeline exact identity filter(s) need to be selected again in this world.')).toBeInTheDocument();
   });
 });

@@ -1,5 +1,8 @@
 //! Typed global search/query API. Results remain domain entity references, not generic database rows.
-use lr_domain::{ContentTargetKind, EntityId, Iso8601Timestamp, LifecycleState};
+use lr_domain::{
+    validate_tag_filter, ContentTargetKind, EntityId, Iso8601Timestamp, LifecycleState,
+    TagMatchMode,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchEntityKind {
@@ -68,6 +71,9 @@ pub struct SearchQuery {
     pub kind: Option<SearchEntityKind>,
     pub player_id: Option<EntityId>,
     pub concept_id: Option<EntityId>,
+    /// Current explicit Tag assignments; evaluated relationally, never projected into FTS.
+    pub tag_ids: Vec<EntityId>,
+    pub tag_match: TagMatchMode,
     pub type_code: Option<String>,
     pub status: Option<String>,
     pub active: Option<bool>,
@@ -91,6 +97,8 @@ impl Default for SearchQuery {
             kind: None,
             player_id: None,
             concept_id: None,
+            tag_ids: vec![],
+            tag_match: TagMatchMode::Any,
             type_code: None,
             status: None,
             active: None,
@@ -151,6 +159,22 @@ impl SearchQuery {
                     .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
         }) {
             return Err("search context must be a 1-160 character lowercase identifier".into());
+        }
+        validate_tag_filter(&self.tag_ids, self.tag_match).map_err(|error| error.to_string())?;
+        if !self.tag_ids.is_empty() {
+            if self.player_id.is_none() {
+                return Err("Tag filtering requires a Player-scoped query".into());
+            }
+            if self.kind.is_some_and(|kind| {
+                matches!(
+                    kind,
+                    SearchEntityKind::Player
+                        | SearchEntityKind::Transaction
+                        | SearchEntityKind::ConceptProgress
+                )
+            }) {
+                return Err("Tag filtering is unsupported for this search record kind".into());
+            }
         }
         Ok(())
     }

@@ -1,5 +1,8 @@
 //! User-configurable workspace presentation, intentionally separate from world entities.
-use crate::{DateValue, DomainError, DomainResult, EntityId, Iso8601Timestamp};
+use crate::{
+    validate_tag_filter, DateValue, DomainError, DomainResult, EntityId, Iso8601Timestamp,
+    TagMatchMode,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
@@ -63,6 +66,8 @@ pub struct WorkspacePanel {
     pub filter_active: Option<bool>,
     pub filter_type_code: Option<String>,
     pub filter_concept_id: Option<EntityId>,
+    pub filter_tag_ids: Vec<EntityId>,
+    pub filter_tag_match: TagMatchMode,
     pub filter_recent_days: Option<i32>,
     pub filter_timeline_category: Option<String>,
     pub filter_timeline_entity_kind: Option<String>,
@@ -193,6 +198,17 @@ impl WorkspacePanel {
             return Err(DomainError::invalid_value(
                 "panel filter",
                 "Concept and recent-day filters are unsupported for Player status",
+            ));
+        }
+        validate_tag_filter(&self.filter_tag_ids, self.filter_tag_match)?;
+        let supports_tags = matches!(
+            self.panel_type.as_str(),
+            "quests" | "skills" | "concepts" | "effects" | "activity" | "journal"
+        );
+        if !self.filter_tag_ids.is_empty() && !supports_tags {
+            return Err(DomainError::invalid_value(
+                "panel Tag filter",
+                "unsupported for this panel source",
             ));
         }
         const TIMELINE_CATEGORIES: &[&str] = &[
@@ -360,6 +376,8 @@ mod tests {
             filter_active: None,
             filter_type_code: Some("main".into()),
             filter_concept_id: Some(EntityId::new("concept-1").unwrap()),
+            filter_tag_ids: vec![],
+            filter_tag_match: TagMatchMode::Any,
             filter_recent_days: Some(30),
             filter_timeline_category: None,
             filter_timeline_entity_kind: None,
@@ -387,6 +405,31 @@ mod tests {
         value.filter_status = Some("active".into());
         value.sort_by = "level_desc".into();
         assert!(value.validate().is_ok());
+    }
+
+    #[test]
+    fn tag_filters_are_limited_to_supported_canonical_panel_sources() {
+        let mut value = panel();
+        value.filter_tag_ids = vec![EntityId::new("tag-1").unwrap()];
+        assert!(value.validate().is_ok());
+
+        value.panel_type = "progress".into();
+        value.variant = "metrics".into();
+        value.filter_status = None;
+        value.filter_type_code = None;
+        value.sort_by = "progress_desc".into();
+        assert!(value.validate().is_err());
+
+        value = panel();
+        value.panel_type = "timeline".into();
+        value.variant = "timeline".into();
+        value.filter_status = None;
+        value.filter_type_code = None;
+        value.filter_concept_id = None;
+        value.filter_recent_days = None;
+        value.sort_by = "timeline_newest".into();
+        value.filter_tag_ids = vec![EntityId::new("tag-1").unwrap()];
+        assert!(value.validate().is_err());
     }
 
     #[test]

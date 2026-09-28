@@ -4,7 +4,7 @@ use lr_domain::{
     AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, Effect,
     EffectHistoryEntry, EntityId, EntityRevision, Iso8601Timestamp, LifecycleState,
     PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession, QuestStage,
-    RevisionTargetKind, SessionEffect, Workspace, WorkspacePanel,
+    RevisionTargetKind, SessionEffect, TagMatchMode, Workspace, WorkspacePanel,
 };
 
 /// A validated declarative panel requested by a workspace transfer.
@@ -18,6 +18,9 @@ pub struct WorkspacePanelImport {
     pub filter_active: Option<bool>,
     pub filter_type_code: Option<String>,
     pub filter_concept_id: Option<String>,
+    /// Destination-world IDs only; portable references are resolved before this boundary.
+    pub filter_tag_ids: Vec<String>,
+    pub filter_tag_match: TagMatchMode,
     pub filter_recent_days: Option<i32>,
     pub filter_timeline_category: Option<String>,
     pub filter_timeline_entity_kind: Option<String>,

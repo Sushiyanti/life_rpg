@@ -4,7 +4,7 @@ import { panelSearchQuery } from '../features/world/WorldWorkspace';
 
 const panel=(panelType:WorkspacePanel['panelType'],patch:Partial<WorkspacePanel>={}):WorkspacePanel=>({
   id:'panel-1',workspaceId:'workspace-1',panelType,title:'View',variant:'rows',density:'cozy',
-  filterStatus:null,filterActive:null,filterTypeCode:null,filterConceptId:null,filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,
+  filterStatus:null,filterActive:null,filterTypeCode:null,filterConceptId:null,filterTagIds:[],filterTagMatch:'any',filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,
   sortBy:'updated_desc',itemLimit:10,sortOrder:0,gridSpan:1,isVisible:true,isPinned:false,isCollapsed:false,
   createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',...patch,
 });
@@ -32,5 +32,11 @@ describe('declarative panel search mapping',()=>{
   it('scopes every query to its owning Player and Dashboard presentation context',()=>{
     const query=panelSearchQuery(panel('activity',{filterConceptId:'concept-1',filterStatus:'in_progress',filterRecentDays:14}),'player-7');
     expect(query).toMatchObject({playerId:'player-7',conceptId:'concept-1',status:'in_progress',from:expect.any(String),context:'dashboard'});
+  });
+  it('applies explicit any/all Tag filters through the canonical Player-scoped Search query',()=>{
+    const all=panelSearchQuery(panel('quests',{filterTagIds:['tag-1','tag-2'],filterTagMatch:'all'}),'player-7');
+    expect(all).toMatchObject({playerId:'player-7',tagIds:['tag-1','tag-2'],tagMatch:'all',kind:'quest'});
+    const any=panelSearchQuery(panel('skills',{filterTagIds:['tag-1'],filterTagMatch:'any'}),'player-7');
+    expect(any).toMatchObject({playerId:'player-7',tagIds:['tag-1'],tagMatch:'any',kind:'skill'});
   });
 });

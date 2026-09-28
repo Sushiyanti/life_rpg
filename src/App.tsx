@@ -16,8 +16,8 @@ const localGet = (key: string): string | null => { try { return localStorage.get
 const localSet = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch { /* Storage is an optional presentation convenience. */ } };
 const localRemove = (key: string) => { try { localStorage.removeItem(key); } catch { /* Storage is an optional presentation convenience. */ } };
 const activeWorkspaceKey = (playerId: string) => `life-rpg.active-workspace.v1.${playerId}`;
-const knownRoutes: AppRoute[] = ['dashboard', 'player', 'quests', 'skills', 'skillTrees', 'concepts', 'effects', 'journal', 'explorer', 'history', 'rules', 'status'];
-const emptyQuery = { text: null, kind: 'player', playerId: null, conceptId: null, typeCode: null, status: null, active: null, targetKind: null, from: null, through: null, context: null, includeHidden: true, includeArchived: true, includeTrashed: true, sort: 'name' as const, limit: 200, offset: 0 };
+const knownRoutes: AppRoute[] = ['dashboard', 'player', 'quests', 'skills', 'skillTrees', 'concepts', 'effects', 'journal', 'tags', 'timeline', 'explorer', 'history', 'rules', 'status'];
+const emptyQuery = { text: null, kind: 'player', playerId: null, conceptId: null, tagIds: [], tagMatch: 'any' as const, typeCode: null, status: null, active: null, targetKind: null, from: null, through: null, context: null, includeHidden: true, includeArchived: true, includeTrashed: true, sort: 'name' as const, limit: 200, offset: 0 };
 type EntityTarget = { kind: string; id: string; returnRoute: AppRoute };
 
 export function App() {
@@ -41,6 +41,7 @@ export function App() {
   const [quickCreate, setQuickCreate] = useState(false);
   const [quickCapture, setQuickCapture] = useState(false);
   const [entityTarget, setEntityTarget] = useState<EntityTarget | null>(null);
+  const [tagTargetId, setTagTargetId] = useState<string | null>(null);
 
   const refreshWorld = useCallback(async (id = player?.id) => {
     if (!id) return;
@@ -193,7 +194,7 @@ export function App() {
       playerId, workspaceId: target.id, panelType: panel.panelType, title: panel.title,
       variant: panel.variant, density: panel.density, filterStatus: panel.filterStatus,
       filterActive: panel.filterActive, filterTypeCode: panel.filterTypeCode, filterConceptId: panel.filterConceptId,
-      filterRecentDays: panel.filterRecentDays, sortBy: panel.sortBy, itemLimit: panel.itemLimit,
+      filterTagIds: panel.filterTagIds, filterTagMatch: panel.filterTagMatch, filterRecentDays: panel.filterRecentDays, sortBy: panel.sortBy, itemLimit: panel.itemLimit,
       sortOrder: panel.sortOrder, gridSpan: panel.gridSpan, isVisible: panel.isVisible,
       isPinned: panel.isPinned, isCollapsed: panel.isCollapsed,
     }));
@@ -220,7 +221,7 @@ export function App() {
     setWorkspace(result.workspace);
     setWorkspacePanels(result.panels);
     localSet(activeWorkspaceKey(player.id), result.workspace.id);
-    setNotice(`Workspace imported. ${value.resolvedConcepts} Concept filter(s) resolved; ${value.unresolvedConcepts} left unfiltered.`);
+    setNotice(`Workspace imported. ${value.resolvedConcepts} Concept filter(s) resolved; ${value.resolvedTags} Tag filter(s) resolved; ${value.unresolvedTags} Tag filter(s) left neutral.`);
     setError('');
   }, [player]);
 
@@ -306,6 +307,7 @@ export function App() {
   }, [refreshWorld]);
   const navigate = useCallback((next: AppRoute) => {
     setEntityTarget(null);
+    setTagTargetId(null);
     setQuickCreate(false);
     setQuickCapture(false);
     setRoute(next);
@@ -315,6 +317,11 @@ export function App() {
     setEntityTarget({ kind, id, returnRoute: route });
     setRoute('explorer');
   }, [route]);
+  const openTag = useCallback((id: string) => {
+    setTagTargetId(id || null);
+    setEntityTarget(null);
+    setRoute('tags');
+  }, []);
   const returnToOrigin = useCallback(() => {
     if (!entityTarget) return;
     const origin = entityTarget.returnRoute;
@@ -335,12 +342,13 @@ export function App() {
         workspace={null} workspaces={[]} panels={[]} onPanelsChange={setWorkspacePanels} onCreateWorkspace={createWorkspace}
         onRenameWorkspace={renameWorkspace} onDefaultWorkspace={makeDefault} onDeleteWorkspace={deleteWorkspace}
         onDuplicateWorkspace={duplicateWorkspace} onImportWorkspace={importWorkspace} onRefresh={afterMutation}
-        onCreatePlayer={createPlayer} onNavigate={navigate} onOpenEntity={openEntity} onQuickCapture={() => setQuickCapture(true)} />
+        onCreatePlayer={createPlayer} onNavigate={navigate} onOpenEntity={openEntity} onOpenTag={openTag} onQuickCapture={() => setQuickCapture(true)} />
       : !loading && player && overview && <WorldWorkspace route={route} client={coreClient} player={player} overview={overview} concepts={concepts}
         stats={stats} sessions={sessions} workspace={workspace} workspaces={workspaces} panels={workspacePanels} onPanelsChange={setWorkspacePanels}
         onCreateWorkspace={createWorkspace} onRenameWorkspace={renameWorkspace} onDefaultWorkspace={makeDefault}
         onDeleteWorkspace={deleteWorkspace} onDuplicateWorkspace={duplicateWorkspace} onImportWorkspace={importWorkspace}
-        onRefresh={afterMutation} onCreatePlayer={createPlayer} onNavigate={navigate} onOpenEntity={openEntity}
+        onRefresh={afterMutation} onCreatePlayer={createPlayer} onNavigate={navigate} onOpenEntity={openEntity} onOpenTag={openTag}
+        initialTagId={route === 'tags' ? tagTargetId : undefined}
         initialTarget={route === 'explorer' && entityTarget ? { kind: entityTarget.kind, id: entityTarget.id } : undefined}
         onReturnTo={entityTarget ? returnToOrigin : undefined} onQuickCapture={() => setQuickCapture(true)} />}
     {route === 'rules' && player && <RulePanel playerId={player.id} client={coreClient} />}

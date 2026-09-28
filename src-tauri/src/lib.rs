@@ -39,7 +39,8 @@ pub fn bootstrap(app_data_dir: &std::path::Path, now: &str) -> AppState {
         WorldService::new(store.clone(), SystemClock),
         SemanticsService::new(store.clone(), SystemClock),
         ConceptService::new(store.clone(), SystemClock),
-        TimelineService::new(store),
+        TimelineService::new(store.clone()),
+        lr_application::TagService::new(store, SystemClock),
     )
 }
 pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
@@ -49,7 +50,8 @@ pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
         WorldService::new(store.clone(), SystemClock),
         SemanticsService::new(store.clone(), SystemClock),
         ConceptService::new(store.clone(), SystemClock),
-        TimelineService::new(store),
+        TimelineService::new(store.clone()),
+        lr_application::TagService::new(store, SystemClock),
     );
     state.set_startup_warning(Some(reason.into()));
     state
@@ -135,6 +137,14 @@ pub fn run() {
             commands::concepts::list_concept_relationships,
             commands::concepts::list_concept_relationship_types,
             commands::concepts::relate_concepts,
+            commands::tags::list_tags,
+            commands::tags::create_tag,
+            commands::tags::rename_tag,
+            commands::tags::set_tag_lifecycle,
+            commands::tags::attach_tag,
+            commands::tags::detach_tag,
+            commands::tags::list_tags_for_target,
+            commands::tags::list_tag_targets,
             commands::semantics::create_quest_stage,
             commands::semantics::list_quest_stages,
             commands::semantics::create_quest_branch,

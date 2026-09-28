@@ -1,0 +1,2 @@
+
+.builder-panel__fields .tag-filter-field{grid-column:span 2}.builder-panel__fields .tag-filter-field select{min-height:76px}.tag-filter-field small{color:var(--text-muted);font-size:8px}@media(max-width:650px){.builder-panel__fields .tag-filter-field{grid-column:span 1}}
