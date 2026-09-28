@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import type { CoreClient } from '../../domain/ipc';
 import type { AppRoute } from '../../app/AppShell';
 import type {
@@ -9,9 +9,9 @@ import type {
   PlayerStat,
   QuestSession,
   StatDefinition,
+  TimelineItem,
   WorldOverview,
 } from '../../domain/world';
-import { buildWorldTimeline } from './worldTimeline';
 import { effectLifecycleAt } from './effectLifecycle';
 import './PlayerCharacter.css';
 
@@ -50,6 +50,9 @@ export function PlayerCharacter({
   const [hiddenCount, setHiddenCount] = useState(0);
   const [hiddenRecords, setHiddenRecords] = useState<Set<string>>(new Set());
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const [activity, setActivity] = useState<TimelineItem[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+  const [activityError, setActivityError] = useState('');
   const [finishingSessionId, setFinishingSessionId] = useState<string | null>(null);
   const [sessionDrafts, setSessionDrafts] = useState<Record<string, { result: string; notes: string }>>({});
   const [sessionAnchorNames, setSessionAnchorNames] = useState<Record<string, string>>({});
@@ -105,8 +108,19 @@ export function PlayerCharacter({
     setLabel(player.progressionLabel ?? '');
   }, [player.id, player.level, player.levelName, player.progressionLabel]);
 
-  const events = useMemo(() => buildWorldTimeline({ player, overview, concepts, stats, sessions, tracks })
-    .filter(event => !hiddenRecords.has(`${event.recordKind}:${event.recordId}`)), [player, overview, concepts, stats, sessions, tracks, hiddenRecords]);
+  useEffect(() => {
+    let live = true;
+    setActivityLoading(true);
+    setActivityError('');
+    setActivity([]);
+    void client.queryTimeline({ playerId: player.id, category: null, entityKind: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 })
+      .then(rows => { if (live) setActivity(rows); })
+      .catch(reason => { if (live) setActivityError(reason instanceof Error ? reason.message : 'Recent activity could not be loaded.'); })
+      .finally(() => { if (live) setActivityLoading(false); });
+    return () => { live = false; };
+  }, [client, player.id]);
+
+  const events = activity.filter(event => !hiddenRecords.has(`${event.entityKind}:${event.entityId}`));
   const currentQuests = overview.quests.filter(quest => (quest.status === 'open' || quest.status === 'active') && !hiddenRecords.has(`quest:${quest.id}`));
   const activeSessions = sessions.filter(session => session.status === 'in_progress' && !hiddenRecords.has(`quest_session:${session.id}`));
   const visibleEffects = overview.effects.filter(effect => !hiddenRecords.has(`effect:${effect.id}`));
@@ -297,10 +311,10 @@ export function PlayerCharacter({
     </section>
 
     <section className="surface-card player-hub__timeline">
-      <div className="surface-card__heading"><div><p className="eyebrow">WHAT HAPPENED · PERSISTED TIMESTAMPS</p><h3>Recent activity</h3></div><div className="player-hub__timeline-actions"><span>{events.length} recorded items</span><button className="text-link" onClick={() => onNavigate('history')}>History & recovery →</button></div></div>
+      <div className="surface-card__heading"><div><p className="eyebrow">WHAT HAPPENED · PERSISTED TIMESTAMPS</p><h3>Recent activity</h3></div><div className="player-hub__timeline-actions"><span>{events.length} recent items</span><button className="text-link" onClick={() => onNavigate('timeline')}>View full timeline →</button><button className="text-link" onClick={() => onNavigate('history')}>History & recovery →</button></div></div>
       <p className="muted">This is a history of records, not an estimate of time spent or days that were not recorded.</p>
-      {events.length === 0 ? <div className="player-hub__empty"><strong>No recorded activity yet</strong><p>Start with a Quest, a practice session, or a note when it reflects something you actually did.</p></div>
-        : <div className="player-hub__timeline-list">{events.slice(0, showAllActivity ? 18 : 7).map(event => <article className="player-hub__timeline-row" key={event.id}><span className="player-hub__timeline-mark" aria-hidden="true" /><button className="player-hub__timeline-open" onClick={() => onOpenEntity(event.recordKind, event.recordId)}><strong>{event.title}</strong><small>{event.detail}</small></button><time dateTime={event.at}>{formatDate(event.at)}</time></article>)}</div>}
+      {activityLoading ? <p className="muted" role="status">Loading recent recorded activity…</p> : activityError ? <p className="error-banner" role="alert">{activityError}</p> : events.length === 0 ? <div className="player-hub__empty"><strong>No recorded activity yet</strong><p>Start with a Quest, a practice session, or a note when it reflects something you actually did.</p></div>
+        : <div className="player-hub__timeline-list">{events.slice(0, showAllActivity ? 18 : 7).map(event => <article className="player-hub__timeline-row" key={event.sourceId}><span className="player-hub__timeline-mark" aria-hidden="true" /><button className="player-hub__timeline-open" onClick={() => onOpenEntity(event.entityKind, event.entityId)}><strong>{event.title}</strong><small>{event.summary}</small></button><time dateTime={event.timestamp}>{formatDate(event.timestamp)}</time></article>)}</div>}
       {events.length > 7 && <button className="button button--small button--quiet" onClick={() => setShowAllActivity(value => !value)}>{showAllActivity ? 'Show recent only' : 'Show more activity'}</button>}
     </section>
 

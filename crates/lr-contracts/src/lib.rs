@@ -27,6 +27,7 @@
 //! same pattern.
 
 pub mod semantics;
+pub mod timeline;
 pub mod world;
 
 use lr_application::HealthReport;

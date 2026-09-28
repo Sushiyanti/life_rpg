@@ -6,14 +6,14 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 7 — Reusable Content & Guidance.**
-> The local-first world now includes a dedicated Content Guidebook built on the
-> existing `NarrativeEntry` model: typed authored content can be edited,
-> recovered, searched, and explicitly attached to multiple same-world records
-> without copying it. Attachment removal preserves timestamped relationship
-> history, while content lifecycle, target lifecycle, and visibility remain
-> independent. See the [Phase 7 report](docs/PHASE-7-REPORT.md), [Domain Design
-> Codex](docs/DOMAIN-DESIGN-CODEX.md), and [Architecture](docs/ARCHITECTURE.md).
+> **Status: Phase 8 — Unified World Timeline.**
+> The dedicated Timeline is a Player-scoped, read-only chronology over existing
+> timestamped world and history records. The Player Hub’s compact recent-activity
+> view uses the same bounded query; no duplicate event store or synthetic days are
+> created. Reusable Content and its explicit relationship history remain on their
+> canonical records. See the [Phase 8 report](docs/PHASE-8-REPORT.md), [Phase 7
+> report](docs/PHASE-7-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+> and [Architecture](docs/ARCHITECTURE.md).
 
 ---
 

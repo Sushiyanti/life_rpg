@@ -24,7 +24,7 @@ import type {
   WorldOverview, Concept, ConceptProgressTrack, ConceptRelationship, QuestStage, QuestBranch,
   QuestSession, ContentAttachment, ConceptAssociation, EntityRevision, PresentationPreference,
   ProgressSuggestion, SearchHit, SearchQuery, EffectType, EffectHistoryEntry, SessionEffect,
-  SessionEffectRole,
+  SessionEffectRole, TimelineQuery, TimelineItem,
   Workspace, WorkspaceImportPanel, WorkspacePanel, WorkspaceTemplate, WorkspacePanelType, TypeDefinition,
 } from '../domain/world';
 
@@ -76,6 +76,7 @@ export const COMMANDS = {
   listConceptRelationshipTypes: 'list_concept_relationship_types',
   relateConcepts: 'relate_concepts',
   searchWorld: 'search_world',
+  queryTimeline: 'query_timeline',
   listPresentationPreferences: 'list_presentation_preferences',
   setPresentationPreference: 'set_presentation_preference',
   setPresentationVisibility: 'set_presentation_visibility',
@@ -201,6 +202,7 @@ export class CoreClient {
   async listConceptRelationshipTypes():Promise<string[]>{return this.invoke<string[]>(COMMANDS.listConceptRelationshipTypes);}
   async relateConcepts(sourceConceptId:string,targetConceptId:string,relationshipCode:string):Promise<ConceptRelationship>{return this.invoke<ConceptRelationship>(COMMANDS.relateConcepts,{sourceConceptId,targetConceptId,relationshipCode});}
   async searchWorld(query:SearchQuery):Promise<SearchHit[]>{return this.invoke<SearchHit[]>(COMMANDS.searchWorld,{query});}
+  async queryTimeline(query:TimelineQuery):Promise<TimelineItem[]>{return this.invoke<TimelineItem[]>(COMMANDS.queryTimeline,{query});}
   async listPresentationPreferences(playerId:string,context:string):Promise<PresentationPreference[]>{return this.invoke<PresentationPreference[]>(COMMANDS.listPresentationPreferences,{playerId,context});}
   async createWorkspace(playerId:string,name:string,template:WorkspaceTemplate,isDefault=false):Promise<Workspace>{return this.invoke(COMMANDS.createWorkspace,{playerId,name,template,isDefault});}
   async importWorkspace(playerId:string,name:string,template:WorkspaceTemplate,panels:WorkspaceImportPanel[]):Promise<{workspace:Workspace;panels:WorkspacePanel[]}>{return this.invoke(COMMANDS.importWorkspace,{playerId,request:{name,template,panels}});}

@@ -6,7 +6,9 @@ pub mod commands;
 pub mod state;
 pub use state::AppState;
 
-use lr_application::{Clock, ConceptService, HealthService, SemanticsService, WorldService};
+use lr_application::{
+    Clock, ConceptService, HealthService, SemanticsService, TimelineService, WorldService,
+};
 use lr_persistence::SqliteHealthStore;
 use std::{path::PathBuf, sync::Arc};
 use tauri::Manager;
@@ -36,7 +38,8 @@ pub fn bootstrap(app_data_dir: &std::path::Path, now: &str) -> AppState {
         HealthService::new(store.clone(), SystemClock),
         WorldService::new(store.clone(), SystemClock),
         SemanticsService::new(store.clone(), SystemClock),
-        ConceptService::new(store, SystemClock),
+        ConceptService::new(store.clone(), SystemClock),
+        TimelineService::new(store),
     )
 }
 pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
@@ -45,7 +48,8 @@ pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
         HealthService::new(store.clone(), SystemClock),
         WorldService::new(store.clone(), SystemClock),
         SemanticsService::new(store.clone(), SystemClock),
-        ConceptService::new(store, SystemClock),
+        ConceptService::new(store.clone(), SystemClock),
+        TimelineService::new(store),
     );
     state.set_startup_warning(Some(reason.into()));
     state
@@ -174,6 +178,7 @@ pub fn run() {
             commands::semantics::accept_progress_suggestion,
             commands::semantics::reject_progress_suggestion,
             commands::semantics::search_world,
+            commands::timeline::query_timeline,
             commands::semantics::set_concept_progress_control
         ])
         .run(tauri::generate_context!())

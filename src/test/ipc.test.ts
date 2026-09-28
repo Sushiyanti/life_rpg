@@ -185,3 +185,23 @@ describe('failed report fixture', () => {
     expect(report.problems).toHaveLength(3);
   });
 });
+
+
+describe('Timeline IPC', () => {
+  it('sends bounded typed filters and returns the projected source reference', async () => {
+    const item = {
+      sourceId: 'session:session-1', playerId: 'player-1', category: 'session',
+      entityKind: 'quest_session', entityId: 'session-1', timestamp: '2026-09-28T10:00:00Z',
+      secondaryTimestamp: '2026-09-28T11:00:00Z', timestampKind: 'occurred', secondaryTimestampKind: 'occurred',
+      title: 'Session · Garden', summary: 'Seeds prepared', conceptId: 'concept-1', typeCode: null, state: 'completed',
+    };
+    const transport = vi.fn(async () => [item]) as unknown as InvokeTransport;
+    const client = new CoreClient(transport);
+    const query = {
+      playerId: 'player-1', category: 'concept_progress', entityKind: 'concept', conceptId: 'concept-1',
+      from: '2026-09-01T00:00:00Z', through: '2026-09-30T23:59:59Z', sort: 'oldest', limit: 25, offset: 50,
+    } as const;
+    await expect(client.queryTimeline(query)).resolves.toEqual([item]);
+    expect(transport).toHaveBeenCalledWith('query_timeline', { query });
+  });
+});

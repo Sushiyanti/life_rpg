@@ -459,6 +459,22 @@ impl<T: SearchStore + ?Sized> SearchStore for std::sync::Arc<T> {
     }
 }
 
+/// Read-only persistence port for the bounded unified Timeline projection.
+pub trait TimelineStore: Send + Sync {
+    fn query_timeline(
+        &self,
+        query: &crate::TimelineQuery,
+    ) -> Result<Vec<crate::TimelineItem>, StorageError>;
+}
+impl<T: TimelineStore + ?Sized> TimelineStore for std::sync::Arc<T> {
+    fn query_timeline(
+        &self,
+        query: &crate::TimelineQuery,
+    ) -> Result<Vec<crate::TimelineItem>, StorageError> {
+        (**self).query_timeline(query)
+    }
+}
+
 /// Injected source of time keeps services deterministic under test.
 pub trait Clock: Send + Sync {
     fn now_rfc3339(&self) -> String;

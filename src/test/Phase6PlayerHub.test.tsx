@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { CoreClient } from '../domain/ipc';
-import type { Concept, ConceptProgressTrack, Effect, Player, PlayerStat, Quest, QuestBranch, QuestSession, QuestStage, Skill, SkillTree, Workspace, WorkspacePanel, WorldOverview } from '../domain/world';
+import type { Concept, ConceptProgressTrack, Effect, Player, PlayerStat, Quest, QuestBranch, QuestSession, QuestStage, Skill, SkillTree, TimelineItem, Workspace, WorkspacePanel, WorldOverview } from '../domain/world';
 import { PlayerCharacter } from '../features/world/PlayerCharacter';
 import { WorldWorkspace } from '../features/world/WorldWorkspace';
-import { buildWorldTimeline, formatSessionDuration } from '../features/world/worldTimeline';
+import { formatSessionDuration } from '../features/world/worldTimeline';
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -17,7 +17,7 @@ const overview: WorldOverview = { player, quests: [quest], skillTrees: [tree], s
 const activeSession: QuestSession = { id: 'session-1', playerId: player.id, questId: quest.id, stageId: null, branchId: null, skillId: null, conceptId: null, startedAt: '2026-09-27T09:00:00Z', endedAt: null, status: 'in_progress', progressBefore: null, progressAfter: null, result: null, notes: null, isActive: true, metadataJson: '{}', createdAt: '2026-09-27T09:00:00Z', updatedAt: '2026-09-27T09:00:00Z' };
 const workspace: Workspace = { id: 'workspace-1', playerId: player.id, name: 'Overview', template: 'overview', sortOrder: 0, isDefault: true, createdAt: '', updatedAt: '' };
 const panel: WorkspacePanel = { id: 'panel-1', workspaceId: workspace.id, panelType: 'quests', title: 'Objectives', variant: 'rows', density: 'cozy', filterStatus: null, filterActive: null, filterTypeCode: null, filterConceptId: null, filterRecentDays: null, sortBy: 'name_asc', itemLimit: 6, sortOrder: 0, gridSpan: 1, isVisible: true, isPinned: false, isCollapsed: false, createdAt: '', updatedAt: '' };
-function client(overrides: Record<string, unknown> = {}) { return { listStatDefinitions: vi.fn(async () => []), listPlayerSnapshots: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listConceptProgress: vi.fn(async () => []), ...overrides } as unknown as CoreClient; }
+function client(overrides: Record<string, unknown> = {}) { return { listStatDefinitions: vi.fn(async () => []), listPlayerSnapshots: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listConceptProgress: vi.fn(async () => []), queryTimeline: vi.fn(async () => [] as TimelineItem[]), ...overrides } as unknown as CoreClient; }
 
 const common = { client: client(), player, overview, concepts: [concept], stats: [] as PlayerStat[], sessions: [activeSession], tracks: {} as Record<string, ConceptProgressTrack[]>, onRefresh: async () => {}, onNavigate: vi.fn(), onOpenEntity: vi.fn(), onQuickCapture: vi.fn() };
 
@@ -44,12 +44,19 @@ describe('Phase 6 Player Hub interaction loop', () => {
     expect(formatSessionDuration('2026-09-27T10:00:00Z', '2026-09-27T09:35:00Z')).toBeNull();
   });
 
-  it('builds history only from persisted timestamps and keeps stable newest-first order', () => {
-    const completed: QuestSession = { ...activeSession, status: 'completed', endedAt: '2026-09-27T09:45:00Z' };
-    const records = buildWorldTimeline({ player, overview, concepts: [concept], stats: [], sessions: [completed], tracks: {} });
-    expect(records.map(item => item.title)).toEqual(['Session ended', 'Session started', 'Quest started']);
-    expect(records[0]?.detail).toContain('45 min');
-    expect(records.map(item => item.at)).not.toContain('');
+  it('reuses the bounded persisted Timeline query for recent Hub activity and opens the exact record', async () => {
+    const item: TimelineItem = {
+      sourceId: 'session:session-1', playerId: player.id, category: 'session', entityKind: 'quest_session', entityId: activeSession.id,
+      timestamp: activeSession.startedAt, secondaryTimestamp: null, timestampKind: 'occurred', secondaryTimestampKind: null,
+      title: 'Session · Prepare the garden', summary: 'Recorded outcome', conceptId: null, typeCode: null, state: 'in_progress',
+    };
+    const queryTimeline = vi.fn(async () => [item]);
+    const onOpenEntity = vi.fn();
+    render(<PlayerCharacter {...common} client={client({ queryTimeline })} onOpenEntity={onOpenEntity} />);
+    const row = await screen.findByRole('button', { name: /Session · Prepare the garden/ });
+    expect(queryTimeline).toHaveBeenCalledWith({ playerId: player.id, category: null, entityKind: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 });
+    fireEvent.click(row);
+    expect(onOpenEntity).toHaveBeenCalledWith('quest_session', activeSession.id);
   });
 
   it('opens a persisted Quest directly from a populated configurable panel row', async () => {
@@ -80,7 +87,7 @@ describe('Phase 6 contextual navigation', () => {
     const { WorldExplorer } = await import('../features/world/WorldExplorer');
     render(<WorldExplorer client={explorerClient} player={player} concepts={[concept]} overview={overview} onRefresh={async () => {}} initialTarget={{ kind: 'quest', id: quest.id }} onReturnTo={onReturnTo} />);
     expect(await screen.findByRole('heading', { name: quest.title })).toBeInTheDocument();
-    expect(searchWorld).toHaveBeenCalledWith(expect.objectContaining({ kind: 'quest', playerId: player.id, includeTrashed: true }));
+    expect(searchWorld).toHaveBeenCalledWith(expect.objectContaining({ kind: 'quest', playerId: player.id, includeTrashed: true, limit: 200 }));
     fireEvent.click(screen.getByRole('button', { name: '← Return to previous view' }));
     expect(onReturnTo).toHaveBeenCalledOnce();
   });
@@ -211,5 +218,16 @@ describe('Phase 6.1 truthful dashboard labels', () => {
     });
     expect(screen.getByText('Skills tracked')).toBeInTheDocument();
     expect(screen.queryByText('Skills in practice')).not.toBeInTheDocument();
+  });
+});
+
+
+describe('Phase 8 Timeline route', () => {
+  it('renders as a dedicated workspace route and queries only the active Player world', async () => {
+    const queryTimeline = vi.fn(async () => [] as TimelineItem[]);
+    render(<WorldWorkspace route="timeline" client={client({ queryTimeline })} player={player} overview={overview} concepts={[concept]} stats={[]} sessions={[]} workspace={null} workspaces={[]} panels={[]} onPanelsChange={() => {}} onCreateWorkspace={async () => {}} onRenameWorkspace={async () => {}} onDefaultWorkspace={async () => {}} onDeleteWorkspace={async () => {}} onDuplicateWorkspace={async () => {}} onImportWorkspace={async () => {}} onRefresh={async () => {}} onCreatePlayer={async () => {}} onNavigate={() => {}} onOpenEntity={() => {}} onQuickCapture={() => {}} />);
+    expect(await screen.findByRole('heading', { name: 'Timeline' })).toBeInTheDocument();
+    await waitFor(() => expect(queryTimeline).toHaveBeenCalledWith(expect.objectContaining({ playerId: player.id, limit: 50, offset: 0 })));
+    expect(screen.queryByRole('heading', { name: 'Explore your world' })).not.toBeInTheDocument();
   });
 });

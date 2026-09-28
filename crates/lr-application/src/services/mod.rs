@@ -6,4 +6,5 @@ pub mod concepts;
 pub mod health;
 pub mod rule_engine;
 pub mod semantics;
+pub mod timeline;
 pub mod world;

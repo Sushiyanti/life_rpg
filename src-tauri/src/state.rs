@@ -1,7 +1,9 @@
 //! Application state constructed once by the shell composition root.
 
 use crate::SystemClock;
-use lr_application::{ConceptService, HealthService, SemanticsService, WorldService};
+use lr_application::{
+    ConceptService, HealthService, SemanticsService, TimelineService, WorldService,
+};
 use lr_persistence::SqliteHealthStore;
 use std::sync::{Arc, RwLock};
 
@@ -10,12 +12,14 @@ pub type WiredHealthService = HealthService<WiredStore, SystemClock>;
 pub type WiredWorldService = WorldService<WiredStore, SystemClock>;
 pub type WiredSemanticsService = SemanticsService<WiredStore, SystemClock>;
 pub type WiredConceptService = ConceptService<WiredStore, SystemClock>;
+pub type WiredTimelineService = TimelineService<WiredStore>;
 
 pub struct AppState {
     pub health: WiredHealthService,
     pub world: WiredWorldService,
     pub semantics: WiredSemanticsService,
     pub concepts: WiredConceptService,
+    pub timeline: WiredTimelineService,
     startup_warning: RwLock<Option<String>>,
 }
 impl AppState {
@@ -24,12 +28,14 @@ impl AppState {
         world: WiredWorldService,
         semantics: WiredSemanticsService,
         concepts: WiredConceptService,
+        timeline: WiredTimelineService,
     ) -> Self {
         Self {
             health,
             world,
             semantics,
             concepts,
+            timeline,
             startup_warning: RwLock::new(None),
         }
     }

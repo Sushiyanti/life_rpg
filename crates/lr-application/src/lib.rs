@@ -9,11 +9,12 @@ pub mod rules;
 pub mod search;
 pub mod semantics;
 pub mod services;
+pub mod timeline;
 
 pub use error::{AppError, StorageError};
 pub use ports::{
     Clock, ConceptStore, HealthStore, MigrationRecord, RoundTripProof, SchemaReport, SearchStore,
-    StoreDiagnostics, WorldStore,
+    StoreDiagnostics, TimelineStore, WorldStore,
 };
 pub use rules::{
     Comparison, EventKind, NumericSubject, ProgressMutationSource, Rule, RuleAction, RuleCondition,
@@ -28,8 +29,13 @@ pub use services::health::{
     ApplicationInfo, DatabaseInfo, HealthReport, HealthService, HealthStatus, RoundTripInfo,
 };
 pub use services::semantics::{QuestActivityDetail, QuestDetail, SemanticsService, SkillDetail};
+pub use services::timeline::TimelineService;
 pub use services::world::{
     AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService, DEFAULT_LEDGER_LIMIT,
+};
+pub use timeline::{
+    TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineSort,
+    TimelineTimestampKind,
 };
 
 pub const LAYER_NAME: &str = "application";
