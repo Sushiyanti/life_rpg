@@ -105,14 +105,14 @@ describe('CoreClient', () => {
     const transport=vi.fn(async()=>({})) as unknown as InvokeTransport;
     const client=new CoreClient(transport);
     await client.saveWorkspacePanel({playerId:'player-1',workspaceId:'workspace-1',panelId:'panel-1',panelType:'quests',title:'Open objectives',variant:'rows',density:'compact',filterStatus:'active',filterActive:null,filterTypeCode:'main',filterConceptId:'concept-1',filterRecentDays:30,sortBy:'updated_desc',itemLimit:8,sortOrder:2,gridSpan:2,isVisible:true,isPinned:true,isCollapsed:false});
-    expect(transport).toHaveBeenCalledWith('save_workspace_panel',expect.objectContaining({playerId:'player-1',workspaceId:'workspace-1',panelType:'quests',filterStatus:'active',filterTypeCode:'main',filterConceptId:'concept-1',filterRecentDays:30,sortBy:'updated_desc',itemLimit:8,gridSpan:2,isVisible:true}));
+    expect(transport).toHaveBeenCalledWith('save_workspace_panel',expect.objectContaining({playerId:'player-1',workspaceId:'workspace-1',panelType:'quests',filterStatus:'active',filterTypeCode:'main',filterConceptId:'concept-1',filterRecentDays:30,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,sortBy:'updated_desc',itemLimit:8,gridSpan:2,isVisible:true}));
     await client.setDefaultWorkspace('player-1','workspace-1');
     expect(transport).toHaveBeenLastCalledWith('set_default_workspace',{playerId:'player-1',workspaceId:'workspace-1'});
   });
   it('sends resolved workspace panels in one atomic import command', async () => {
     const transport=vi.fn(async()=>({workspace:{},panels:[]})) as unknown as InvokeTransport;
     const client=new CoreClient(transport);
-    const panel={panelType:'quests' as const,title:'Open',variant:'cards' as const,density:'cozy' as const,filterStatus:'active',filterActive:null,filterTypeCode:null,filterConceptId:'destination-concept',filterRecentDays:null,sortBy:'updated_desc' as const,itemLimit:8,sortOrder:0,gridSpan:2,isVisible:true,isPinned:false,isCollapsed:false};
+    const panel={panelType:'quests' as const,title:'Open',variant:'cards' as const,density:'cozy' as const,filterStatus:'active',filterActive:null,filterTypeCode:null,filterConceptId:'destination-concept',filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,sortBy:'updated_desc' as const,itemLimit:8,sortOrder:0,gridSpan:2,isVisible:true,isPinned:false,isCollapsed:false};
     await client.importWorkspace('destination-player','Learning','learning',[panel]);
     expect(transport).toHaveBeenCalledTimes(1);
     expect(transport).toHaveBeenCalledWith('import_workspace',{playerId:'destination-player',request:{name:'Learning',template:'learning',panels:[panel]}});
@@ -198,7 +198,7 @@ describe('Timeline IPC', () => {
     const transport = vi.fn(async () => [item]) as unknown as InvokeTransport;
     const client = new CoreClient(transport);
     const query = {
-      playerId: 'player-1', category: 'concept_progress', entityKind: 'concept', conceptId: 'concept-1',
+      playerId: 'player-1', category: 'concept_progress', entityKind: 'concept', entityId: null, conceptId: 'concept-1',
       from: '2026-09-01T00:00:00Z', through: '2026-09-30T23:59:59Z', sort: 'oldest', limit: 25, offset: 50,
     } as const;
     await expect(client.queryTimeline(query)).resolves.toEqual([item]);

@@ -46,6 +46,7 @@ mod tests {
                 concept_id: None,
                 type_code: Some("xp".into()),
                 state: None,
+                relationship_context: None,
             }])
         }
     }
@@ -55,6 +56,7 @@ mod tests {
             player_id: EntityId::new("player-1").unwrap(),
             category: Some(TimelineCategory::Transaction),
             entity_kind: None,
+            entity_id: None,
             concept_id: None,
             from: None,
             through: None,

@@ -34,8 +34,8 @@ pub use services::world::{
     AwardXpOutcome, NarrativeWrite, WorldOverview, WorldService, DEFAULT_LEDGER_LIMIT,
 };
 pub use timeline::{
-    TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineSort,
-    TimelineTimestampKind,
+    TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineRelationshipContext,
+    TimelineSort, TimelineTimestampKind,
 };
 
 pub const LAYER_NAME: &str = "application";

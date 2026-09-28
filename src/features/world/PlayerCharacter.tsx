@@ -113,7 +113,7 @@ export function PlayerCharacter({
     setActivityLoading(true);
     setActivityError('');
     setActivity([]);
-    void client.queryTimeline({ playerId: player.id, category: null, entityKind: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 })
+    void client.queryTimeline({ playerId: player.id, category: null, entityKind: null, entityId: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 })
       .then(rows => { if (live) setActivity(rows); })
       .catch(reason => { if (live) setActivityError(reason instanceof Error ? reason.message : 'Recent activity could not be loaded.'); })
       .finally(() => { if (live) setActivityLoading(false); });

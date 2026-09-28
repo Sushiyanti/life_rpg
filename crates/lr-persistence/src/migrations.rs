@@ -112,6 +112,11 @@ pub const MIGRATIONS: &[Migration] = &[
         name: "0014_phase8_timeline_indexes",
         sql: include_str!("migrations/0014_phase8_timeline_indexes.sql"),
     },
+    Migration {
+        version: 15,
+        name: "0015_phase9_timeline_workspace_panels",
+        sql: include_str!("migrations/0015_phase9_timeline_workspace_panels.sql"),
+    },
 ];
 
 /// Highest version this build ships.
@@ -262,7 +267,10 @@ mod tests {
         assert_eq!(applied_version(&conn).unwrap(), 0);
 
         let applied = run_migrations(&mut conn, T0).expect("migrate");
-        assert_eq!(applied, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+        assert_eq!(
+            applied,
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        );
         assert_eq!(applied_version(&conn).unwrap(), expected_version());
     }
 
@@ -270,7 +278,7 @@ mod tests {
     fn migrations_are_idempotent() {
         let mut conn = open_memory();
         let first = run_migrations(&mut conn, T0).expect("first run");
-        assert_eq!(first.len(), 14);
+        assert_eq!(first.len(), 15);
 
         let second = run_migrations(&mut conn, T0).expect("second run");
         assert!(second.is_empty(), "re-run must be a no-op, got {second:?}");
@@ -278,7 +286,7 @@ mod tests {
         let count: u32 = conn
             .query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(count, 14, "ledger must not accumulate duplicates");
+        assert_eq!(count, 15, "ledger must not accumulate duplicates");
     }
 
     #[test]
@@ -288,7 +296,7 @@ mod tests {
 
         let report = schema_report(&conn).unwrap();
         assert!(report.is_current());
-        assert_eq!(report.migrations.len(), 14);
+        assert_eq!(report.migrations.len(), 15);
         assert!(report.migrations.iter().all(|m| m.applied));
         assert_eq!(
             report.migrations[0].applied_at.as_deref(),
@@ -314,7 +322,7 @@ mod tests {
         let applied = run_migrations(&mut conn, T0).unwrap();
         assert_eq!(
             applied,
-            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14],
+            vec![2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
             "must apply only the missing steps"
         );
 
@@ -348,7 +356,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            vec![4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
         assert!(schema_report(&conn).unwrap().is_current());
 
@@ -396,7 +404,7 @@ mod tests {
 
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![7, 8, 9, 10, 11, 12, 13, 14]
+            vec![7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
         assert!(schema_report(&conn).unwrap().is_current());
         let player: (i64, i32) = conn
@@ -471,7 +479,7 @@ mod tests {
         conn.execute("INSERT INTO transactions(player_id,transaction_type_code,resource,amount,occurred_at) VALUES ('old-player','xp','xp',-35,?1)", [T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+            vec![5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
         );
         let player: (i64, i32) = conn
             .query_row(
@@ -507,7 +515,7 @@ mod tests {
         conn.execute("INSERT INTO quest_sessions(id,player_id,concept_id,started_at,status,is_active,created_at,updated_at) VALUES('old-session','p','c',?1,'in_progress',1,?1,?1)",[T0]).unwrap();
         assert_eq!(
             run_migrations(&mut conn, T0).unwrap(),
-            vec![10, 11, 12, 13, 14]
+            vec![10, 11, 12, 13, 14, 15]
         );
         let legacy_key: String = conn
             .query_row("SELECT transfer_key FROM concepts WHERE id='c'", [], |r| {
@@ -546,7 +554,10 @@ mod tests {
         }
         conn.execute("INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p','Ada',1,0,?1,?1)",[T0]).unwrap();
         conn.execute("INSERT INTO concepts(id,player_id,concept_type_code,name,created_at,updated_at) VALUES('c1','p','subject','Reading',?1,?1),('c2','p','subject','Reading',?1,?1)",[T0]).unwrap();
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![11, 12, 13, 14]);
+        assert_eq!(
+            run_migrations(&mut conn, T0).unwrap(),
+            vec![11, 12, 13, 14, 15]
+        );
         let keys: Vec<String> = conn
             .prepare("SELECT transfer_key FROM concepts ORDER BY id")
             .unwrap()
@@ -570,7 +581,7 @@ mod tests {
                 []
             )
             .is_err());
-        assert_eq!(applied_version(&conn).unwrap(), 14);
+        assert_eq!(applied_version(&conn).unwrap(), 15);
     }
 
     #[test]
@@ -594,7 +605,7 @@ mod tests {
             [T0],
         ).unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![12, 13, 14]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![12, 13, 14, 15]);
         let preserved: (String, Option<String>) = conn
             .query_row(
                 "SELECT name,expires_at FROM effects WHERE id='e'",
@@ -613,7 +624,7 @@ mod tests {
                 .unwrap();
             assert_eq!(exists, 1, "missing {table}");
         }
-        assert_eq!(applied_version(&conn).unwrap(), 14);
+        assert_eq!(applied_version(&conn).unwrap(), 15);
     }
 
     #[test]
@@ -653,7 +664,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![13, 14]);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![13, 14, 15]);
         let rows: Vec<(String, Option<String>)> = conn
             .prepare("SELECT role_code,removed_at FROM content_attachments ORDER BY role_code")
             .unwrap()
@@ -718,8 +729,8 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![14]);
-        assert_eq!(applied_version(&conn).unwrap(), 14);
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![14, 15]);
+        assert_eq!(applied_version(&conn).unwrap(), 15);
         let preserved: String = conn
             .query_row("SELECT name FROM players WHERE id='p'", [], |row| {
                 row.get(0)
@@ -741,6 +752,10 @@ mod tests {
             "idx_timeline_lifecycle_player_time",
             "idx_timeline_content_relationship_created",
             "idx_timeline_content_relationship_removed",
+            "idx_timeline_concepts_player_created",
+            "idx_timeline_skill_trees_player_created",
+            "idx_timeline_quest_stages_player_created",
+            "idx_timeline_quest_branches_player_created",
         ] {
             let found: i64 = conn
                 .query_row(
@@ -762,6 +777,98 @@ mod tests {
             event_tables, 0,
             "Timeline is a projection, not a second event store"
         );
+    }
+
+    #[test]
+    fn schema_14_upgrade_preserves_workspace_panels_and_adds_closed_timeline_filters() {
+        let mut conn = open_memory();
+        ensure_ledger(&conn).unwrap();
+        for migration in &MIGRATIONS[..14] {
+            conn.execute_batch(migration.sql).unwrap();
+            conn.execute(
+                "INSERT INTO schema_migrations(version,name,applied_at) VALUES(?1,?2,?3)",
+                rusqlite::params![migration.version, migration.name, T0],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('p','Ada',1,0,?1,?1)",
+            [T0],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO concepts(id,player_id,concept_type_code,name,created_at,updated_at) VALUES('c','p','subject','Garden',?1,?1)",
+            [T0],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces(id,player_id,name,template,is_default,created_at,updated_at) VALUES('w','p','Focus','focus',1,?1,?1)",
+            [T0],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_status,filter_active,filter_type_code,filter_concept_id,filter_recent_days,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES('existing','w','quests','Garden goals','cards','compact','active',NULL,'main','c',30,'updated_desc',12,4,2,0,1,1,?1,?1)",
+            [T0],
+        )
+        .unwrap();
+
+        assert_eq!(run_migrations(&mut conn, T0).unwrap(), vec![15]);
+        assert_eq!(applied_version(&conn).unwrap(), 15);
+        let preserved: (String, String, String, i64, i64, i64, String, i64) = conn
+            .query_row(
+                "SELECT title,filter_status,filter_concept_id,is_visible,is_pinned,grid_span,sort_by,item_limit FROM workspace_panels WHERE id='existing'",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?,row.get(7)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            preserved,
+            (
+                "Garden goals".into(),
+                "active".into(),
+                "c".into(),
+                0,
+                1,
+                2,
+                "updated_desc".into(),
+                12
+            )
+        );
+
+        conn.execute(
+            "INSERT INTO workspace_panels(id,workspace_id,panel_type,title,variant,density,filter_concept_id,filter_timeline_category,filter_timeline_entity_kind,filter_timeline_entity_id,filter_timeline_from,filter_timeline_through,sort_by,item_limit,sort_order,grid_span,is_visible,is_pinned,is_collapsed,created_at,updated_at) VALUES('timeline','w','timeline','Recent sessions','timeline','cozy','c','session','quest_session','session-1','2026-09-01','2026-09-30','timeline_oldest',10,5,2,1,0,0,?1,?1)",
+            [T0],
+        )
+        .unwrap();
+        let timeline: (String, String, String, String, String, String, String) = conn
+            .query_row(
+                "SELECT panel_type,filter_timeline_category,filter_timeline_entity_kind,filter_timeline_entity_id,filter_timeline_from,filter_timeline_through,sort_by FROM workspace_panels WHERE id='timeline'",
+                [],
+                |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?,row.get(5)?,row.get(6)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            timeline,
+            (
+                "timeline".into(),
+                "session".into(),
+                "quest_session".into(),
+                "session-1".into(),
+                "2026-09-01".into(),
+                "2026-09-30".into(),
+                "timeline_oldest".into()
+            )
+        );
+        assert!(conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,variant,density,filter_timeline_category,sort_by,created_at,updated_at) VALUES('bad-category','w','timeline','timeline','cozy','arbitrary','timeline_newest',?1,?1)",[T0]).is_err());
+        assert!(conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,variant,density,filter_timeline_entity_id,sort_by,created_at,updated_at) VALUES('bad-identity','w','timeline','timeline','cozy','session-1','timeline_newest',?1,?1)",[T0]).is_err());
+        assert!(conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,variant,density,filter_timeline_from,filter_timeline_through,sort_by,created_at,updated_at) VALUES('bad-range','w','timeline','timeline','cozy','2026-10-01','2026-09-01','timeline_newest',?1,?1)",[T0]).is_err());
+        assert!(conn.execute("INSERT INTO workspace_panels(id,workspace_id,panel_type,variant,density,filter_timeline_category,sort_by,created_at,updated_at) VALUES('wrong-source','w','quests','cards','cozy','session','updated_desc',?1,?1)",[T0]).is_err());
+        let fk_violations: i64 = conn
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(fk_violations, 0);
     }
 
     #[test]

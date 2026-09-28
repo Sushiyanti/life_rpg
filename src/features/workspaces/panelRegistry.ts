@@ -24,6 +24,7 @@ export const PANEL_REGISTRY: Record<WorkspacePanelType, PanelDefinition> = {
   activity: {label:'Recorded sessions',description:'Real periods of activity; missing days remain gaps.',variants:['rows','compact','detailed','timeline'],sorts:['started_desc','created_desc','status_asc'],statuses:['in_progress','completed','interrupted'],supportsActive:false,supportsType:false,supportsConcept:true,supportsRecent:true,defaultVariant:'rows',defaultSort:'started_desc'},
   transactions: {label:'Recent ledger',description:'Append-only recorded changes.',variants:['rows','compact','detailed','timeline'],sorts:['occurred_desc','created_desc'],statuses:[],supportsActive:false,supportsType:true,supportsConcept:true,supportsRecent:true,defaultVariant:'rows',defaultSort:'occurred_desc'},
   journal: {label:'Recent chronicle',description:'Player-authored narrative entries.',variants:['cards','rows','compact','detailed'],sorts:['created_desc','updated_desc','name_asc'],statuses:[],supportsActive:false,supportsType:true,supportsConcept:true,supportsRecent:true,defaultVariant:'rows',defaultSort:'created_desc'},
+  timeline: {label:'Recorded Timeline',description:'Bounded, read-only history with source, identity, and inclusive date filters.',variants:['timeline','rows','compact'],sorts:['timeline_newest','timeline_oldest'],statuses:[],supportsActive:false,supportsType:false,supportsConcept:true,supportsRecent:false,defaultVariant:'timeline',defaultSort:'timeline_newest'},
 };
 
 export const panelLabel = (type: WorkspacePanelType) => PANEL_REGISTRY[type].label;

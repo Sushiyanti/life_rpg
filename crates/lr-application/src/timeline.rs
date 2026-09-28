@@ -160,6 +160,7 @@ pub struct TimelineQuery {
     pub player_id: EntityId,
     pub category: Option<TimelineCategory>,
     pub entity_kind: Option<TimelineEntityKind>,
+    pub entity_id: Option<EntityId>,
     pub concept_id: Option<EntityId>,
     pub from: Option<Iso8601Timestamp>,
     pub through: Option<Iso8601Timestamp>,
@@ -199,6 +200,17 @@ impl TimelineQuery {
     }
 }
 
+/// Exact persisted context for a Content relationship history fact.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimelineRelationshipContext {
+    pub relationship_id: String,
+    pub content_id: String,
+    pub content_title: String,
+    pub role_code: String,
+    pub created_at: Iso8601Timestamp,
+    pub removed_at: Option<Iso8601Timestamp>,
+}
+
 /// Safe compact projection; it never contains raw database rows or arbitrary JSON.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimelineItem {
@@ -219,6 +231,8 @@ pub struct TimelineItem {
     pub type_code: Option<String>,
     /// Source-specific closed status (for example Session status or Effect history kind).
     pub state: Option<String>,
+    /// Present only for explicit Content relationship history facts.
+    pub relationship_context: Option<TimelineRelationshipContext>,
 }
 
 #[cfg(test)]
@@ -230,6 +244,7 @@ mod tests {
             player_id: EntityId::new("player-1").unwrap(),
             category: None,
             entity_kind: None,
+            entity_id: None,
             concept_id: None,
             from: None,
             through: None,

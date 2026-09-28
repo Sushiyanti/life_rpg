@@ -1,4 +1,4 @@
-import type { WorkspacePanelSort, WorkspacePanelType, WorkspacePanelVariant, WorkspaceTemplate } from '../../domain/world';
+import type { TimelineCategory, TimelineEntityKind, WorkspacePanelSort, WorkspacePanelType, WorkspacePanelVariant, WorkspaceTemplate } from '../../domain/world';
 
 export type TemplatePanel = {
   panelType: WorkspacePanelType;
@@ -9,13 +9,17 @@ export type TemplatePanel = {
   filterActive?: boolean|null;
   filterTypeCode?: string|null;
   filterRecentDays?: number|null;
+  filterTimelineCategory?: TimelineCategory|null;
+  filterTimelineEntityKind?: TimelineEntityKind|null;
+  filterTimelineFrom?: string|null;
+  filterTimelineThrough?: string|null;
   sortBy: WorkspacePanelSort;
   itemLimit: number;
   gridSpan?: 1|2;
   isPinned: boolean;
 };
 export type WorkspaceTemplateDefinition = {id:Exclude<WorkspaceTemplate,'custom'>;name:string;description:string;panels:TemplatePanel[]};
-const p=(panelType:WorkspacePanelType,title:string,options:Partial<Omit<TemplatePanel,'panelType'|'title'>>={}):TemplatePanel=>({panelType,title,variant:'rows',density:'cozy',filterStatus:null,filterActive:null,filterTypeCode:null,filterRecentDays:null,sortBy:'updated_desc',itemLimit:6,gridSpan:1,isPinned:false,...options});
+const p=(panelType:WorkspacePanelType,title:string,options:Partial<Omit<TemplatePanel,'panelType'|'title'>>={}):TemplatePanel=>({panelType,title,variant:'rows',density:'cozy',filterStatus:null,filterActive:null,filterTypeCode:null,filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineFrom:null,filterTimelineThrough:null,sortBy:panelType==='timeline'?'timeline_newest':'updated_desc',itemLimit:6,gridSpan:1,isPinned:false,...options});
 export const WORKSPACE_TEMPLATES: WorkspaceTemplateDefinition[] = [
   {id:'overview',name:'Overview',description:'A balanced, responsive view of your world.',panels:[
     p('player','Player status',{variant:'metrics',sortBy:'name_asc',isPinned:true}),
@@ -24,6 +28,7 @@ export const WORKSPACE_TEMPLATES: WorkspaceTemplateDefinition[] = [
     p('skills','Skill growth',{variant:'cards',sortBy:'level_desc'}),
     p('effects','Current effects',{variant:'compact',filterActive:true,sortBy:'updated_desc'}),
     p('activity','Recent sessions',{variant:'timeline',filterRecentDays:7,sortBy:'started_desc'}),
+    p('timeline','Recorded Timeline',{variant:'timeline',filterTimelineCategory:'session',sortBy:'timeline_newest',itemLimit:8}),
     p('journal','Recent chronicle',{variant:'rows',filterRecentDays:14,sortBy:'created_desc'}),
   ]},
   {id:'focus',name:'Focus',description:'Keep active objectives and real work close.',panels:[
@@ -48,6 +53,7 @@ export const WORKSPACE_TEMPLATES: WorkspaceTemplateDefinition[] = [
   ]},
   {id:'review',name:'Review',description:'Review recorded work and authored history.',panels:[
     p('activity','Recent activity',{variant:'timeline',filterRecentDays:30,sortBy:'started_desc',isPinned:true}),
+    p('timeline','Recorded history',{variant:'timeline',sortBy:'timeline_newest',itemLimit:10,isPinned:true}),
     p('transactions','Recent ledger',{variant:'detailed',filterRecentDays:30,sortBy:'occurred_desc',isPinned:true}),
     p('journal','Recent chronicle',{variant:'cards',filterRecentDays:30,sortBy:'created_desc'}),
     p('quests','Completed quests',{variant:'rows',filterStatus:'completed',sortBy:'updated_desc'}),

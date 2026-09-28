@@ -5,8 +5,8 @@ use crate::{
     WorldStore,
 };
 use lr_domain::{
-    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, Effect,
-    EffectHistoryEntry, EffectHistoryKind, EntityId, EntityRevision, Iso8601Timestamp,
+    AssociatedEntityKind, ConceptAssociation, ContentAttachment, ContentTargetKind, DateValue,
+    Effect, EffectHistoryEntry, EffectHistoryKind, EntityId, EntityRevision, Iso8601Timestamp,
     LifecycleState, PresentationPreference, ProgressSuggestion, QuestBranch, QuestSession,
     QuestStage, RevisionTargetKind, SessionEffect, SessionEffectRole, SessionStatus, TypeRef,
     Workspace, WorkspacePanel,
@@ -1065,6 +1065,17 @@ where
                 filter_type_code: import.filter_type_code,
                 filter_concept_id: import.filter_concept_id.map(EntityId::new).transpose()?,
                 filter_recent_days: import.filter_recent_days,
+                filter_timeline_category: import.filter_timeline_category,
+                filter_timeline_entity_kind: import.filter_timeline_entity_kind,
+                filter_timeline_entity_id: import.filter_timeline_entity_id,
+                filter_timeline_from: import
+                    .filter_timeline_from
+                    .map(DateValue::parse)
+                    .transpose()?,
+                filter_timeline_through: import
+                    .filter_timeline_through
+                    .map(DateValue::parse)
+                    .transpose()?,
                 sort_by: import.sort_by,
                 item_limit: import.item_limit,
                 sort_order: import.sort_order,
@@ -1150,6 +1161,11 @@ where
         filter_type_code: Option<&str>,
         filter_concept_id: Option<&str>,
         filter_recent_days: Option<i32>,
+        filter_timeline_category: Option<&str>,
+        filter_timeline_entity_kind: Option<&str>,
+        filter_timeline_entity_id: Option<&str>,
+        filter_timeline_from: Option<&str>,
+        filter_timeline_through: Option<&str>,
         sort_by: &str,
         item_limit: i32,
         sort_order: i32,
@@ -1175,6 +1191,11 @@ where
             filter_type_code: filter_type_code.map(str::to_string),
             filter_concept_id: filter_concept_id.map(EntityId::new).transpose()?,
             filter_recent_days,
+            filter_timeline_category: filter_timeline_category.map(str::to_string),
+            filter_timeline_entity_kind: filter_timeline_entity_kind.map(str::to_string),
+            filter_timeline_entity_id: filter_timeline_entity_id.map(str::to_string),
+            filter_timeline_from: filter_timeline_from.map(DateValue::parse).transpose()?,
+            filter_timeline_through: filter_timeline_through.map(DateValue::parse).transpose()?,
             sort_by: sort_by.into(),
             item_limit,
             sort_order,

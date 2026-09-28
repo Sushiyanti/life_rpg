@@ -4,7 +4,7 @@ import { panelSearchQuery } from '../features/world/WorldWorkspace';
 
 const panel=(panelType:WorkspacePanel['panelType'],patch:Partial<WorkspacePanel>={}):WorkspacePanel=>({
   id:'panel-1',workspaceId:'workspace-1',panelType,title:'View',variant:'rows',density:'cozy',
-  filterStatus:null,filterActive:null,filterTypeCode:null,filterConceptId:null,filterRecentDays:null,
+  filterStatus:null,filterActive:null,filterTypeCode:null,filterConceptId:null,filterRecentDays:null,filterTimelineCategory:null,filterTimelineEntityKind:null,filterTimelineEntityId:null,filterTimelineFrom:null,filterTimelineThrough:null,
   sortBy:'updated_desc',itemLimit:10,sortOrder:0,gridSpan:1,isVisible:true,isPinned:false,isCollapsed:false,
   createdAt:'2026-09-27T00:00:00Z',updatedAt:'2026-09-27T00:00:00Z',...patch,
 });

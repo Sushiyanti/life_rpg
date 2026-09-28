@@ -1,5 +1,5 @@
 //! User-configurable workspace presentation, intentionally separate from world entities.
-use crate::{DomainError, DomainResult, EntityId, Iso8601Timestamp};
+use crate::{DateValue, DomainError, DomainResult, EntityId, Iso8601Timestamp};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
@@ -64,6 +64,11 @@ pub struct WorkspacePanel {
     pub filter_type_code: Option<String>,
     pub filter_concept_id: Option<EntityId>,
     pub filter_recent_days: Option<i32>,
+    pub filter_timeline_category: Option<String>,
+    pub filter_timeline_entity_kind: Option<String>,
+    pub filter_timeline_entity_id: Option<String>,
+    pub filter_timeline_from: Option<DateValue>,
+    pub filter_timeline_through: Option<DateValue>,
     pub sort_by: String,
     pub item_limit: i32,
     pub sort_order: i32,
@@ -85,6 +90,7 @@ impl WorkspacePanel {
             "journal" => &["cards", "rows", "compact", "detailed"],
             "player" => &["metrics", "cards", "compact", "detailed"],
             "progress" => &["metrics", "rows", "cards"],
+            "timeline" => &["rows", "compact", "timeline"],
             _ => {
                 return Err(DomainError::invalid_value(
                     "panel type",
@@ -189,6 +195,103 @@ impl WorkspacePanel {
                 "Concept and recent-day filters are unsupported for Player status",
             ));
         }
+        const TIMELINE_CATEGORIES: &[&str] = &[
+            "session",
+            "transaction",
+            "effect_history",
+            "content",
+            "comment",
+            "concept_progress",
+            "revision",
+            "snapshot",
+            "record_change",
+            "lifecycle",
+            "relationship_history",
+        ];
+        const TIMELINE_ENTITY_KINDS: &[&str] = &[
+            "player",
+            "concept",
+            "quest",
+            "quest_stage",
+            "quest_branch",
+            "quest_session",
+            "skill_tree",
+            "skill",
+            "effect",
+            "transaction",
+            "comment",
+            "narrative_entry",
+            "concept_progress",
+        ];
+        if self
+            .filter_timeline_category
+            .as_deref()
+            .is_some_and(|value| !TIMELINE_CATEGORIES.contains(&value))
+        {
+            return Err(DomainError::invalid_value(
+                "Timeline category filter",
+                "unsupported recorded category",
+            ));
+        }
+        if self
+            .filter_timeline_entity_kind
+            .as_deref()
+            .is_some_and(|value| !TIMELINE_ENTITY_KINDS.contains(&value))
+        {
+            return Err(DomainError::invalid_value(
+                "Timeline entity filter",
+                "unsupported world record kind",
+            ));
+        }
+        if self
+            .filter_timeline_entity_id
+            .as_ref()
+            .is_some_and(|id| id.is_empty() || id.len() > 160)
+        {
+            return Err(DomainError::invalid_value(
+                "Timeline entity identity filter",
+                "must contain 1-160 characters",
+            ));
+        }
+        if self.filter_timeline_entity_id.is_some() && self.filter_timeline_entity_kind.is_none() {
+            return Err(DomainError::invalid_value(
+                "Timeline entity identity filter",
+                "requires an entity kind",
+            ));
+        }
+        let has_timeline_filter = self.filter_timeline_category.is_some()
+            || self.filter_timeline_entity_kind.is_some()
+            || self.filter_timeline_entity_id.is_some()
+            || self.filter_timeline_from.is_some()
+            || self.filter_timeline_through.is_some();
+        if has_timeline_filter && self.panel_type != "timeline" {
+            return Err(DomainError::invalid_value(
+                "Timeline panel filter",
+                "supported only by Timeline panels",
+            ));
+        }
+        if self.panel_type == "timeline"
+            && (self.filter_status.is_some()
+                || self.filter_active.is_some()
+                || self.filter_type_code.is_some()
+                || self.filter_recent_days.is_some())
+        {
+            return Err(DomainError::invalid_value(
+                "Timeline panel filters",
+                "use the typed Timeline category, entity, Concept, and date filters",
+            ));
+        }
+        if self
+            .filter_timeline_from
+            .as_ref()
+            .zip(self.filter_timeline_through.as_ref())
+            .is_some_and(|(from, through)| from > through)
+        {
+            return Err(DomainError::invalid_value(
+                "Timeline date range",
+                "start must not be after end",
+            ));
+        }
         let sorts: &[&str] = match self.panel_type.as_str() {
             "quests" => &[
                 "updated_desc",
@@ -217,6 +320,7 @@ impl WorkspacePanel {
             "progress" => &["name_asc", "updated_desc", "progress_desc", "level_desc"],
             "activity" => &["started_desc", "created_desc", "status_asc"],
             "transactions" => &["occurred_desc", "created_desc"],
+            "timeline" => &["timeline_newest", "timeline_oldest"],
             _ => &[],
         };
         if !sorts.contains(&self.sort_by.as_str()) {
@@ -257,6 +361,11 @@ mod tests {
             filter_type_code: Some("main".into()),
             filter_concept_id: Some(EntityId::new("concept-1").unwrap()),
             filter_recent_days: Some(30),
+            filter_timeline_category: None,
+            filter_timeline_entity_kind: None,
+            filter_timeline_entity_id: None,
+            filter_timeline_from: None,
+            filter_timeline_through: None,
             sort_by: "updated_desc".into(),
             item_limit: 8,
             sort_order: 0,
@@ -330,6 +439,40 @@ mod tests {
         assert!(value.validate().is_err());
         value = panel();
         value.sort_order = 1000;
+        assert!(value.validate().is_err());
+    }
+
+    #[test]
+    fn timeline_panel_accepts_only_closed_filters_and_ordered_calendar_dates() {
+        let mut value = panel();
+        value.panel_type = "timeline".into();
+        value.variant = "timeline".into();
+        value.filter_status = None;
+        value.filter_type_code = None;
+        value.filter_concept_id = None;
+        value.filter_recent_days = None;
+        value.filter_timeline_category = Some("session".into());
+        value.filter_timeline_entity_kind = Some("quest_session".into());
+        value.filter_timeline_entity_id = Some("session-1".into());
+        value.filter_timeline_from = Some(DateValue::parse("2026-09-01").unwrap());
+        value.filter_timeline_through = Some(DateValue::parse("2026-09-30").unwrap());
+        value.sort_by = "timeline_oldest".into();
+        assert!(value.validate().is_ok());
+
+        value.filter_timeline_entity_kind = None;
+        assert!(value.validate().is_err());
+        value.filter_timeline_entity_kind = Some("quest_session".into());
+
+        value.filter_timeline_category = Some("session OR 1=1".into());
+        assert!(value.validate().is_err());
+        value.filter_timeline_category = None;
+        value.filter_timeline_entity_kind = Some("quest; DROP TABLE quests".into());
+        assert!(value.validate().is_err());
+        value.filter_timeline_entity_kind = None;
+        value.filter_timeline_from = Some(DateValue::parse("2026-10-01").unwrap());
+        assert!(value.validate().is_err());
+        value.filter_timeline_from = None;
+        value.filter_recent_days = Some(7);
         assert!(value.validate().is_err());
     }
 }

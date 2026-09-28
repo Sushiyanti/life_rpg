@@ -16,7 +16,7 @@ const concept: Concept = { id: 'concept-1', playerId: player.id, transferKey: 'c
 const overview: WorldOverview = { player, quests: [quest], skillTrees: [tree], skills: [skill], effects: [], recentTransactions: [], narratives: [] };
 const activeSession: QuestSession = { id: 'session-1', playerId: player.id, questId: quest.id, stageId: null, branchId: null, skillId: null, conceptId: null, startedAt: '2026-09-27T09:00:00Z', endedAt: null, status: 'in_progress', progressBefore: null, progressAfter: null, result: null, notes: null, isActive: true, metadataJson: '{}', createdAt: '2026-09-27T09:00:00Z', updatedAt: '2026-09-27T09:00:00Z' };
 const workspace: Workspace = { id: 'workspace-1', playerId: player.id, name: 'Overview', template: 'overview', sortOrder: 0, isDefault: true, createdAt: '', updatedAt: '' };
-const panel: WorkspacePanel = { id: 'panel-1', workspaceId: workspace.id, panelType: 'quests', title: 'Objectives', variant: 'rows', density: 'cozy', filterStatus: null, filterActive: null, filterTypeCode: null, filterConceptId: null, filterRecentDays: null, sortBy: 'name_asc', itemLimit: 6, sortOrder: 0, gridSpan: 1, isVisible: true, isPinned: false, isCollapsed: false, createdAt: '', updatedAt: '' };
+const panel: WorkspacePanel = { id: 'panel-1', workspaceId: workspace.id, panelType: 'quests', title: 'Objectives', variant: 'rows', density: 'cozy', filterStatus: null, filterActive: null, filterTypeCode: null, filterConceptId: null, filterRecentDays: null, filterTimelineCategory: null, filterTimelineEntityKind: null, filterTimelineEntityId: null, filterTimelineFrom: null, filterTimelineThrough: null, sortBy: 'name_asc', itemLimit: 6, sortOrder: 0, gridSpan: 1, isVisible: true, isPinned: false, isCollapsed: false, createdAt: '', updatedAt: '' };
 function client(overrides: Record<string, unknown> = {}) { return { listStatDefinitions: vi.fn(async () => []), listPlayerSnapshots: vi.fn(async () => []), listPresentationPreferences: vi.fn(async () => []), listConceptProgress: vi.fn(async () => []), queryTimeline: vi.fn(async () => [] as TimelineItem[]), ...overrides } as unknown as CoreClient; }
 
 const common = { client: client(), player, overview, concepts: [concept], stats: [] as PlayerStat[], sessions: [activeSession], tracks: {} as Record<string, ConceptProgressTrack[]>, onRefresh: async () => {}, onNavigate: vi.fn(), onOpenEntity: vi.fn(), onQuickCapture: vi.fn() };
@@ -48,13 +48,13 @@ describe('Phase 6 Player Hub interaction loop', () => {
     const item: TimelineItem = {
       sourceId: 'session:session-1', playerId: player.id, category: 'session', entityKind: 'quest_session', entityId: activeSession.id,
       timestamp: activeSession.startedAt, secondaryTimestamp: null, timestampKind: 'occurred', secondaryTimestampKind: null,
-      title: 'Session · Prepare the garden', summary: 'Recorded outcome', conceptId: null, typeCode: null, state: 'in_progress',
+      title: 'Session · Prepare the garden', summary: 'Recorded outcome', conceptId: null, typeCode: null, state: 'in_progress', relationshipContext: null,
     };
     const queryTimeline = vi.fn(async () => [item]);
     const onOpenEntity = vi.fn();
     render(<PlayerCharacter {...common} client={client({ queryTimeline })} onOpenEntity={onOpenEntity} />);
     const row = await screen.findByRole('button', { name: /Session · Prepare the garden/ });
-    expect(queryTimeline).toHaveBeenCalledWith({ playerId: player.id, category: null, entityKind: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 });
+    expect(queryTimeline).toHaveBeenCalledWith({ playerId: player.id, category: null, entityKind: null, entityId: null, conceptId: null, from: null, through: null, sort: 'newest', limit: 18, offset: 0 });
     fireEvent.click(row);
     expect(onOpenEntity).toHaveBeenCalledWith('quest_session', activeSession.id);
   });

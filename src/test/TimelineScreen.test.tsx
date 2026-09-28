@@ -7,7 +7,7 @@ import { TimelineScreen } from '../features/world/TimelineScreen';
 const event = (overrides: Partial<TimelineItem> = {}): TimelineItem => ({
   sourceId: 'session:session-1', playerId: 'player-1', category: 'session', entityKind: 'quest_session', entityId: 'session-1',
   timestamp: '2026-09-28T10:30:00Z', secondaryTimestamp: null, timestampKind: 'occurred', secondaryTimestampKind: null,
-  title: 'Session · Garden', summary: 'Seeds prepared and soil watered.', conceptId: null, typeCode: null, state: 'completed', ...overrides,
+  title: 'Session · Garden', summary: 'Seeds prepared and soil watered.', conceptId: null, typeCode: null, state: 'completed', relationshipContext: null, ...overrides,
 });
 const queryClient = (queryTimeline: (query: TimelineQuery) => Promise<TimelineItem[]>) => ({ queryTimeline: vi.fn(queryTimeline) } as unknown as CoreClient);
 const renderScreen = (client: CoreClient, onOpenEntity = vi.fn()) => render(
@@ -34,11 +34,28 @@ describe('TimelineScreen', () => {
     expect(screen.getByText(/Ended ·/)).toBeInTheDocument();
     expect(screen.getByText('created')).toBeInTheDocument();
     expect(queryTimeline).toHaveBeenCalledWith(expect.objectContaining({
-      playerId: 'player-1', category: null, entityKind: null, conceptId: null,
+      playerId: 'player-1', category: null, entityKind: null, entityId: null, conceptId: null,
       from: null, through: null, sort: 'newest', limit: 50, offset: 0,
     }));
     fireEvent.click(target);
     expect(onOpenEntity).toHaveBeenCalledWith('quest', 'quest-1');
+  });
+
+  it('inspects an exact Content relationship and opens both the Content and target records', async () => {
+    const onOpenEntity = vi.fn();
+    const relationship = event({
+      sourceId: 'relationship:rel-9:removed', category: 'relationship_history', entityKind: 'quest', entityId: 'quest-7',
+      title: 'Content relationship removed · guidance', summary: 'Content · Garden guide → quest quest-7', timestampKind: 'removed', state: 'removed',
+      relationshipContext: { relationshipId: 'rel-9', contentId: 'content-3', contentTitle: 'Garden guide', roleCode: 'guidance', createdAt: '2026-09-20T10:00:00Z', removedAt: '2026-09-28T10:00:00Z' },
+    });
+    renderScreen(queryClient(async () => [relationship]), onOpenEntity);
+    await screen.findByRole('button', { name: /Content relationship removed/ });
+    fireEvent.click(screen.getByText('Inspect relationship context'));
+    expect(screen.getByText('Garden guide')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Content' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open target' }));
+    expect(onOpenEntity).toHaveBeenNthCalledWith(1, 'narrative_entry', 'content-3');
+    expect(onOpenEntity).toHaveBeenNthCalledWith(2, 'quest', 'quest-7');
   });
 
   it('sends category, entity, concept, and inclusive local date filters as a bounded query', async () => {
@@ -49,17 +66,18 @@ describe('TimelineScreen', () => {
     fireEvent.change(screen.getByLabelText('Timeline category'), { target: { value: 'content' } });
     fireEvent.change(screen.getByLabelText('Entity kind'), { target: { value: 'narrative_entry' } });
     fireEvent.change(screen.getByLabelText('Timeline from date'), { target: { value: '2026-09-10' } });
+    fireEvent.change(screen.getByLabelText('Exact entity ID'), { target: { value: 'session-42' } });
     fireEvent.change(screen.getByLabelText('Timeline through date'), { target: { value: '2026-09-12' } });
     fireEvent.change(screen.getByLabelText('Timeline order'), { target: { value: 'oldest' } });
 
     await waitFor(() => expect(queryTimeline).toHaveBeenLastCalledWith(expect.objectContaining({
-      playerId: 'player-1', category: 'content', entityKind: 'narrative_entry',
+      playerId: 'player-1', category: 'content', entityKind: 'narrative_entry', entityId: 'session-42',
       from: new Date('2026-09-10T00:00:00.000').toISOString(),
       through: new Date('2026-09-12T23:59:59.999').toISOString(),
       sort: 'oldest', limit: 50, offset: 0,
     })));
     fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
-    await waitFor(() => expect(queryTimeline).toHaveBeenLastCalledWith(expect.objectContaining({ category: null, entityKind: null, from: null, through: null, sort: 'newest' })));
+    await waitFor(() => expect(queryTimeline).toHaveBeenLastCalledWith(expect.objectContaining({ category: null, entityKind: null, entityId: null, from: null, through: null, sort: 'newest' })));
   });
 
   it('offers bounded load-more paging without fetching an unbounded history', async () => {

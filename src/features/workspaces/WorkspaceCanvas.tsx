@@ -55,7 +55,10 @@ export function WorkspaceCanvas(props: Props) {
         playerId: player.id, workspaceId: workspace.id, panelId: panel.id,
         panelType: panel.panelType, title: panel.title, variant: panel.variant, density: panel.density,
         filterStatus: panel.filterStatus, filterActive: panel.filterActive, filterTypeCode: panel.filterTypeCode,
-        filterConceptId: panel.filterConceptId, filterRecentDays: panel.filterRecentDays, sortBy: panel.sortBy,
+        filterConceptId: panel.filterConceptId, filterRecentDays: panel.filterRecentDays,
+        filterTimelineCategory: panel.filterTimelineCategory, filterTimelineEntityKind: panel.filterTimelineEntityKind,
+        filterTimelineEntityId: panel.filterTimelineEntityId, filterTimelineFrom: panel.filterTimelineFrom,
+        filterTimelineThrough: panel.filterTimelineThrough, sortBy: panel.sortBy,
         itemLimit: panel.itemLimit, sortOrder: panel.sortOrder, gridSpan: panel.gridSpan,
         isVisible: panel.isVisible, isPinned: panel.isPinned, isCollapsed: !panel.isCollapsed,
       });
@@ -72,7 +75,7 @@ export function WorkspaceCanvas(props: Props) {
     </div>
     {customizing && workspace && <WorkspaceBuilder client={client} playerId={player.id} workspace={workspace} workspaces={workspaces} panels={panels} concepts={concepts} onPanelsChange={onPanelsChange} onCreate={onCreate} onRename={onRename} onDefault={onDefault} onDelete={onDelete} onDuplicate={onDuplicate} onImport={onImport} />}
     {panels.some(panel => panel.isVisible) ? <div className="widget-grid">{panels.filter(panel => panel.isVisible).slice().sort((a, b) => Number(b.isPinned) - Number(a.isPinned) || a.sortOrder - b.sortOrder).map(panel => <WidgetCard key={panel.id} panel={panel} onCollapse={() => void updateCollapse(panel)}>
-      <WorkspacePanelView panel={panel} data={{ player, overview, concepts, stats, sessions, tracks }} allowedIds={panelAllowedIds[panel.id]} isVisible={isVisible} onVisibility={onVisibility} onNavigate={onNavigate} onOpenEntity={onOpenEntity} />
+      <WorkspacePanelView client={client} panel={panel} data={{ player, overview, concepts, stats, sessions, tracks }} allowedIds={panelAllowedIds[panel.id]} isVisible={isVisible} onVisibility={onVisibility} onNavigate={onNavigate} onOpenEntity={onOpenEntity} />
     </WidgetCard>)}</div> : <div className="empty-card"><span className="empty-card__mark">◈</span><strong>No visible panels</strong><p>Choose Customize workspace to add a panel or reveal one you've hidden.</p><button className="button button--small" onClick={() => setCustomizing(true)}>Customize workspace</button></div>}
     {error && <p className="inline-feedback" role="alert">{error}</p>}
   </section>;

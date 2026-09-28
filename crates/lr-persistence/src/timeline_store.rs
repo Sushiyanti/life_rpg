@@ -1,8 +1,8 @@
 //! Bounded, read-only composition of persisted timestamped sources for Timeline.
 
 use lr_application::{
-    StorageError, TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineStore,
-    TimelineTimestampKind,
+    StorageError, TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery,
+    TimelineRelationshipContext, TimelineStore, TimelineTimestampKind,
 };
 use lr_domain::{EntityId, Iso8601Timestamp};
 use rusqlite::{params, Connection, Row};
@@ -20,7 +20,11 @@ fn source_queries(query: &TimelineQuery) -> Vec<&'static str> {
     if wants(TimelineCategory::RecordChange) {
         sources.extend([
             r#"SELECT 'record:player:'||p.id||':created',p.id,'record_change','player',p.id,p.created_at,NULL,'created','Player world created · '||p.name,COALESCE(p.description,''),NULL,NULL,NULL,NULL FROM players p WHERE p.id=?1 AND (?3 IS NULL OR p.created_at>=?3) AND (?4 IS NULL OR p.created_at<=?4)"#,
+            r#"SELECT 'record:concept:'||c.id||':created',c.player_id,'record_change','concept',c.id,c.created_at,NULL,'created','Concept created · '||c.name,COALESCE(c.description,''),c.id,c.concept_type_code,CASE WHEN c.is_active=1 THEN 'active' ELSE 'archived' END,NULL FROM concepts c WHERE c.player_id=?1 AND (?3 IS NULL OR c.created_at>=?3) AND (?4 IS NULL OR c.created_at<=?4)"#,
+            r#"SELECT 'record:skill_tree:'||t.id||':created',t.player_id,'record_change','skill_tree',t.id,t.created_at,NULL,'created','Skill Tree created · '||t.name,COALESCE(t.description,''),NULL,t.tree_type_code,NULL,NULL FROM skill_trees t WHERE t.player_id=?1 AND (?3 IS NULL OR t.created_at>=?3) AND (?4 IS NULL OR t.created_at<=?4)"#,
             r#"SELECT 'record:quest:'||q.id||':created',q.player_id,'record_change','quest',q.id,q.created_at,NULL,'created','Quest created · '||q.title,COALESCE(q.description,''),NULL,q.quest_type_code,q.status,NULL FROM quests q WHERE q.player_id=?1 AND (?3 IS NULL OR q.created_at>=?3) AND (?4 IS NULL OR q.created_at<=?4)"#,
+            r#"SELECT 'record:quest_stage:'||s.id||':created',s.player_id,'record_change','quest_stage',s.id,s.created_at,NULL,'created','Quest stage created · '||s.title,COALESCE(s.description,''),NULL,NULL,s.status,NULL FROM quest_stages s WHERE s.player_id=?1 AND (?3 IS NULL OR s.created_at>=?3) AND (?4 IS NULL OR s.created_at<=?4)"#,
+            r#"SELECT 'record:quest_branch:'||b.id||':created',b.player_id,'record_change','quest_branch',b.id,b.created_at,NULL,'created','Quest branch created · '||b.title,COALESCE(b.description,''),NULL,NULL,b.status,NULL FROM quest_branches b WHERE b.player_id=?1 AND (?3 IS NULL OR b.created_at>=?3) AND (?4 IS NULL OR b.created_at<=?4)"#,
             r#"SELECT 'record:quest:'||q.id||':started',q.player_id,'record_change','quest',q.id,q.started_at,NULL,'occurred','Quest started · '||q.title,COALESCE(q.description,''),NULL,q.quest_type_code,q.status,NULL FROM quests q WHERE q.player_id=?1 AND q.started_at IS NOT NULL AND (?3 IS NULL OR q.started_at>=?3) AND (?4 IS NULL OR q.started_at<=?4)"#,
             r#"SELECT 'record:quest:'||q.id||':completed',q.player_id,'record_change','quest',q.id,q.completed_at,NULL,'occurred','Quest completed · '||q.title,COALESCE(q.description,''),NULL,q.quest_type_code,q.status,NULL FROM quests q WHERE q.player_id=?1 AND q.completed_at IS NOT NULL AND (?3 IS NULL OR q.completed_at>=?3) AND (?4 IS NULL OR q.completed_at<=?4)"#,
             r#"SELECT 'record:skill:'||s.id||':created',t.player_id,'record_change','skill',s.id,s.created_at,NULL,'created','Skill created · '||s.name,COALESCE(s.description,''),NULL,s.skill_type_code,s.status,NULL FROM skills s JOIN skill_trees t ON t.id=s.skill_tree_id WHERE t.player_id=?1 AND (?3 IS NULL OR s.created_at>=?3) AND (?4 IS NULL OR s.created_at<=?4)"#,
@@ -152,6 +156,38 @@ fn parse_item(row: &Row<'_>) -> rusqlite::Result<TimelineItem> {
                 Box::new(error),
             )
         })?;
+    let relationship_context = match row.get::<_, Option<String>>(14)? {
+        None => None,
+        Some(relationship_id) => {
+            let created_raw: String = row.get(18)?;
+            let created_at = Iso8601Timestamp::parse(created_raw).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    18,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            let removed_raw: Option<String> = row.get(19)?;
+            let removed_at = removed_raw
+                .map(Iso8601Timestamp::parse)
+                .transpose()
+                .map_err(|error| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        19,
+                        rusqlite::types::Type::Text,
+                        Box::new(error),
+                    )
+                })?;
+            Some(TimelineRelationshipContext {
+                relationship_id,
+                content_id: row.get(15)?,
+                content_title: row.get(16)?,
+                role_code: row.get(17)?,
+                created_at,
+                removed_at,
+            })
+        }
+    };
 
     Ok(TimelineItem {
         source_id: row.get(0)?,
@@ -168,6 +204,7 @@ fn parse_item(row: &Row<'_>) -> rusqlite::Result<TimelineItem> {
         concept_id,
         type_code: row.get(11)?,
         state: row.get(12)?,
+        relationship_context,
     })
 }
 
@@ -179,7 +216,7 @@ impl TimelineStore for SqliteHealthStore {
             return Ok(Vec::new());
         }
         let sql = format!(
-            "WITH timeline(source_id,player_id,category,entity_kind,entity_id,timestamp,secondary_timestamp,timestamp_kind,title,summary,concept_id,type_code,state,secondary_timestamp_kind) AS ({}) SELECT t.* FROM timeline t WHERE (?2 IS NULL OR t.category=?2) AND (?5 IS NULL OR t.entity_kind=?5) AND (?6 IS NULL OR t.concept_id=?6 OR (t.entity_kind='concept' AND t.entity_id=?6) OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.player_id=t.player_id AND l.concept_id=?6 AND l.entity_kind=t.entity_kind AND l.entity_id=t.entity_id) OR EXISTS(SELECT 1 FROM concept_associations a WHERE a.player_id=t.player_id AND a.concept_id=?6 AND a.entity_kind=t.entity_kind AND a.entity_id=t.entity_id AND a.is_active=1) OR (t.entity_kind='narrative_entry' AND EXISTS(SELECT 1 FROM content_attachments ca WHERE ca.player_id=t.player_id AND ca.content_id=t.entity_id AND ca.target_kind='concept' AND ca.target_id=?6 AND ca.removed_at IS NULL)) OR (t.entity_kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=t.entity_id AND e.target_kind='concept' AND e.target_concept_id=?6))) ORDER BY CASE WHEN ?7='asc' THEN t.timestamp END ASC, CASE WHEN ?7='desc' THEN t.timestamp END DESC, t.category COLLATE BINARY ASC, t.source_id COLLATE BINARY ASC, t.entity_kind COLLATE BINARY ASC, t.entity_id COLLATE BINARY ASC LIMIT ?8 OFFSET ?9",
+            "WITH timeline(source_id,player_id,category,entity_kind,entity_id,timestamp,secondary_timestamp,timestamp_kind,title,summary,concept_id,type_code,state,secondary_timestamp_kind) AS ({}) SELECT t.*,ca.id,n.id,n.title,ca.role_code,ca.created_at,ca.removed_at FROM timeline t LEFT JOIN content_attachments ca ON t.category='relationship_history' AND t.source_id IN ('relationship:'||ca.id||':created','relationship:'||ca.id||':removed') LEFT JOIN narrative_entries n ON n.id=ca.content_id WHERE (?2 IS NULL OR t.category=?2) AND (?5 IS NULL OR t.entity_kind=?5) AND (?6 IS NULL OR t.concept_id=?6 OR (t.entity_kind='concept' AND t.entity_id=?6) OR EXISTS(SELECT 1 FROM concept_entity_links l WHERE l.player_id=t.player_id AND l.concept_id=?6 AND l.entity_kind=t.entity_kind AND l.entity_id=t.entity_id) OR EXISTS(SELECT 1 FROM concept_associations a WHERE a.player_id=t.player_id AND a.concept_id=?6 AND a.entity_kind=t.entity_kind AND a.entity_id=t.entity_id AND a.is_active=1) OR (t.entity_kind='narrative_entry' AND EXISTS(SELECT 1 FROM content_attachments ca WHERE ca.player_id=t.player_id AND ca.content_id=t.entity_id AND ca.target_kind='concept' AND ca.target_id=?6 AND ca.removed_at IS NULL)) OR (t.entity_kind='effect' AND EXISTS(SELECT 1 FROM effects e WHERE e.id=t.entity_id AND e.target_kind='concept' AND e.target_concept_id=?6))) AND (?10 IS NULL OR t.entity_id=?10) ORDER BY CASE WHEN ?7='asc' THEN t.timestamp END ASC, CASE WHEN ?7='desc' THEN t.timestamp END DESC, t.category COLLATE BINARY ASC, t.source_id COLLATE BINARY ASC, t.entity_kind COLLATE BINARY ASC, t.entity_id COLLATE BINARY ASC LIMIT ?8 OFFSET ?9",
             sources.join(" UNION ALL ")
         );
         self.with_conn(|connection| execute_query(connection, &sql, query))
@@ -203,6 +240,7 @@ fn execute_query(
             query.sort.as_str(),
             query.limit as i64,
             query.offset as i64,
+            query.entity_id.as_ref().map(EntityId::as_str),
         ])
         .map_err(operation)?;
     let mut output = Vec::new();
@@ -228,6 +266,7 @@ mod tests {
             player_id: EntityId::new(player).unwrap(),
             category: None,
             entity_kind: None,
+            entity_id: None,
             concept_id: None,
             from: None,
             through: None,
@@ -257,6 +296,10 @@ mod tests {
                         INSERT INTO quests(id,player_id,quest_type_code,title,description,status,started_at,completed_at,created_at,updated_at) VALUES
                           ('q1','p1','main','Prepare the garden','Prepare soil.','completed','{T2}','{T4}','{T1}','{T4}'),
                           ('q2','p2','main','Practice music',NULL,'open',NULL,NULL,'{T1}','{T1}');
+                        INSERT INTO quest_stages(id,player_id,quest_id,title,description,created_at,updated_at) VALUES
+                          ('stage1','p1','q1','Prepare soil','Loosen the beds.','{T1}','{T1}');
+                        INSERT INTO quest_branches(id,player_id,quest_id,stage_id,title,description,created_at,updated_at) VALUES
+                          ('branch1','p1','q1','stage1','Use raised beds','Build raised planters.','{T2}','{T2}');
                         INSERT INTO quest_sessions(id,player_id,quest_id,concept_id,started_at,ended_at,status,result,notes,created_at,updated_at) VALUES
                           ('session1','p1','q1','c1','{T2}','{T3}','completed','Seeds prepared','Started seedlings','{T2}','{T3}'),
                           ('session2','p1','q1','c1','{T1}',NULL,'in_progress',NULL,'Continuing practice','{T1}','{T1}');
@@ -356,6 +399,18 @@ mod tests {
             Some(TimelineTimestampKind::Occurred)
         );
         assert_eq!(session.summary, "Seeds prepared · Started seedlings");
+        assert!(items
+            .iter()
+            .any(|item| item.source_id == "record:concept:c1:created"));
+        assert!(items
+            .iter()
+            .any(|item| item.source_id == "record:skill_tree:tree1:created"));
+        assert!(items
+            .iter()
+            .any(|item| item.source_id == "record:quest_stage:stage1:created"));
+        assert!(items
+            .iter()
+            .any(|item| item.source_id == "record:quest_branch:branch1:created"));
         let session_without_end = items
             .iter()
             .find(|item| item.source_id == "session:session2")
@@ -423,6 +478,25 @@ mod tests {
             .iter()
             .any(|item| item.timestamp_kind == TimelineTimestampKind::Removed
                 && item.state.as_deref() == Some("removed")));
+        let active_context = related
+            .iter()
+            .find(|item| item.source_id == "relationship:rel1:created")
+            .unwrap()
+            .relationship_context
+            .as_ref()
+            .unwrap();
+        assert_eq!(active_context.content_id, "content1");
+        assert_eq!(active_context.content_title, "Garden guide");
+        assert_eq!(active_context.role_code, "guidance");
+        assert!(active_context.removed_at.is_none());
+        let removed_context = related
+            .iter()
+            .find(|item| item.source_id == "relationship:rel3:removed")
+            .unwrap()
+            .relationship_context
+            .as_ref()
+            .unwrap();
+        assert_eq!(removed_context.removed_at.as_ref().unwrap().as_str(), T5);
 
         let effect = items
             .iter()
@@ -485,6 +559,10 @@ mod tests {
         assert_eq!(sessions.len(), 2);
         assert!(sessions.iter().any(|item| item.entity_id == "session1"));
         assert!(sessions.iter().any(|item| item.entity_id == "session2"));
+        kind.entity_id = Some(EntityId::new("session1").unwrap());
+        let exact_session = store.query_timeline(&kind).unwrap();
+        assert_eq!(exact_session.len(), 1);
+        assert_eq!(exact_session[0].source_id, "session:session1");
 
         let mut linked_concept = base_query("p1");
         linked_concept.category = Some(TimelineCategory::RecordChange);

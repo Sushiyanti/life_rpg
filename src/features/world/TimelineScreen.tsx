@@ -50,6 +50,7 @@ type Props = { client: CoreClient; player: Pick<Player, 'id' | 'name'>; concepts
 export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props) {
   const [category, setCategory] = useState<TimelineCategory | ''>('');
   const [entityKind, setEntityKind] = useState<TimelineEntityKind | ''>('');
+  const [entityId, setEntityId] = useState('');
   const [conceptId, setConceptId] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [throughDate, setThroughDate] = useState('');
@@ -72,6 +73,7 @@ export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props
       playerId: player.id,
       category: category || null,
       entityKind: entityKind || null,
+      entityId: entityId.trim() || null,
       conceptId: conceptId || null,
       from: localDateBoundary(fromDate, false),
       through: localDateBoundary(throughDate, true),
@@ -91,12 +93,13 @@ export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props
       if (live) setLoading(false);
     });
     return () => { live = false; };
-  }, [client, player.id, category, entityKind, conceptId, fromDate, throughDate, sort]);
+  }, [client, player.id, category, entityKind, entityId, conceptId, fromDate, throughDate, sort]);
 
   const queryForPage = (offset: number): TimelineQuery => ({
     playerId: player.id,
     category: category || null,
     entityKind: entityKind || null,
+    entityId: entityId.trim() || null,
     conceptId: conceptId || null,
     from: localDateBoundary(fromDate, false),
     through: localDateBoundary(throughDate, true),
@@ -122,6 +125,7 @@ export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props
   const clearFilters = () => {
     setCategory('');
     setEntityKind('');
+    setEntityId('');
     setConceptId('');
     setFromDate('');
     setThroughDate('');
@@ -145,6 +149,7 @@ export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props
     <section className="timeline-filters" aria-label="Timeline filters">
       <label>Category<select aria-label="Timeline category" value={category} onChange={event => setCategory(event.target.value as TimelineCategory | '')}><option value="">All recorded sources</option>{categories.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
       <label>Entity kind<select aria-label="Entity kind" value={entityKind} onChange={event => setEntityKind(event.target.value as TimelineEntityKind | '')}><option value="">All entity kinds</option>{entityKinds.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
+      <label>Exact entity ID<input aria-label="Exact entity ID" maxLength={160} value={entityId} onChange={event => setEntityId(event.target.value)} placeholder="Any identity" /></label>
       <label>Concept<select aria-label="Timeline Concept" value={conceptId} onChange={event => setConceptId(event.target.value)}><option value="">All Concepts</option>{concepts.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <label>From<input aria-label="Timeline from date" type="date" value={fromDate} onChange={event => setFromDate(event.target.value)} /></label>
       <label>Through<input aria-label="Timeline through date" type="date" value={throughDate} onChange={event => setThroughDate(event.target.value)} /></label>
@@ -169,6 +174,7 @@ export function TimelineScreen({ client, player, concepts, onOpenEntity }: Props
               {item.summary.length > 200 && <details className="timeline-item__full"><summary>Read full recorded summary</summary><p>{item.summary}</p></details>}
               {(item.typeCode || item.state) && <div className="timeline-item__metadata">{item.typeCode && <span>Type: {readable(item.typeCode)}</span>}{item.state && <span>State: {readable(item.state)}</span>}</div>}
               {item.conceptId && <small className="timeline-item__concept">Concept context · {concepts.find(concept => concept.id === item.conceptId)?.name ?? item.conceptId}</small>}
+              {item.relationshipContext && <details className="timeline-item__relationship"><summary>Inspect relationship context</summary><dl><div><dt>Content</dt><dd>{item.relationshipContext.contentTitle}</dd></div><div><dt>Role</dt><dd>{readable(item.relationshipContext.roleCode)}</dd></div><div><dt>Relationship</dt><dd>{item.relationshipContext.relationshipId} · {item.relationshipContext.removedAt ? 'removed' : 'active'}</dd></div><div><dt>Target</dt><dd>{readable(item.entityKind)} · {item.entityId}</dd></div><div><dt>Originally attached</dt><dd>{formatDateTime(item.relationshipContext.createdAt)}</dd></div>{item.relationshipContext.removedAt && <div><dt>Removed</dt><dd>{formatDateTime(item.relationshipContext.removedAt)}</dd></div>}</dl><div className="timeline-item__relationship-actions"><button className="button button--small" type="button" onClick={() => onOpenEntity('narrative_entry', item.relationshipContext!.contentId)}>Open Content</button><button className="button button--small button--quiet" type="button" onClick={() => onOpenEntity(item.entityKind, item.entityId)}>Open target</button></div></details>}
             </div>
           </article>
         </li>)}</ol>

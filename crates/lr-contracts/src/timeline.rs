@@ -1,8 +1,8 @@
 //! Stable, closed IPC DTOs for the read-only Timeline query.
 
 use lr_application::{
-    TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineSort,
-    TimelineTimestampKind,
+    TimelineCategory, TimelineEntityKind, TimelineItem, TimelineQuery, TimelineRelationshipContext,
+    TimelineSort, TimelineTimestampKind,
 };
 use lr_domain::{DomainError, EntityId, Iso8601Timestamp};
 use serde::{Deserialize, Serialize};
@@ -157,6 +157,7 @@ pub struct TimelineQueryDto {
     pub player_id: String,
     pub category: Option<TimelineCategoryDto>,
     pub entity_kind: Option<TimelineEntityKindDto>,
+    pub entity_id: Option<String>,
     pub concept_id: Option<String>,
     pub from: Option<String>,
     pub through: Option<String>,
@@ -171,6 +172,7 @@ impl TryFrom<TimelineQueryDto> for TimelineQuery {
             player_id: EntityId::new(dto.player_id)?,
             category: dto.category.map(Into::into),
             entity_kind: dto.entity_kind.map(Into::into),
+            entity_id: dto.entity_id.map(EntityId::new).transpose()?,
             concept_id: dto.concept_id.map(EntityId::new).transpose()?,
             from: dto.from.map(Iso8601Timestamp::parse).transpose()?,
             through: dto.through.map(Iso8601Timestamp::parse).transpose()?,
@@ -200,6 +202,30 @@ pub struct TimelineItemDto {
     pub concept_id: Option<String>,
     pub type_code: Option<String>,
     pub state: Option<String>,
+    pub relationship_context: Option<TimelineRelationshipContextDto>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineRelationshipContextDto {
+    pub relationship_id: String,
+    pub content_id: String,
+    pub content_title: String,
+    pub role_code: String,
+    pub created_at: String,
+    pub removed_at: Option<String>,
+}
+impl From<TimelineRelationshipContext> for TimelineRelationshipContextDto {
+    fn from(value: TimelineRelationshipContext) -> Self {
+        Self {
+            relationship_id: value.relationship_id,
+            content_id: value.content_id,
+            content_title: value.content_title,
+            role_code: value.role_code,
+            created_at: value.created_at.into_string(),
+            removed_at: value.removed_at.map(Iso8601Timestamp::into_string),
+        }
+    }
 }
 impl From<TimelineItem> for TimelineItemDto {
     fn from(value: TimelineItem) -> Self {
@@ -218,6 +244,7 @@ impl From<TimelineItem> for TimelineItemDto {
             concept_id: value.concept_id.map(EntityId::into_string),
             type_code: value.type_code,
             state: value.state,
+            relationship_context: value.relationship_context.map(Into::into),
         }
     }
 }
@@ -231,6 +258,7 @@ mod tests {
             player_id: "player-1".into(),
             category: Some(TimelineCategoryDto::ConceptProgress),
             entity_kind: Some(TimelineEntityKindDto::Concept),
+            entity_id: Some("concept-1".into()),
             concept_id: Some("concept-1".into()),
             from: Some("2026-09-01T00:00:00Z".into()),
             through: Some("2026-09-30T23:59:59Z".into()),
@@ -245,6 +273,7 @@ mod tests {
         let json = serde_json::to_value(request()).unwrap();
         assert_eq!(json["category"], "concept_progress");
         assert_eq!(json["entityKind"], "concept");
+        assert_eq!(json["entityId"], "concept-1");
         assert_eq!(json["conceptId"], "concept-1");
         assert_eq!(json["sort"], "oldest");
         assert_eq!(json["limit"], 25);
@@ -282,6 +311,7 @@ mod tests {
             concept_id: None,
             type_code: None,
             state: Some("completed".into()),
+            relationship_context: None,
         };
         let json = serde_json::to_value(TimelineItemDto::from(item)).unwrap();
         for key in [
@@ -299,11 +329,13 @@ mod tests {
             "conceptId",
             "typeCode",
             "state",
+            "relationshipContext",
         ] {
             assert!(json.get(key).is_some(), "missing {key}");
         }
         assert_eq!(json["timestampKind"], "occurred");
         assert_eq!(json["secondaryTimestampKind"], "occurred");
+        assert!(json["relationshipContext"].is_null());
         assert!(json.get("snapshotJson").is_none());
     }
 }
