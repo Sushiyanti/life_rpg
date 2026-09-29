@@ -33,7 +33,7 @@ jobs:
           rustc --version --verbose
           cargo --version
           rustup show active-toolchain
-          npx tauri --version
+          Write-Host 'Tauri CLI will be reported after npm ci.'
 
       - name: Install Rust MSVC target
         shell: pwsh
@@ -41,6 +41,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: npm ci
+
+      - name: Record installed Tauri CLI version
+        run: npx tauri --version
 
       - name: Run frontend tests and typecheck
         run: |
