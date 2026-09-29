@@ -8,41 +8,46 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
 $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-$buttonName = if ($Mode -eq 'Save') { 'Save' } else { 'Open' }
+$buttonPattern = if ($Mode -eq 'Save') { 'Save|OK' } else { 'Open|Select|OK' }
 $root = [System.Windows.Automation.AutomationElement]::RootElement
 $windowCondition = New-Object System.Windows.Automation.PropertyCondition(
   [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
   [System.Windows.Automation.ControlType]::Window
 )
+$editCondition = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Edit
+)
+$buttonCondition = New-Object System.Windows.Automation.PropertyCondition(
+  [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+  [System.Windows.Automation.ControlType]::Button
+)
 
 while ((Get-Date) -lt $deadline) {
-  $windows = $root.FindAll([System.Windows.Automation.TreeScope]::Children, $windowCondition)
+  # Common dialogs are normally direct root children, but the hosted runner can
+  # expose them through a desktop subtree while the shell is initializing.
+  $windows = @()
+  try { $windows += @($root.FindAll([System.Windows.Automation.TreeScope]::Children, $windowCondition)) } catch {}
+  try { $windows += @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $windowCondition)) } catch {}
+  $seen = @{}
   foreach ($window in $windows) {
     try {
+      $id = $window.Current.NativeWindowHandle
+      if ($id -and $seen.ContainsKey($id)) { continue }
+      if ($id) { $seen[$id] = $true }
       $class = $window.Current.ClassName
-      if ($class -ne '#32770') { continue }
-      $editCondition = New-Object System.Windows.Automation.PropertyCondition(
-        [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-        [System.Windows.Automation.ControlType]::Edit
-      )
+      $name = $window.Current.Name
+      if ($class -ne '#32770' -and $name -notmatch 'Save|Open|Select') { continue }
       $edit = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $editCondition)
       if (-not $edit) { continue }
       $valuePattern = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
       $valuePattern.SetValue($Path)
-      $buttonCondition = New-Object System.Windows.Automation.AndCondition(
-        (New-Object System.Windows.Automation.PropertyCondition(
-          [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
-          [System.Windows.Automation.ControlType]::Button
-        )),
-        (New-Object System.Windows.Automation.PropertyCondition(
-          [System.Windows.Automation.AutomationElement]::NameProperty,
-          $buttonName
-        ))
-      )
-      $button = $window.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
-      if ($button) {
+      $buttons = $window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $buttonCondition)
+      foreach ($button in $buttons) {
+        if ($button.Current.Name -notmatch $buttonPattern) { continue }
         $invoke = $button.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $invoke.Invoke()
+        Write-Output "WINDOW_DIALOG mode=$Mode window=$name button=$($button.Current.Name) path=$Path"
         exit 0
       }
     } catch {
