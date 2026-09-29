@@ -6,8 +6,11 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: v1.0.0 — first stable release.** Release scope is Linux x86_64 on
-> Ubuntu 22.04 (Jammy) or a compatible newer GTK 3/WebKitGTK 4.1 system. See the
+> **Status:** Linux `v1.0.0` remains the first stable release for x86_64 on
+> Ubuntu 22.04 (Jammy) or a compatible newer GTK 3/WebKitGTK 4.1 system. Windows
+> `v1.0.1` has a successful native build and installer smoke test, but is not yet
+> published because complete installed-application validation remains outstanding.
+> macOS is not released or validated. See the
 > [v1.0.0 release notes](V1.0.0-RELEASE-NOTES.md), [Phase 13 validation report](docs/PHASE-13-REPORT.md),
 > [Phase 12 report](docs/PHASE-12-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
 > and [Architecture](docs/ARCHITECTURE.md).
@@ -18,6 +21,7 @@ No cloud. No account. No server. Works with the network cable unplugged.
 
 - [Architecture at a glance](#architecture-at-a-glance)
 - [Download v1.0.0](#download-v100)
+- [Windows v1.0.1 status](#windows-v101-status)
 - [Why this stack](#why-this-stack)
 - [Repository layout](#repository-layout)
 - [Install dependencies](#install-dependencies)
@@ -44,6 +48,15 @@ This release is not validated for Windows, macOS, older Ubuntu releases, or othe
 CPU architectures. Backup files are local and unencrypted; treat them as sensitive
 data. The archive checksum detects corruption but does not authenticate who made
 the backup.
+
+---
+
+## Windows v1.0.1 status
+A native Windows x64 NSIS installer was built and smoke-tested on GitHub Actions.
+The installer is not published yet because first-run, representative workflows,
+backup/restore, termination integrity, filesystem edge cases, and uninstall/reinstall
+require additional installed-application validation. See [the Windows release report](WINDOWS-RELEASE-REPORT.md)
+and [release notes](V1.0.1-RELEASE-NOTES.md).
 
 ---
 
