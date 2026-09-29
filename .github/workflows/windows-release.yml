@@ -147,6 +147,8 @@ jobs:
           } finally {
             Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $appRecord.Name -ErrorAction SilentlyContinue
             Remove-Item 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $appRecord.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
             Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($app)) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Write-Host 'WEBVIEW2_DIAGNOSTIC policy_cleanup=PASS'

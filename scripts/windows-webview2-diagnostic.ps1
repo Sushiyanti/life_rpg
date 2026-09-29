@@ -6,7 +6,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $exeName = Split-Path -Leaf $AppPath
-$policyPath = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+$userPolicyPath = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+$machinePolicyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
 $argument = "--remote-debugging-port=$Port"
 
 function Write-Diagnostic([string]$Name, [object]$Value) {
@@ -19,13 +20,23 @@ $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 Write-Diagnostic 'elevated' $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 Write-Diagnostic 'app_path' $AppPath
 Write-Diagnostic 'app_executable' $exeName
-Write-Diagnostic 'policy_path' $policyPath
+Write-Diagnostic 'user_policy_path' $userPolicyPath
+Write-Diagnostic 'machine_policy_path' $machinePolicyPath
 Write-Diagnostic 'policy_argument' $argument
 
-New-Item -Path $policyPath -Force | Out-Null
-New-ItemProperty -Path $policyPath -Name $exeName -Value $argument -PropertyType String -Force | Out-Null
-$policyValue = (Get-ItemProperty -Path $policyPath -Name $exeName).$exeName
-Write-Diagnostic 'policy_value' $policyValue
+New-Item -Path $userPolicyPath -Force | Out-Null
+New-ItemProperty -Path $userPolicyPath -Name $exeName -Value $argument -PropertyType String -Force | Out-Null
+New-Item -Path $machinePolicyPath -Force | Out-Null
+New-ItemProperty -Path $machinePolicyPath -Name $exeName -Value $argument -PropertyType String -Force | Out-Null
+$userPolicyValue = (Get-ItemProperty -Path $userPolicyPath -Name $exeName).$exeName
+$machinePolicyValue = (Get-ItemProperty -Path $machinePolicyPath -Name $exeName).$exeName
+Write-Diagnostic 'user_policy_value' $userPolicyValue
+Write-Diagnostic 'machine_policy_value' $machinePolicyValue
+
+# Set this in the same PowerShell process that creates the real installed app.
+# This avoids any ambiguity about inheritance from the outer GitHub Actions step.
+$env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = $argument
+Write-Diagnostic 'environment_argument' $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 
 $app = Start-Process -FilePath $AppPath -PassThru
 Write-Diagnostic 'app_pid' $app.Id
