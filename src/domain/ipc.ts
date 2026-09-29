@@ -16,6 +16,7 @@
  */
 
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
+import type { BackupInfo, IntegrityReport, RestoreInfo } from './backup';
 import type { CommandError, HealthReport } from '../domain/health';
 import { toCommandError } from '../domain/health';
 import type {
@@ -32,6 +33,10 @@ import type {
 
 /** Command names exposed by `src-tauri/src/commands/`. */
 export const COMMANDS = {
+  createWorldBackup: 'create_world_backup',
+  inspectWorldBackup: 'inspect_world_backup',
+  restoreWorldBackup: 'restore_world_backup',
+  checkWorldIntegrity: 'check_world_integrity',
   getStatus: 'get_status',
   getWorldLocation: 'get_world_location',
   ping: 'ping',
@@ -173,6 +178,26 @@ export class CoreClient {
   /** Path of the world database on disk, if file-backed. */
   async getWorldLocation(): Promise<string | null> {
     return this.invoke<string | null>(COMMANDS.getWorldLocation);
+  }
+
+  async createWorldBackup(destination: string): Promise<BackupInfo> {
+    return this.invoke<BackupInfo>(COMMANDS.createWorldBackup, { destination });
+  }
+
+  async inspectWorldBackup(path: string): Promise<BackupInfo> {
+    return this.invoke<BackupInfo>(COMMANDS.inspectWorldBackup, { path });
+  }
+
+  async restoreWorldBackup(path: string, expectedSha256: string, confirmDifferentWorld: boolean): Promise<RestoreInfo> {
+    return this.invoke<RestoreInfo>(COMMANDS.restoreWorldBackup, {
+      backupPath: path,
+      expectedSha256,
+      confirmDifferentWorld,
+    });
+  }
+
+  async checkWorldIntegrity(): Promise<IntegrityReport> {
+    return this.invoke<IntegrityReport>(COMMANDS.checkWorldIntegrity);
   }
 
   async createPlayer(name: string, description?: string): Promise<Player> {

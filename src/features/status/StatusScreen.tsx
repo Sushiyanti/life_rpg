@@ -1,5 +1,5 @@
 /**
- * `StatusScreen` — the Phase 1 proof-of-life screen.
+ * `StatusScreen` — app health, integrity, and local recovery surface.
  *
  * It exists to answer four questions visibly and honestly:
  *
@@ -8,9 +8,8 @@
  *   3. Did a database read/write actually work?
  *   4. Is the schema at the version this build expects?
  *
- * Every value shown comes from the report. Nothing here is optimistic: if the
- * core reports `failed`, this renders red and prints the raw problem strings
- * rather than a reassuring summary.
+ * Health values come from the report. The backup controls remain available
+ * during storage problems so a player can inspect or recover a local world.
  *
  * `client` is an optional injection point (used by tests). Application code
  * renders `<StatusScreen />` and gets the real IPC client.
@@ -19,6 +18,9 @@
 import type { HealthReport } from '../../domain/health';
 import { migrationProgress } from '../../domain/health';
 import type { CoreClient } from '../../domain/ipc';
+import { coreClient } from '../../domain/ipc';
+import type { RestoreInfo } from '../../domain/backup';
+import { BackupRestorePanel } from './BackupRestorePanel';
 import { useHealthReport } from './useHealthReport';
 import { StatusPill } from './StatusPill';
 import { InfoCard } from './InfoCard';
@@ -27,35 +29,40 @@ import './StatusScreen.css';
 
 interface StatusScreenProps {
   client?: CoreClient;
+  players?: { id: string; name: string }[];
+  onRestored?: (result: RestoreInfo) => void;
 }
 
-export function StatusScreen({ client }: StatusScreenProps = {}) {
+export function StatusScreen({ client = coreClient, players = [], onRestored = () => {} }: StatusScreenProps = {}) {
   const { report, error, isLoading, refresh } = useHealthReport(client);
+  const currentIdentityKnown = Boolean(report?.database?.locationHint);
 
   if (isLoading && !report) {
     return (
       <div className="status status--centered" role="status" aria-live="polite">
         <div className="status__spinner" aria-hidden="true" />
         <p className="status__loading-text">Contacting the world core…</p>
+        <BackupRestorePanel client={client} players={players} currentIdentityKnown={currentIdentityKnown} onRestored={onRestored} />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="status status--centered" role="alert">
-        <h2 className="status__error-title">The core did not respond</h2>
-        <p className="status__error-code">code: {error.code}</p>
-        <p className="status__error-message">{error.message}</p>
-        <button type="button" className="status__button" onClick={refresh}>
-          Retry
-        </button>
+      <div className="status">
+        <section className="status__problems" role="alert">
+          <h2 className="status__error-title">The core did not respond</h2>
+          <p className="status__error-code">code: {error.code}</p>
+          <p className="status__error-message">{error.message}</p>
+          <button type="button" className="status__button" onClick={refresh}>Retry</button>
+        </section>
+        <BackupRestorePanel client={client} players={players} currentIdentityKnown={currentIdentityKnown} onRestored={onRestored} />
       </div>
     );
   }
 
   if (!report) {
-    return null;
+    return <div className="status"><BackupRestorePanel client={client} players={players} currentIdentityKnown={currentIdentityKnown} onRestored={onRestored} /></div>;
   }
 
   const db = report.database;
@@ -114,7 +121,7 @@ export function StatusScreen({ client }: StatusScreenProps = {}) {
                 <Row
                   label="Store"
                   value={db.locationHint ?? 'in-memory (not persisted to disk)'}
-                  mono={Boolean(db.locationHint)}
+                  mono={false}
                 />
                 <Row label="Journal mode" value={db.journalMode} />
                 <Row
@@ -161,6 +168,7 @@ export function StatusScreen({ client }: StatusScreenProps = {}) {
       </section>
 
       {db && <MigrationLedger migrations={db.migrations} />}
+      <BackupRestorePanel client={client} players={players} currentIdentityKnown={currentIdentityKnown} onRestored={onRestored} />
     </div>
   );
 }

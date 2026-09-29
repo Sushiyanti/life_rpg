@@ -1,6 +1,6 @@
 //! Status / health commands.
 //!
-//! These back the Phase 1 status screen. `get_status` is the important one: it
+//! These back the system-health view. `get_status` is the important one: it
 //! calls the health use case, which performs a **real transaction-wrapped write
 //! and read-back** against SQLite. When the UI says "SQLite is reachable", it is
 //! reporting committed evidence, not a hardcoded `true`.
@@ -19,17 +19,25 @@ use crate::state::AppState;
 /// state), which the frontend handles through [`CommandErrorDto`].
 #[tauri::command]
 pub fn get_status(state: State<'_, AppState>) -> Result<HealthReportDto, CommandErrorDto> {
-    let report = state.health.run();
+    let mut report = state.health.run();
+    if let Some(warning) = state.startup_warning() {
+        report.status = lr_application::HealthStatus::Degraded;
+        report.headline =
+            "Persistent storage is unavailable — this temporary world will not save changes"
+                .to_string();
+        report.problems.insert(0, warning);
+    }
     Ok(HealthReportDto::from(report))
 }
 
-/// Where the world database lives on disk, or the reason it is not file-backed.
-///
-/// Split out from `get_status` so the UI can show the path in its own section
-/// (and so a future "reveal in file manager" button has a cheap call to make).
+/// Safe location hint for the world database, without disclosing a machine path.
 #[tauri::command]
 pub fn get_world_location(state: State<'_, AppState>) -> Result<Option<String>, CommandErrorDto> {
-    Ok(state.health.store().location())
+    Ok(state
+        .health
+        .store()
+        .location()
+        .map(|_| "Life RPG application data folder".to_string()))
 }
 
 /// Liveness probe used by the frontend before it decides to render.

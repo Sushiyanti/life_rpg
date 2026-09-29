@@ -658,10 +658,11 @@ mod tests {
 
     #[test]
     fn concepts_progress_snapshots_and_search_survive_database_reopen() {
-        let file = tempfile::NamedTempFile::new().unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let database_path = directory.path().join("world.sqlite3");
         let concept_id;
         {
-            let store = Arc::new(SqliteHealthStore::open_file(file.path(), T0));
+            let store = Arc::new(SqliteHealthStore::open_file(&database_path, T0));
             let world = WorldService::new(store.clone(), FrozenClock);
             let player = world.create_player("Ada", None).unwrap();
             let concepts = ConceptService::new(store.clone(), FrozenClock);
@@ -682,7 +683,7 @@ mod tests {
                 .capture_snapshot(concept.id.as_str(), "2026-09-27")
                 .unwrap();
         }
-        let reopened = Arc::new(SqliteHealthStore::open_file(file.path(), T0));
+        let reopened = Arc::new(SqliteHealthStore::open_file(&database_path, T0));
         let concept = lr_application::ConceptStore::get_concept(&reopened, &concept_id)
             .unwrap()
             .unwrap();

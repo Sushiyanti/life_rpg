@@ -22,6 +22,7 @@ lr-persistence.workspace = true
 lr-contracts.workspace = true
 
 tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true

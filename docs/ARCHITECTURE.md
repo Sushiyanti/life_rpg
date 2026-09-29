@@ -16,7 +16,7 @@ the [Phase 3 report](PHASE-3-REPORT.md), [Phase 3.5 report](PHASE-3.5-REPORT.md)
 The brief separates seven concerns. Each is a question, and exactly one layer is
 allowed to answer it:
 
-| # | Responsibility | Question | Phase 1 implementation |
+| # | Responsibility | Question | Current implementation |
 |---|---|---|---|
 | 1 | **Domain** | What exists in the world? | `crates/lr-domain` — value objects, error vocabulary |
 | 2 | **State** | What condition is it in? | *(Phase 2)* — cached fields on aggregates |
@@ -134,7 +134,7 @@ The only crate that knows SQLite exists. Two obligations:
    ```rust
    enum State {
        Ready { conn: Mutex<Connection>, location: Option<PathBuf> },
-       Unavailable { reason: String },
+       Unavailable { reason: String, location: Option<PathBuf> },
    }
    ```
 
@@ -282,7 +282,7 @@ Daily snapshots are immutable, unique per entity/date observations, not summarie
 
 ### Search is a typed query over a compact text projection
 
-`lr-application::SearchQuery` and `SearchHit` provide filtering/sorting/pagination without teaching the frontend SQL. SQLite FTS5 indexes only bounded identity/type/status/time/name/body text; triggers and migration backfill synchronize it. Full aggregate rows, metadata JSON, and rule payloads are not copied into a second database. Query filters include entity kind, Player, Concept association, type/status/active, time range, and bounded text. Effect active state is evaluated against the query instant; explicit Concept links, relationships, and targets drive related-Concept filtering. The first World Explorer UI is implemented in Phase 4; tags, arbitrary JSON search, ranking tuning, and a timeline remain deferred.
+`lr-application::SearchQuery` and `SearchHit` provide filtering/sorting/pagination without teaching the frontend SQL. SQLite FTS5 indexes only bounded identity/type/status/time/name/body text; triggers and migration backfill synchronize it. Full aggregate rows, metadata JSON, and rule payloads are not copied into a second database. Query filters include entity kind, Player, Concept association, type/status/active, time range, and bounded text. Effect active state is evaluated against the query instant; explicit Concept links, relationships, and targets drive related-Concept filtering. The first World Explorer UI is implemented in Phase 4; Timeline is implemented in Phase 8 and Tags in Phase 11. Arbitrary JSON search and ranking tuning remain deferred.
 
 `ConceptService::detail` composes current progress, Concept relationships, explicit related entity references, progress history, and snapshots into a backend read model. It is data for specialized views, not a persisted page entity.
 
@@ -434,3 +434,30 @@ The closed assignment target set is Quest, Quest Stage, Quest Branch, Session, S
 Tag Manager searches Tag name/description separately from record Search, displays derived usage, inspects relationship history, and navigates to exact target records. Explorer and supported canonical Workspace panels filter by bounded Tag IDs using any/all current-relationship membership in the SQLite query, preserving Player, lifecycle, contextual visibility, text, sort and pagination semantics. Tag names are not synchronized into FTS. Timeline intentionally has no generic Tag filter and excludes Tag lifecycle/assignment timestamps: mutable current organization cannot be projected onto a past event without explicit tag-at-event-time semantics. The Tag relationship history remains inspectable outside Timeline.
 
 Migration **17** creates structured `tags` and `tag_relationships`, indexes Player/name and current/history relationship paths, enforces same-world target ownership and immutable history, extends the shared recoverable lifecycle vocabulary, and adds bounded Tag ID/match-mode columns to Workspace panels. Workspace transfer **v4** carries only `{key, name}` descriptors, never local Tag IDs; v1/v2/v3 are strictly validated and upgraded. Exact keys auto-resolve within the destination Player; similar names are only explicit choices, and unresolved filters remain neutral with feedback. No Tag row or target record is imported. See the [Phase 11 report](PHASE-11-REPORT.md) for migration upgrade coverage, verification totals, native smoke results, and known limitations.
+
+
+## 13. Phase 12 — Release Hardening & Data Safety
+
+**Current roadmap state:** Phases 1–11 are complete. Phase 12 hardens storage and recovery without introducing a gameplay system or a schema migration. Phase 13 is real-world release-candidate validation; the project is not yet v1.0 and has no release-date commitment.
+
+### Local world storage and startup
+
+The authoritative local world remains the single SQLite database in the Life RPG application-data directory. The application keeps SQLite foreign-key enforcement, a five-second busy timeout, WAL journaling, and `synchronous=NORMAL`; WAL is selected only after an existing file has been inspected and any required pre-migration checkpoint has been verified. The durability choice is appropriate to a single-user desktop workload: committed WAL state is included in snapshots, while SQLite performs recovery after ordinary process interruption. Filesystem loss, a full disk, or hardware failure are not claimed to be transactionally solvable.
+
+A missing database is initialized through the normal migration chain. An existing zero-byte, non-regular, newer-schema, or inconsistent-ledger file is not reset. Before migrating an existing supported database, the application writes and validates a self-describing pre-migration backup under the application-data `backups` directory. A failed checkpoint prevents migration. Each migration remains an atomic SQLite migration transaction; if one fails, the original file and the checkpoint are retained, the application reports a stable diagnostic, and ordinary world editing is not wired to that file. A process interruption between migration transactions may leave an earlier contiguous schema version; the next launch revalidates the ledger and checkpoints again before retrying. Disk-space exhaustion aborts the checkpoint or migration and is reported without claiming the upgrade succeeded. Safety files are intentionally not automatically pruned; the Player may remove older verified checkpoints after making their own copy.
+
+If the persistent store cannot open, startup may offer a clearly labelled temporary in-memory world. Its warning states that changes will not be saved. This fallback never replaces the database. The failed persistent store remains isolated for recovery; where its regular SQLite file is still readable (for example, an interrupted migration), the Player can inspect a verified backup and run the normal guarded restore flow, then reload. An empty, malformed, inaccessible, or otherwise unreadable file is not overwritten by this recovery-only route: preserve the original and use a separately verified backup or seek assistance rather than treating the temporary world as a repaired database.
+
+### Portable backups and explicit restore
+
+A `.liferpg-backup` is a versioned, bounded envelope: magic and format version, a length-delimited strict JSON manifest, then a SQLite database image. The manifest identifies Life RPG, format and schema versions, UTC creation time, stable Player IDs and display names, database length, and SHA-256. It includes no machine-local database path or credentials. Backup bytes are obtained through SQLite's online backup API, so a committed WAL transaction is part of the snapshot. Publication uses a new destination and does not overwrite an earlier backup. Before success, the archive is reopened and checked for format, bounds, checksum, schema ledger, SQLite integrity, required tables, foreign keys, Player ownership invariants, and essential configuration.
+
+Restore is initiated by the Player. The selected archive is validated without changing it; compatibility distinguishes same-schema, older supported (staged through the ordinary migrations), newer unsupported, and malformed backups. A different stable Player-ID set requires reviewing the Player names and typing `RESTORE`. A verified safety backup of the current file-backed world is created before replacement. Replacement and post-copy validation must both succeed to return success. If that phase errors, the application attempts to restore and validate the safety snapshot; it reports a rolled-back failure instead of claiming success. If both replacement and rollback fail, the store becomes fail-closed (`LR-RESTORE-01`) and refuses subsequent reads/writes until recovery; the preserved safety archive is the recovery point. Process termination or filesystem failure can prevent cleanup code from running, so the next launch still validates the database and never resets it automatically. A successful restore makes the existing UI stale; the application makes it inert and requires reload before editing the restored world.
+
+The Status screen exposes backup creation, non-mutating archive inspection, compatibility/identity preview, explicit restore, and a bounded read-only integrity check. It is not a general repair tool. Integrity findings are reported, never silently rewritten.
+
+### Release diagnostics and boundary
+
+Player-facing storage failures use stable diagnostic identifiers and omit SQL, stack traces, raw operating-system errors, and machine-specific paths. Backup format DTOs have typed Rust and TypeScript mirrors. These operations preserve the existing domain model: backups and safety checkpoints are persistence mechanisms, not portable Workspace exports, new game events, or additional world entities. Workspace transfer/import semantics remain unchanged and are still separate from full-world backup/restore.
+
+For package and install expectations, see the README: Linux `.deb`, AppImage, and executable targets are the current configured targets; manual upgrades preserve the existing database and run normal migrations. No automatic updater, synchronization, or additional platform promise is implied.

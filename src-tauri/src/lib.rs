@@ -43,7 +43,11 @@ pub fn bootstrap(app_data_dir: &std::path::Path, now: &str) -> AppState {
         lr_application::TagService::new(store, SystemClock),
     )
 }
-pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
+pub fn bootstrap_fallback(
+    reason: impl Into<String>,
+    now: &str,
+    recovery_store: Option<Arc<SqliteHealthStore>>,
+) -> AppState {
     let store = Arc::new(SqliteHealthStore::open_in_memory(now));
     let mut state = AppState::new(
         HealthService::new(store.clone(), SystemClock),
@@ -54,6 +58,9 @@ pub fn bootstrap_fallback(reason: impl Into<String>, now: &str) -> AppState {
         lr_application::TagService::new(store, SystemClock),
     );
     state.set_startup_warning(Some(reason.into()));
+    if let Some(store) = recovery_store {
+        state.set_recovery_store(store);
+    }
     state
 }
 
@@ -65,35 +72,38 @@ pub fn run() {
                 Ok(dir) => {
                     let state = bootstrap(&dir, &now);
                     if !state.health.store().is_available() {
-                        let reason = state
-                            .health
-                            .store()
+                        let failed_store = state.health.store().clone();
+                        let reason = failed_store
                             .unavailability_reason()
                             .unwrap_or("unknown storage failure")
                             .to_string();
                         bootstrap_fallback(
-                            format!(
-                                "Using an in-memory world: could not open {} ({reason})",
-                                world_db_path(&dir).display()
-                            ),
+                            format!("Using a temporary in-memory world because persistent storage is unavailable. Changes will not be saved. {reason}"),
                             &now,
+                            Some(failed_store),
                         )
                     } else {
                         state
                     }
                 }
-                Err(err) => bootstrap_fallback(
-                    format!("Using an in-memory world: no app data directory ({err})"),
+                Err(_) => bootstrap_fallback(
+                    "Persistent storage could not be located. This temporary world will not save changes. (LR-STORAGE-04)",
                     &now,
+                    None,
                 ),
             };
             app.manage(state);
             Ok(())
         })
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::status::get_status,
             commands::status::get_world_location,
             commands::status::ping,
+            commands::backup::create_world_backup,
+            commands::backup::inspect_world_backup,
+            commands::backup::restore_world_backup,
+            commands::backup::check_world_integrity,
             commands::world::create_player,
             commands::world::get_player,
             commands::world::set_player_progression,

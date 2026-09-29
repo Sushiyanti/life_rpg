@@ -1,4 +1,4 @@
-//! `HealthService` — the Phase 1 use case.
+//! `HealthService` — the application's current system-health use case.
 //!
 //! It answers one question: *"is this world actually alive?"* — the app booted,
 //! the store is reachable, the schema is where we expect it, and a real
@@ -153,7 +153,7 @@ where
         let application = ApplicationInfo {
             name: "Life RPG".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            phase: "phase-1 foundation".to_string(),
+            phase: "Phase 12 — release hardening".to_string(),
             runtime: "Tauri v2 desktop shell".to_string(),
             ipc_transport: "tauri::command (in-process IPC, no HTTP)".to_string(),
             offline_first: true,

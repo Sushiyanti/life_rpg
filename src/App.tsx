@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppShell, type AppRoute } from './app/AppShell';
 import { coreClient } from './domain/ipc';
+import type { RestoreInfo } from './domain/backup';
 import type { Concept, Player, PlayerStat, QuestSession, SearchHit, WorldOverview, Workspace, WorkspacePanel, WorkspaceTemplate } from './domain/world';
 import { WORKSPACE_TEMPLATES } from './features/workspaces/templates';
 import { PANEL_REGISTRY } from './features/workspaces/panelRegistry';
@@ -9,6 +10,7 @@ import { RulePanel } from './features/world/RulePanel';
 import { StatusScreen } from './features/status/StatusScreen';
 import { WorldWorkspace } from './features/world/WorldWorkspace';
 import { QuickCapture } from './features/world/QuickCapture';
+import './features/status/ReleaseSafety.css';
 
 const ACTIVE_WORLD_KEY = 'life-rpg.active-world.v1';
 const ACTIVE_ROUTE_KEY = 'life-rpg.active-route.v1';
@@ -42,6 +44,8 @@ export function App() {
   const [quickCapture, setQuickCapture] = useState(false);
   const [entityTarget, setEntityTarget] = useState<EntityTarget | null>(null);
   const [tagTargetId, setTagTargetId] = useState<string | null>(null);
+  const [restorePending, setRestorePending] = useState<RestoreInfo | null>(null);
+  const appRootRef = useRef<HTMLDivElement>(null);
 
   const refreshWorld = useCallback(async (id = player?.id) => {
     if (!id) return;
@@ -230,11 +234,13 @@ export function App() {
     async function boot() {
       setLoading(true);
       try {
-        const [hits] = await Promise.all([coreClient.searchWorld(emptyQuery), coreClient.ping()]);
+        const [hits, , health] = await Promise.all([coreClient.searchWorld(emptyQuery), coreClient.ping(), coreClient.getStatus()]);
         if (!live) return;
         const choices = hits.filter((hit: SearchHit) => hit.kind === 'player').map(hit => ({ id: hit.id, name: hit.name }));
         setPlayers(choices);
-        setHealthReady(true);
+        setHealthReady(Boolean(health.database?.locationHint) && health.status === 'ok');
+        const storageWarning = health.problems.find((problem) => problem.includes('(LR-'));
+        if (storageWarning) setNotice(`${storageWarning} Editing here will not be saved. Open System health → Backups & recovery after storage is available.`);
         const saved = localGet(ACTIVE_WORLD_KEY);
         const selected = choices.find(item => item.id === saved) ?? choices[0];
         if (selected) {
@@ -328,13 +334,17 @@ export function App() {
     setEntityTarget(null);
     setRoute(origin);
   }, [entityTarget]);
+  const onWorldRestored = useCallback((result: RestoreInfo) => setRestorePending(result), []);
 
   useEffect(() => { localSet(ACTIVE_ROUTE_KEY, route); }, [route]);
+  useEffect(() => {
+    if (appRootRef.current) appRootRef.current.inert = Boolean(restorePending);
+  }, [restorePending]);
 
-  return <AppShell route={route} onNavigate={navigate} player={player} players={players} onPlayerChange={id => void selectPlayer(id)}
+  return <><div ref={appRootRef} aria-hidden={restorePending ? true : undefined}><AppShell route={route} onNavigate={navigate} player={player} players={players} onPlayerChange={id => void selectPlayer(id)}
     workspaces={workspaces} workspace={workspace} onWorkspaceChange={id => void chooseWorkspace(id)} onCreate={() => setQuickCreate(true)}
     onQuickCapture={() => setQuickCapture(true)} ready={healthReady}>
-    {notice && <div className="notice-bar" role="status"><span>{notice}</span><button className="text-link" onClick={() => setNotice('')}>Dismiss</button></div>}
+    {notice && <div className={`notice-bar ${notice.includes('(LR-') ? 'notice-bar--warning' : ''}`} role={notice.includes('(LR-') ? 'alert' : 'status'}><span>{notice}</span><button className="text-link" onClick={() => setNotice('')}>Dismiss</button></div>}
     {error && <div className="error-banner" role="alert"><strong>World unavailable</strong><span>{error}</span><button className="button button--small" onClick={() => void refreshWorld()}>Retry</button></div>}
     {loading && <div className="loading-state" role="status"><span className="loading-dot" />Loading your world…</div>}
     {!loading && (!player || !overview)
@@ -352,7 +362,7 @@ export function App() {
         initialTarget={route === 'explorer' && entityTarget ? { kind: entityTarget.kind, id: entityTarget.id } : undefined}
         onReturnTo={entityTarget ? returnToOrigin : undefined} onQuickCapture={() => setQuickCapture(true)} />}
     {route === 'rules' && player && <RulePanel playerId={player.id} client={coreClient} />}
-    {route === 'status' && <StatusScreen />}
+    {route === 'status' && <StatusScreen client={coreClient} players={players} onRestored={onWorldRestored} />}
     {quickCreate && <div className="modal-backdrop" role="presentation" onClick={() => setQuickCreate(false)}><section className="quick-create" role="dialog" aria-modal="true" aria-labelledby="quick-create-title" onClick={event => event.stopPropagation()}>
       <button className="quick-create__close" aria-label="Close" onClick={() => setQuickCreate(false)}>×</button><p className="eyebrow">START WITH A RECORD</p><h2 id="quick-create-title">Create in this world</h2><p className="muted">Choose what you want to add. Your entry stays local and editable.</p>
       <div className="quick-create__grid">
@@ -362,5 +372,12 @@ export function App() {
     </section></div>}
     {quickCapture && player && overview && <QuickCapture client={coreClient} player={player} quests={overview.quests} skills={overview.skills} concepts={concepts} sessions={sessions}
       onClose={() => setQuickCapture(false)} onSaved={async () => { await afterMutation('Your Chronicle entry is ready in this world.'); }} />}
-  </AppShell>;
+  </AppShell></div>
+    {restorePending && <div className="modal-backdrop" role="presentation"><section className="quick-create restore-complete" role="alertdialog" aria-modal="true" aria-labelledby="restore-complete-title">
+      <p className="eyebrow">VERIFIED RESTORE COMPLETE</p><h2 id="restore-complete-title">Reload to use the restored world</h2>
+      <p className="muted">The current view is now stale and editing is paused. A verified safety backup of the replaced world was retained at:</p>
+      <code className="restore-complete__path">{restorePending.safetyBackupPath}</code>
+      <div className="backup-panel__actions"><button autoFocus className="button button--primary" onClick={() => window.location.reload()}>Reload Life RPG</button></div>
+    </section></div>}
+  </>;
 }

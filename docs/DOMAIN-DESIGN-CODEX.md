@@ -1,6 +1,6 @@
 # Life RPG — Domain Design Codex
 
-This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 11's Player-owned Tags and portable Workspace filters, plus Phase 10's bounded gameplay Rules and Skill/Effect progression semantics. Phase 4 adds presentation, not new world meaning; the [Phase 4 report](PHASE-4-REPORT.md) records the UI boundary and the Phase 4.1 correctness hardening.
+This is the canonical conceptual reference for the product's world model. Read it with [`ARCHITECTURE.md`](ARCHITECTURE.md) before changing domain behavior. The current implementation includes Phase 11's Player-owned Tags and portable Workspace filters, plus Phase 10's bounded gameplay Rules and Skill/Effect progression semantics. Phase 12 hardens persistence and release recovery without changing canonical world meaning or adding a gameplay subsystem. Phase 4 adds presentation, not new world meaning; the [Phase 4 report](PHASE-4-REPORT.md) records the UI boundary and the Phase 4.1 correctness hardening.
 
 ## Product philosophy
 
@@ -116,7 +116,7 @@ The intended flow remains **React + TypeScript → typed Tauri IPC → applicati
 
 ## Intentionally deferred
 
-- Additional UI customization beyond the first-generation Phase 4 workspace: unrestricted page authoring, a timeline, rich-text editing, and bespoke detail layouts for every entity kind. Contextual preferences are consumed by the implemented UI; Phase 4.1 hardening and its boundaries are recorded in the [Phase 4 report](PHASE-4-REPORT.md).
+- Additional UI customization beyond the implemented Workspace and Timeline: unrestricted page authoring, rich-text editing, and bespoke detail layouts for every entity kind. Contextual preferences are consumed by the implemented UI; Phase 4.1 hardening and its boundaries are recorded in the [Phase 4 report](PHASE-4-REPORT.md).
 - Universal entity/property/event frameworks, a full knowledge graph, event-sourcing rewrite, a separate search database, CMS, or no-code rule platform.
 - Arbitrary live-state rules, scheduling/background processing, Skill prerequisites/formulas, and inference across Concept graphs. XP-to-level conversion is not a progression rule: XP and manually authored levels remain independent.
 - Cloud synchronization, accounts, authentication, HTTP API, and multiplayer.
@@ -214,3 +214,10 @@ Tag usage is a derived count of active relationship facts, scoped to the Tag's P
 Only semantically supported Workspace panel sources expose Tag filters. The persisted panel stores at most 20 local Tag IDs plus `any`/`all`, and the application validates active same-Player ownership on save/import; unsupported sources (including Timeline) reject them. Workspace transfer v4 exports `{key, name}` Tag descriptors, never local row IDs. The immutable stable transfer key resolves exact matches; name-only candidates are suggestions requiring explicit Player choice, and unresolved Tags leave a filter neutral with visible feedback. Strict validated v1/v2/v3 imports remain supported.
 
 Tags are excluded from the Timeline: a current Tag assignment can change after an event, so projecting current Tag state onto historical events would misstate tag-at-event-time semantics. Assignment history remains independently inspectable in Tag/Explorer surfaces; no Tag-at-event snapshots, Timeline backfill, automatic Tags, Tag Rule actions, hierarchy, inheritance, aliases, color semantics, or Concept inference are introduced. Migration 17 adds only the Tag tables/indexes/triggers, extends the shared recoverable lifecycle vocabulary, and adds bounded Workspace filter columns; fresh-schema, schema-16 upgrade, same-world, history, Search, transfer, and UI coverage are part of Phase 11 verification. See the [Phase 11 report](PHASE-11-REPORT.md).
+
+
+## Phase 12 — persistence safety does not change world meaning
+
+Phase 12 adds versioned local world backups, verified restore, startup migration checkpoints, and a read-only integrity report. These are storage operations over the existing domain model, not new domain entities, gameplay events, Rule categories, Tag semantics, or Workspace transfer semantics. A full-world backup preserves stable Player IDs and describes the world for review; restoration of a different Player-ID set requires explicit confirmation. Machine-specific storage paths are not world identity. Failed validation does not repair or reinterpret domain records; it reports the problem and retains the available recovery point.
+
+The Phase 12 roadmap is **current** release hardening, not v1.0. Phases 1–11 are complete; Phase 13 is release-candidate and real-world validation. Intentionally deferred feature scope remains beyond v1.0 and does not include the already implemented Timeline, Tags, Skill unlock, or Workspace functionality.

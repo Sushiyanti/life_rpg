@@ -6,13 +6,13 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 11 — Reusable Tags & World Organization (complete).**
-> Player-owned Tags organize canonical records without changing their meaning,
-> lifecycle, progression, or history. Explicit relationships power bounded
-> Search and Workspace filters; local Tag IDs never leak through Workspace
-> transfer. Concepts describe meaning; Tags describe organization. See the
-> [Phase 11 report](docs/PHASE-11-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
-> [Architecture](docs/ARCHITECTURE.md), and earlier [Phase 10 report](docs/PHASE-10-REPORT.md).
+> **Status: Phase 12 — Release Hardening & Data Safety (current).** Phases 1–11
+> are complete; the database is at schema 17. Phase 12 hardens backup, restore,
+> migration, startup recovery, diagnostics, and packaging without opening a new
+> product-feature phase. Phase 13 is Release Candidate / Real-world Validation.
+> This is **not** a v1.0 declaration and does not imply a release date. See the
+> [Phase 12 report](docs/PHASE-12-REPORT.md), [Phase 11 report](docs/PHASE-11-REPORT.md),
+> [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md), and [Architecture](docs/ARCHITECTURE.md).
 
 ---
 
@@ -27,7 +27,7 @@ No cloud. No account. No server. Works with the network cable unplugged.
 - [Build the application](#build-the-application)
 - [Where your data lives](#where-your-data-lives)
 - [Database approach](#database-approach)
-- [What Phase 1 does *not* do](#what-phase-1-does-not-do)
+- [Current roadmap and deferred scope](#current-roadmap-and-deferred-scope)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -40,13 +40,13 @@ exactly one layer is allowed to answer it:
 | Layer | Question it answers | Crate / directory |
 |---|---|---|
 | **Domain** | What exists in the world? | `crates/lr-domain` |
-| **State** | What condition is it in? | *(Phase 2 — cached fields on aggregates)* |
-| **History** | What happened in the past? | *(Phase 2 — transaction ledger, snapshots)* |
+| **State** | What condition is it in? | Structured aggregate/current-value tables |
+| **History** | What happened in the past? | Append-only transactions, lifecycle/revision history, and immutable snapshots |
 | **Rules** | How does the world change? | `lr-application` — closed declarative conditions, event triggers, and actions |
 | **Application** | What commands/queries operate on the world? | `crates/lr-application` |
 | **Persistence** | How is everything saved? | `crates/lr-persistence` |
 | **Presentation** | How should a thing look? | `src/presentation` |
-| **UI state / Workspace** | How does the user want the interface arranged? | *(Phase 4 — persisted UI state)* |
+| **UI state / Workspace** | How does the user want the interface arranged? | `src/App.tsx`, `src/features/workspaces` — persisted, Player-scoped panels and preferences |
 
 The **IPC contract** (`crates/lr-contracts` ⇄ `src/domain`) is a boundary, not a
 layer: it exists so neither side has to import the other's types.
@@ -158,8 +158,9 @@ life-rpg/
 │  │     ├─ lib.rs
 │  │     ├─ error.rs             #   PersistenceError -> StorageError translation
 │  │     ├─ pragma.rs            #   WAL / foreign_keys / synchronous / busy_timeout
-│  │     ├─ migrations.rs        #   schema versions 1–8 + upgrade tests
-│  │     ├─ sqlite_store.rs      #   health/connection adapter
+│  │     ├─ migrations.rs        #   schema versions 1–17 + upgrade tests
+│  │     ├─ backup.rs            #   online snapshots, integrity, staged restore
+│  │     ├─ sqlite_store.rs      #   health/connection and migration-checkpoint adapter
 │  │     ├─ world_store.rs       #   atomic world/rule persistence + tests
 │  │     ├─ concept_store.rs     #   Concept/progress/search adapters + tests
 │  │     └─ semantics_store.rs   #   activity/recovery/preferences/suggestions
@@ -169,7 +170,10 @@ life-rpg/
 │  │        ├─ 0005_phase21_integrity.sql
 │  │        ├─ 0006_phase3_rules.sql
 │  │        ├─ 0007_phase35_concepts.sql
-│  │        └─ 0008_phase36_world_semantics.sql
+│  │        ├─ 0008_phase36_world_semantics.sql
+│  │        ├─ 0009_phase5_workspaces.sql … 0013_phase7_content_guidance.sql
+│  │        ├─ 0014_phase8_timeline_indexes.sql … 0016_phase10_gameplay_rules_progression.sql
+│  │        └─ 0017_phase11_tags.sql
 │  │
 │  └─ lr-contracts/               # IPC BOUNDARY — DTOs shared with the frontend
 │     └─ src/world.rs             #   world and Rule DTOs; lib.rs pins wire contracts
@@ -178,7 +182,7 @@ life-rpg/
 │  ├─ Cargo.toml
 │  ├─ build.rs
 │  ├─ tauri.conf.json             # window, CSP, bundle targets (deb, appimage)
-│  ├─ capabilities/default.json   # Phase 1 permissions: core:default only
+│  ├─ capabilities/default.json   # scoped IPC plus native backup open/save pickers
 │  └─ src/
 │     ├─ main.rs                  # thin entry point
 │     ├─ lib.rs                   # bootstrap + invoke-handler registration
@@ -186,6 +190,7 @@ life-rpg/
 │     └─ commands/
 │        ├─ mod.rs
 │        ├─ status.rs             # health/location/liveness adapters
+│        ├─ backup.rs             # backup, validation, restore, integrity commands
 │        └─ world.rs              # thin world and Rule command adapters
 │
 ├─ src/                           # FRONTEND (React + TS)
@@ -195,12 +200,14 @@ life-rpg/
 │  │  ├─ AppShell.tsx             # persistent navigation, world selector, actions
 │  │  └─ AppShell.css
 │  ├─ domain/
-│  │  ├─ health.ts                # hand-mirrored contract types + helpers
+│  │  ├─ health.ts                # hand-mirrored health contract types + helpers
+│  │  ├─ backup.ts                # hand-mirrored backup and integrity DTOs
 │  │  └─ ipc.ts                   # CoreClient — the ONE place invoke is called
 │  ├─ presentation/
 │  │  └─ spec.ts                  # controlled style schema + its interpreter
 │  ├─ features/status/
-│  │  ├─ StatusScreen.tsx         # storage/core health
+│  │  ├─ StatusScreen.tsx         # app health, recovery, integrity and backup
+│  │  ├─ BackupRestorePanel.tsx   # explicit local backup/restore workflow
 │  │  ├─ StatusScreen.css
 │  │  ├─ StatusPill.tsx
 │  │  ├─ InfoCard.tsx
@@ -219,8 +226,9 @@ life-rpg/
 │
 ├─ scripts/gen_icons.py           # regenerates src-tauri/icons (stdlib only)
 └─ docs/
-   ├─ ARCHITECTURE.md             # the full design rationale
-   └─ PHASE-1-REPORT.md           # what was built, changed, tested, and left over
+   ├─ ARCHITECTURE.md             # current design and release-safety guarantees
+   ├─ DOMAIN-DESIGN-CODEX.md      # canonical world semantics
+   └─ PHASE-12-REPORT.md          # hardening evidence and known limitations
 ```
 
 ---
@@ -250,8 +258,8 @@ sudo apt-get install -y \
   libjavascriptcoregtk-4.1-dev libayatana-appindicator3-dev patchelf
 ```
 
-macOS and Windows need no extra system packages beyond Xcode CLT / MSVC build
-tools.
+This repository currently configures and validates Linux packaging only. It does
+not claim macOS or Windows installer support.
 
 SQLite itself is **not** a prerequisite: `rusqlite` is built with the `bundled`
 feature, so the engine is compiled into the binary.
@@ -311,14 +319,14 @@ Rust tests never touch your real world database: they use in-memory SQLite or a
 ## Build the application
 
 ```bash
-npm run build          # production bundle for the current OS
+npm run build          # production bundle for the configured Linux targets
 ```
 
-Artifacts land in `target/release/bundle/`:
+Artifacts land in `target/release/bundle/`. The checked-in Tauri bundle targets
+are Linux `.deb` and AppImage only; this repository does not configure or claim
+macOS or Windows release packaging:
 
-- **Linux** — `deb/life-rpg_0.1.0_amd64.deb` and `appimage/life-rpg_0.1.0_amd64.AppImage`
-- **macOS** — `.app` / `.dmg`
-- **Windows** — `.msi` / `.exe`
+- **Linux** — `deb/Life RPG_0.1.0_amd64.deb` and `appimage/Life RPG_0.1.0_amd64.AppImage`
 
 The bare executable is also at `target/release/life-rpg`, which is handy for a
 smoke test:
@@ -346,10 +354,29 @@ The database sits in Tauri's per-user app data directory, under the identifier
 | macOS | `~/Library/Application Support/com.liferpg.desktop/life-rpg.sqlite3` |
 | Windows | `%APPDATA%\com.liferpg.desktop\life-rpg.sqlite3` |
 
-The status screen prints the exact resolved path, so you never have to guess.
+The status screen reports a safe location hint rather than printing an absolute
+machine path. The built-in **System health → Backups & recovery** area uses
+SQLite's online backup API, so committed WAL state is included even while the
+application is running. Choose a `.liferpg-backup` file through the system save
+dialog; the archive contains a versioned manifest, Player identity descriptors,
+schema/creation metadata, and a SHA-256 database checksum, but not the source
+installation path. The archive is validated before success is reported, and
+existing files are never overwritten.
 
-Backing up is copying that one file (plus its `-wal` sibling while the app runs).
-Deleting it starts a fresh world on next launch.
+Do **not** copy only the live `.sqlite3` file as a backup while the app is open;
+committed transactions can still reside in its WAL. Do not delete the world file
+to reset the app. An existing empty, malformed, inconsistent, or newer-schema
+database is left in place and the app fails safe rather than silently creating
+a replacement world. Use a verified backup or preserve the original file before
+any manual recovery.
+
+When manually installing a newer build, Life RPG keeps using this same app-data
+database and applies only the next forward migrations after writing a verified
+pre-upgrade checkpoint. A failed checkpoint or migration leaves the existing
+world in place and opens a clearly marked temporary, non-persistent fallback;
+it never resets to a new world. A newer unsupported schema is refused, not
+downgraded. After a verified restore, reload the app before editing so no stale
+view can write against the replaced world.
 
 ---
 
@@ -437,32 +464,34 @@ asserts this.
 
 Kept deliberately distinct, and this separation is enforced by the schema shape:
 
-- **Current state** — cached fields on aggregates (`Player.total_xp`), fast to read. *(Phase 2)*
+- **Current state** — cached fields on aggregates (`Player.total_xp`), fast to read.
 - **History** — an append-only transaction ledger; the authoritative record of
-  change. *(Phase 2)*
-- **Snapshots** — immutable per-day records of what the world looked like. *(Phase 2)*
+  change.
+- **Snapshots** — immutable per-day records of what the world looked like.
 
 Phase 1 already demonstrates the pattern in miniature: `health_probe` rows are
 append-only and never updated, while the report's `probeRows` is a derived count.
 
 ---
 
-## What Phase 1 does *not* do
+## Current roadmap and deferred scope
 
-By explicit instruction, and listed here so nobody mistakes absence for
-oversight:
+- **Completed:** Phases 1–11; current SQLite schema is 17.
+- **Current:** Phase 12 — Release Hardening & Data Safety. This phase hardens
+  backup/restore, migration checkpoints, startup failure behavior, integrity
+  diagnostics, native capabilities, and release documentation; it does not add
+  a gameplay subsystem.
+- **Next:** Phase 13 — Release Candidate / Real-world Validation.
+- **Deferred beyond v1.0:** cloud synchronization, accounts/authentication,
+  multiplayer, mobile support, AI, scheduling/background processing, arbitrary
+  scripting, universal graph/event-sourcing rewrites, unrestricted page authoring,
+  rich text, and any other feature deliberately listed as deferred in the
+  [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md).
 
-- No Player, Quest, Skill, Skill Tree, Effect, Transaction, Comment or Narrative
-  Entry aggregates. Phase 1 ships the *primitives* those will be built from
-  (`EntityId`, `Iso8601Timestamp`, `SchemaVersion`) plus their type vocabulary.
-- No rules engine (condition → trigger → action).
-- No dynamic UI system, workspace layout, or style sandbox.
-- No persisted UI state.
-- No character sheet, quest board, or skill tree screens.
-
-The migrations create only `app_meta`, `health_probe` and `type_definitions` —
-deliberately little, because later phases should add tables that encode real,
-understood invariants rather than guesses made today.
+No release date is set and the project does not claim v1.0. Historical Phase
+reports remain historical; current scope and safety behavior live in the
+[Architecture](docs/ARCHITECTURE.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+and [Phase 12 report](docs/PHASE-12-REPORT.md).
 
 ---
 
@@ -471,15 +500,17 @@ understood invariants rather than guesses made today.
 **`failed to find a `wry` …` / no `webkit2gtk-4.1` found**
 Install the Linux system libraries listed under [prerequisites](#1-prerequisites).
 
-**The window opens but the status screen says `failed`**
-That is the app working correctly: the core opened a window and is telling you
-storage is unreachable. Read the *Problems* list — it names the exact cause
-(usually an unwritable data directory). The app deliberately falls back to an
-in-memory world rather than refusing to start, and the screen says so.
+**The app shows a storage or non-persistent-world warning**
+Read the safe diagnostic code and recovery guidance on System health. If the
+file-backed database cannot be opened, the app may offer a temporary in-memory
+world so it remains usable, but a persistent warning stays visible because
+changes to that temporary world will not survive a restart. Fix directory
+permissions or restore a verified backup before treating new data as durable.
+Absolute local paths and raw operating-system error text are not shown.
 
 **"in-memory (not persisted to disk)" appears in the Store row**
-You are either in a test, or the file-backed open failed. Check the data
-directory's permissions.
+The file-backed open failed or this is a test. Do not assume edits are durable;
+check storage permissions and the displayed diagnostic code before continuing.
 
 **`npm run dev:vite` shows a connection error**
 Expected — a browser tab has no Rust core, and there is no HTTP fallback by

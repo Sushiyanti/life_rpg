@@ -138,7 +138,7 @@ pub fn expected_version() -> u32 {
 ///
 /// Kept separate from the migration bodies so the runner can always read the
 /// ledger before deciding what to do.
-fn ensure_ledger(conn: &Connection) -> Result<(), PersistenceError> {
+pub(crate) fn ensure_ledger(conn: &Connection) -> Result<(), PersistenceError> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_migrations (
              version    INTEGER PRIMARY KEY,
@@ -160,6 +160,50 @@ pub fn applied_version(conn: &Connection) -> Result<u32, PersistenceError> {
     Ok(version)
 }
 
+/// Verify that the persisted migration ledger is complete and agrees with the
+/// immutable migration names shipped by this build. This is read-only.
+pub fn validate_ledger(conn: &Connection) -> Result<(), PersistenceError> {
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(PersistenceError::InvalidMigrationLedger);
+    }
+
+    let mut statement =
+        conn.prepare("SELECT version, name, applied_at FROM schema_migrations ORDER BY version")?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut expected = 1u32;
+    for row in rows {
+        let (version, name, applied_at) = row?;
+        let version =
+            u32::try_from(version).map_err(|_| PersistenceError::InvalidMigrationLedger)?;
+        if version != expected || name.trim().is_empty() || applied_at.trim().is_empty() {
+            return Err(PersistenceError::InvalidMigrationLedger);
+        }
+        if let Some(known) = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version == version)
+        {
+            if name != known.name {
+                return Err(PersistenceError::InvalidMigrationLedger);
+            }
+        }
+        expected = expected
+            .checked_add(1)
+            .ok_or(PersistenceError::InvalidMigrationLedger)?;
+    }
+    Ok(())
+}
+
 /// Bring the store up to [`expected_version`].
 ///
 /// Guarantees:
@@ -179,6 +223,7 @@ pub fn run_migrations(
     applied_at: &str,
 ) -> Result<Vec<u32>, PersistenceError> {
     ensure_ledger(conn)?;
+    validate_ledger(conn)?;
 
     let current = applied_version(conn)?;
     let expected = expected_version();
@@ -223,7 +268,7 @@ pub fn run_migrations(
 
 /// Snapshot of the schema for the status screen.
 pub fn schema_report(conn: &Connection) -> Result<SchemaReport, PersistenceError> {
-    ensure_ledger(conn)?;
+    validate_ledger(conn)?;
 
     let mut stmt = conn.prepare("SELECT version, applied_at FROM schema_migrations")?;
     let rows = stmt.query_map([], |row| {
@@ -958,14 +1003,14 @@ mod tests {
         let mut conn = open_memory();
         run_migrations(&mut conn, T0).unwrap();
         conn.execute(
-            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (999, 'from_the_future', ?1)",
+            "INSERT INTO schema_migrations (version, name, applied_at) VALUES (18, 'from_the_future', ?1)",
             rusqlite::params![T0],
         )
         .unwrap();
 
         let err = run_migrations(&mut conn, T0).expect_err("must refuse");
         assert!(
-            matches!(err, PersistenceError::SchemaTooNew { found: 999, .. }),
+            matches!(err, PersistenceError::SchemaTooNew { found: 18, .. }),
             "got {err:?}"
         );
     }

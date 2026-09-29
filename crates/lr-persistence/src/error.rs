@@ -50,6 +50,18 @@ pub enum PersistenceError {
         expected: u32,
     },
 
+    /// The ledger is incomplete, out of order, or disagrees with its migration names.
+    #[error("migration history is inconsistent")]
+    InvalidMigrationLedger,
+
+    /// A read-only integrity check found that an existing world is incomplete or inconsistent.
+    #[error("existing world failed the read-only integrity check")]
+    Integrity,
+
+    /// A recoverable checkpoint could not be created before changing the schema.
+    #[error("pre-migration safety backup could not be created")]
+    SafetyBackup,
+
     /// The store is not usable for this operation.
     #[error("store unavailable: {0}")]
     Unavailable(String),

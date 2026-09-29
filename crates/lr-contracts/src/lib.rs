@@ -26,6 +26,7 @@
 //! surface the UI needs. Phase 2 adds `PlayerDto`, `QuestDto`, … following the
 //! same pattern.
 
+pub mod backup;
 pub mod semantics;
 pub mod timeline;
 pub mod world;

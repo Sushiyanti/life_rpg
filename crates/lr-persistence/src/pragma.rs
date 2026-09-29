@@ -23,6 +23,13 @@ pub fn configure(conn: &Connection) -> Result<(), PersistenceError> {
     // Returns the resulting mode as a row, so we must query rather than update.
     let _mode: String = conn.query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))?;
 
+    configure_connection(conn)
+}
+
+/// Configure connection-local durability and integrity settings without
+/// changing the database's persistent journal mode. Startup uses this before
+/// validating an existing file or taking its pre-migration safety snapshot.
+pub fn configure_connection(conn: &Connection) -> Result<(), PersistenceError> {
     conn.pragma_update(None, "foreign_keys", "ON")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "temp_store", "MEMORY")?;

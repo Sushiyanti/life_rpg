@@ -7,7 +7,10 @@ license.workspace = true
 [dependencies]
 lr-domain.workspace = true
 lr-application.workspace = true
+chrono.workspace = true
 rusqlite.workspace = true
 thiserror.workspace = true
 tempfile.workspace = true
 serde_json.workspace = true
+serde.workspace = true
+sha2.workspace = true

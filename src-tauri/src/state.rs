@@ -23,6 +23,7 @@ pub struct AppState {
     pub timeline: WiredTimelineService,
     pub tags: WiredTagService,
     startup_warning: RwLock<Option<String>>,
+    recovery_store: Option<WiredStore>,
 }
 impl AppState {
     pub fn new(
@@ -41,6 +42,7 @@ impl AppState {
             timeline,
             tags,
             startup_warning: RwLock::new(None),
+            recovery_store: None,
         }
     }
     pub fn set_startup_warning(&mut self, warning: Option<String>) {
@@ -48,5 +50,11 @@ impl AppState {
     }
     pub fn startup_warning(&self) -> Option<String> {
         self.startup_warning.read().expect("warning lock").clone()
+    }
+    pub fn set_recovery_store(&mut self, store: WiredStore) {
+        self.recovery_store = Some(store);
+    }
+    pub fn recovery_store(&self) -> Option<WiredStore> {
+        self.recovery_store.clone()
     }
 }

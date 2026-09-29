@@ -6,6 +6,7 @@ vi.mock('../domain/ipc', () => ({
   coreClient: {
     searchWorld: mocks.searchWorld,
     ping: vi.fn(async () => ({ status: 'healthy' })),
+    getStatus: vi.fn(async () => ({ status: 'ok', problems: [], database: { locationHint: '/app-data/world.sqlite3' } })),
     listStatDefinitions: vi.fn(async () => []),
   },
 }));

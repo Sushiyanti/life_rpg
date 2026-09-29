@@ -19,6 +19,10 @@ describe('COMMANDS', () => {
     // Keep this list in sync with `invoke_handler(tauri::generate_handler![...])`
     // in src-tauri/src/lib.rs. snake_case on the wire, camelCase in TS.
     expect(COMMANDS.getStatus).toBe('get_status');
+    expect(COMMANDS.createWorldBackup).toBe('create_world_backup');
+    expect(COMMANDS.inspectWorldBackup).toBe('inspect_world_backup');
+    expect(COMMANDS.restoreWorldBackup).toBe('restore_world_backup');
+    expect(COMMANDS.checkWorldIntegrity).toBe('check_world_integrity');
     expect(COMMANDS.getWorldLocation).toBe('get_world_location');
     expect(COMMANDS.ping).toBe('ping');
     expect(COMMANDS.createPlayer).toBe('create_player');
