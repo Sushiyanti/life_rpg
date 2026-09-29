@@ -1777,6 +1777,7 @@ dependencies = [
  "lr-contracts",
  "lr-domain",
  "lr-persistence",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",

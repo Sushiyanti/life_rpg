@@ -591,6 +591,169 @@ mod tests {
     }
 
     #[test]
+    fn release_candidate_migration_matrix_upgrades_schema_1_and_13_through_16() {
+        for version in [1, 13, 14, 15, 16] {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join(format!("schema-{version}.sqlite3"));
+            {
+                let connection = build_schema_file(&path, version);
+                if version >= 13 {
+                    connection
+                        .execute(
+                            "INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES(?1,'Preserved Ada',7,321,?2,?2)",
+                            rusqlite::params![format!("preserved-v{version}"), T0],
+                        )
+                        .expect("seed historical Player");
+                }
+            }
+            let store = SqliteHealthStore::open_file(&path, T0);
+            assert!(
+                store.is_available(),
+                "schema {version}: {:?}",
+                store.unavailability_reason()
+            );
+            let schema = store.schema_report().unwrap();
+            assert_eq!(schema.current_version, 17, "schema {version}");
+            assert!(store.check_integrity().unwrap().healthy);
+            if version >= 13 {
+                let name = store
+                    .with_conn(|conn| {
+                        conn.query_row(
+                            "SELECT name FROM players WHERE id=?1",
+                            [format!("preserved-v{version}")],
+                            |row| row.get::<_, String>(0),
+                        )
+                        .map_err(|error| StorageError::Operation(error.to_string()))
+                    })
+                    .unwrap();
+                assert_eq!(name, "Preserved Ada", "schema {version} data retained");
+                let checkpoints: Vec<_> = std::fs::read_dir(dir.path().join("backups"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .collect();
+                assert_eq!(checkpoints.len(), 1, "schema {version} safety checkpoint");
+                let info = SqliteHealthStore::inspect_backup(&checkpoints[0]).unwrap();
+                assert_eq!(info.schema_version, version);
+                assert!(info.integrity.healthy);
+            }
+        }
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("schema-17.sqlite3");
+        drop(build_schema_file(&path, 17));
+        let store = SqliteHealthStore::open_file(&path, T0);
+        assert!(store.is_available());
+        assert!(store.schema_report().unwrap().is_current());
+        assert!(!dir.path().join("backups").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abrupt_child_termination_rolls_back_an_uncommitted_world_transaction() {
+        use std::{
+            process::Command,
+            thread,
+            time::{Duration, Instant},
+        };
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("crash-world.sqlite3");
+        {
+            let connection = build_schema_file(&path, 17);
+            connection
+                .execute(
+                    "INSERT INTO players(id,name,level,current_xp,created_at,updated_at) VALUES('crash-player','Crash Test',1,321,?1,?1)",
+                    [T0],
+                )
+                .unwrap();
+        }
+        let marker = dir.path().join("transaction-open.marker");
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("sqlite_store::tests::phase13_crash_child_holds_uncommitted_world_transition")
+            .arg("--ignored")
+            .arg("--nocapture")
+            .env("LR_PHASE13_CRASH_DB", &path)
+            .env("LR_PHASE13_CRASH_MARKER", &marker)
+            .spawn()
+            .expect("spawn isolated crash child");
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !marker.exists() && Instant::now() < deadline {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("crash child exited before transaction marker: {status}");
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(marker.exists(), "child reached its open-transaction marker");
+        child.kill().expect("kill child during open transaction");
+        let status = child.wait().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            status.signal(),
+            Some(9),
+            "child was killed, not gracefully stopped"
+        );
+
+        let reopened = SqliteHealthStore::open_file(&path, T0);
+        assert!(
+            reopened.is_available(),
+            "{:?}",
+            reopened.unavailability_reason()
+        );
+        let (xp, transaction_count) = reopened
+            .with_conn(|conn| {
+                let xp = conn
+                    .query_row(
+                        "SELECT current_xp FROM players WHERE id='crash-player'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| StorageError::Operation(error.to_string()))?;
+                let count = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM transactions WHERE player_id='crash-player'",
+                        [],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|error| StorageError::Operation(error.to_string()))?;
+                Ok((xp, count))
+            })
+            .unwrap();
+        assert_eq!(xp, 321, "uncommitted Player state rolled back");
+        assert_eq!(transaction_count, 0, "no orphaned transaction survived");
+        let integrity = reopened.check_integrity().unwrap();
+        assert!(integrity.integrity_check_ok);
+        assert_eq!(integrity.foreign_key_violations, 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "spawned only by the deterministic parent SIGKILL test"]
+    fn phase13_crash_child_holds_uncommitted_world_transition() {
+        let Ok(path) = std::env::var("LR_PHASE13_CRASH_DB") else {
+            return;
+        };
+        let marker = std::env::var("LR_PHASE13_CRASH_MARKER").unwrap();
+        let mut connection = Connection::open(path).unwrap();
+        pragma::configure_connection(&connection).unwrap();
+        let tx = connection.transaction().unwrap();
+        tx.execute(
+            "UPDATE players SET current_xp=999 WHERE id='crash-player'",
+            [],
+        )
+        .unwrap();
+        tx.execute(
+            "INSERT INTO transactions(player_id,transaction_type_code,resource,amount,applied_amount,occurred_at,captured_at,reason) VALUES('crash-player','xp','xp',678,678,?1,?1,'phase13_crash_fixture')",
+            [T0],
+        )
+        .unwrap();
+        std::fs::write(marker, b"transaction remains uncommitted\n").unwrap();
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        }
+    }
+
+    #[test]
     fn invalid_existing_world_is_not_migrated_when_integrity_check_fails() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("world.sqlite3");

@@ -816,6 +816,272 @@ mod tests {
         assert_eq!(fs::read(destination).unwrap(), b"preserve this");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn abrupt_child_termination_during_backup_keeps_destination_unpublished() {
+        use std::{
+            process::Command,
+            thread,
+            time::{Duration, Instant},
+        };
+
+        let dir = tempfile::tempdir().unwrap();
+        let source_path = dir.path().join("large-world.sqlite3");
+        let source = populated_store(&source_path);
+        source
+            .execute_batch("CREATE TABLE phase13_payload(value BLOB NOT NULL);")
+            .unwrap();
+        source
+            .execute(
+                "INSERT INTO phase13_payload(value) VALUES(zeroblob(?1))",
+                [48_i64 * 1024 * 1024],
+            )
+            .unwrap();
+        source
+            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+            .unwrap();
+        drop(source);
+
+        let output_dir = dir.path().join("output");
+        fs::create_dir(&output_dir).unwrap();
+        let destination = output_dir.join("selected.liferpg-backup");
+        fs::write(&destination, b"pre-existing-selected-backup").unwrap();
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("backup::tests::phase13_backup_child_writes_temporary_archive")
+            .arg("--ignored")
+            .arg("--nocapture")
+            .env("LR_PHASE13_BACKUP_SOURCE", &source_path)
+            .env("LR_PHASE13_BACKUP_DESTINATION", &destination)
+            .spawn()
+            .expect("spawn backup child");
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut temporary_seen = false;
+        while Instant::now() < deadline {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("backup child finished before temporary archive was observed: {status}");
+            }
+            let partial = fs::read_dir(&output_dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| {
+                    *path != destination && fs::metadata(path).is_ok_and(|m| m.len() > 256 * 1024)
+                });
+            if partial.is_some() {
+                temporary_seen = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(
+            temporary_seen,
+            "observed partially written temporary archive"
+        );
+        child
+            .kill()
+            .expect("kill child during archive write/validation");
+        let status = child.wait().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(9));
+        assert_eq!(
+            fs::read(&destination).unwrap(),
+            b"pre-existing-selected-backup"
+        );
+
+        let reopened = Connection::open(&source_path).unwrap();
+        pragma::configure_connection(&reopened).unwrap();
+        assert!(check_integrity(&reopened).unwrap().healthy);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "spawned only by the deterministic parent backup SIGKILL test"]
+    fn phase13_backup_child_writes_temporary_archive() {
+        let Ok(source) = std::env::var("LR_PHASE13_BACKUP_SOURCE") else {
+            return;
+        };
+        let destination = std::env::var("LR_PHASE13_BACKUP_DESTINATION").unwrap();
+        let connection = Connection::open(source).unwrap();
+        let _ = create_backup(&connection, Path::new(&destination), T0);
+        panic!("parent should SIGKILL the child before backup publication");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn abrupt_child_termination_during_restore_keeps_a_complete_world_state() {
+        use std::{
+            process::Command,
+            thread,
+            time::{Duration, Instant},
+        };
+
+        fn world_with_payload(path: &Path, xp: i64) -> Connection {
+            let connection = populated_store(path);
+            connection
+                .execute("UPDATE players SET current_xp=?1 WHERE id='player-a'", [xp])
+                .unwrap();
+            connection
+                .execute_batch("CREATE TABLE phase13_payload(value BLOB NOT NULL);")
+                .unwrap();
+            connection
+                .execute(
+                    "INSERT INTO phase13_payload(value) VALUES(zeroblob(?1))",
+                    [48_i64 * 1024 * 1024],
+                )
+                .unwrap();
+            connection
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))
+                .unwrap();
+            connection
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let current_path = dir.path().join("current.sqlite3");
+        drop(world_with_payload(&current_path, 321));
+        let replacement_path = dir.path().join("replacement.sqlite3");
+        let replacement = world_with_payload(&replacement_path, 999);
+        let selected_backup = dir.path().join("selected.liferpg-backup");
+        let selected_info = create_backup(&replacement, &selected_backup, T0).unwrap();
+        drop(replacement);
+        let safety_dir = dir.path().join("safety");
+        let wal_path = PathBuf::from(format!("{}-wal", current_path.display()));
+        let initial_main_modified = fs::metadata(&current_path).unwrap().modified().unwrap();
+
+        let mut child = Command::new(std::env::current_exe().unwrap())
+            .arg("--exact")
+            .arg("backup::tests::phase13_restore_child_replaces_large_world")
+            .arg("--ignored")
+            .arg("--nocapture")
+            .env("LR_PHASE13_RESTORE_CURRENT", &current_path)
+            .env("LR_PHASE13_RESTORE_BACKUP", &selected_backup)
+            .env("LR_PHASE13_RESTORE_SHA256", &selected_info.sha256)
+            .env("LR_PHASE13_RESTORE_SAFETY", &safety_dir)
+            .spawn()
+            .expect("spawn restore child");
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut replacement_started = false;
+        while Instant::now() < deadline {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("restore child completed before replacement was observed: {status}");
+            }
+            let safety_ready = fs::read_dir(&safety_dir).ok().is_some_and(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    entry
+                        .path()
+                        .extension()
+                        .is_some_and(|extension| extension == "liferpg-backup")
+                })
+            });
+            let wal_writing = fs::metadata(&wal_path).is_ok_and(|metadata| metadata.len() > 0);
+            let main_changed = fs::metadata(&current_path).is_ok_and(|metadata| {
+                metadata
+                    .modified()
+                    .is_ok_and(|modified| modified != initial_main_modified)
+            });
+            if safety_ready && (wal_writing || main_changed) {
+                replacement_started = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
+        assert!(
+            replacement_started,
+            "observed live database replacement after safety snapshot"
+        );
+        child.kill().expect("kill child during restore replacement");
+        let status = child.wait().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(9));
+
+        let reopened = Connection::open(&current_path).unwrap();
+        pragma::configure_connection(&reopened).unwrap();
+        let integrity = check_integrity(&reopened).unwrap();
+        assert!(
+            integrity.healthy,
+            "restore crash left unhealthy world: {integrity:?}"
+        );
+        let xp: i64 = reopened
+            .query_row(
+                "SELECT current_xp FROM players WHERE id='player-a'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            xp == 321 || xp == 999,
+            "restore crash must leave either the complete old or complete selected world, got {xp}"
+        );
+        let payload_bytes: i64 = reopened
+            .query_row("SELECT length(value) FROM phase13_payload", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(payload_bytes, 48_i64 * 1024 * 1024);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "spawned only by the deterministic parent restore SIGKILL test"]
+    fn phase13_restore_child_replaces_large_world() {
+        let Ok(current) = std::env::var("LR_PHASE13_RESTORE_CURRENT") else {
+            return;
+        };
+        let backup = std::env::var("LR_PHASE13_RESTORE_BACKUP").unwrap();
+        let expected_sha = std::env::var("LR_PHASE13_RESTORE_SHA256").unwrap();
+        let safety = std::env::var("LR_PHASE13_RESTORE_SAFETY").unwrap();
+        let mut destination = Connection::open(current).unwrap();
+        pragma::configure(&destination).unwrap();
+        let _ = restore_backup(
+            &mut destination,
+            Path::new(&backup),
+            Path::new(&safety),
+            &expected_sha,
+            true,
+            T0,
+        );
+        panic!("parent should SIGKILL the child during restore replacement");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sparse_backup_over_the_512_mib_limit_is_rejected_before_payload_read() {
+        use std::io::Write;
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sparse-over-limit.liferpg-backup");
+        let database_bytes = MAX_BACKUP_BYTES + 1;
+        let manifest = serde_json::to_vec(&serde_json::json!({
+            "product": "Life RPG",
+            "applicationVersion": "0.1.0",
+            "formatVersion": FORMAT_VERSION,
+            "schemaVersion": 17,
+            "createdAt": T0,
+            "players": [],
+            "databaseBytes": database_bytes,
+            "sha256": "not-read-because-size-is-rejected"
+        }))
+        .unwrap();
+        let mut file = File::create(&path).unwrap();
+        file.write_all(MAGIC).unwrap();
+        file.write_all(&FORMAT_VERSION.to_be_bytes()).unwrap();
+        file.write_all(&(manifest.len() as u32).to_be_bytes())
+            .unwrap();
+        file.write_all(&manifest).unwrap();
+        let sparse_length = HEADER_SIZE + manifest.len() as u64 + database_bytes;
+        file.set_len(sparse_length).unwrap();
+        file.sync_all().unwrap();
+        drop(file);
+
+        assert_eq!(fs::metadata(&path).unwrap().len(), sparse_length);
+        assert!(matches!(inspect_backup(&path), Err(BackupError::TooLarge)));
+        assert_eq!(fs::metadata(&path).unwrap().len(), sparse_length);
+        assert!(fs::metadata(&path).unwrap().blocks() < 4096);
+    }
+
     #[test]
     fn malformed_and_checksum_tampered_backups_are_rejected_without_mutation() {
         let dir = tempfile::tempdir().unwrap();
