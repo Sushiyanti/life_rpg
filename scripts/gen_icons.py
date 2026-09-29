@@ -46,6 +46,20 @@ def _png(width: int, height: int, pixels: bytes) -> bytes:
     )
 
 
+def _ico(images: list[tuple[int, bytes]]) -> bytes:
+    """Build a Windows ICO containing PNG-compressed images."""
+    header = struct.pack("<HHH", 0, 1, len(images))
+    entries = bytearray()
+    offset = 6 + 16 * len(images)
+    payload = bytearray()
+    for size, image in images:
+        dimension = 0 if size >= 256 else size
+        entries.extend(struct.pack("<BBBBHHII", dimension, dimension, 0, 0, 1, 32, len(image), offset))
+        payload.extend(image)
+        offset += len(image)
+    return header + bytes(entries) + bytes(payload)
+
+
 def render(size: int) -> bytes:
     """A rounded dark tile with a gold/purple diamond sigil."""
     pixels = bytearray()
@@ -88,6 +102,10 @@ def main() -> None:
         path = OUT / name
         path.write_bytes(render(size))
         print(f"wrote {path.relative_to(OUT.parents[1])} ({size}x{size})")
+    ico_sizes = [16, 32, 48, 64, 128, 256, 512]
+    ico = OUT / "icon.ico"
+    ico.write_bytes(_ico([(size, render(size)) for size in ico_sizes]))
+    print(f"wrote {ico.relative_to(OUT.parents[1])} (Windows ICO)")
 
 
 if __name__ == "__main__":
