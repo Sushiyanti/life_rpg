@@ -84,7 +84,7 @@ await page.getByRole('button', { name: 'Add stage', exact: true }).click();
 await page.getByText('Validation stage', { exact: true }).waitFor();
 await page.getByLabel('New branch in Validation stage', { exact: true }).fill('Validation branch');
 await page.getByRole('button', { name: 'Add branch', exact: true }).click();
-await page.getByText('Validation branch', { exact: true }).waitFor();
+await page.getByText(/Validation branch/).waitFor();
 await page.getByRole('button', { name: 'Start branch session', exact: true }).click();
 await page.getByText(/Branch session started/).waitFor();
 log('representative_quest_stage_branch_session');
