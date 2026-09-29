@@ -8,7 +8,7 @@
 | Correct branch | `release/windows-v1.0.1` |
 | Exact parent/base | `v1.0.0` → `d077bcb4c4f72cbffb884efecbaf1ba28d325e9f` |
 | Ancestry | Verified: the branch was recreated directly from `v1.0.0`; `git merge-base HEAD v1.0.0` was the baseline commit before changes |
-| Final preparation commit | `340681572829481218c4e5fed2010910d4978f0b` |
+| Final preparation commit | `0c1d5c5da6f6b90a8a3b0ce7ceb4bc9dea1101bc` |
 | Tag | Not created; required product validation is incomplete |
 | GitHub Release | Not created |
 
@@ -106,6 +106,17 @@ The workflow did not perform the complete product-level validation required for 
 - Normal uninstall, reinstall, and post-reinstall launch.
 
 The corrected branch does contain and pass the existing Rust release-candidate integration coverage for populated worlds, relationships, backup/restore, repeated restarts, integrity, and controlled SIGKILL scenarios. That is valuable regression evidence, but it is not a substitute for the missing installed-Windows application workflows required by this task.
+
+
+### Final UI-gate attempts
+
+Three fresh runs were attempted after adding a bounded installed-UI harness:
+
+- [36574865973](https://github.com/Sushiyanti/life_rpg/actions/runs/36574865973): app initialization timing failure.
+- [36576492791](https://github.com/Sushiyanti/life_rpg/actions/runs/36576492791): WebView2 CDP endpoint `http://127.0.0.1:9222/json/version` did not appear.
+- [36577982721](https://github.com/Sushiyanti/life_rpg/actions/runs/36577982721): same WebView2 CDP endpoint remained unavailable after isolating the WebView2 process and user-data folder.
+
+The installed application launched and the existing native smoke checks remained successful, but the runner did not expose a controllable WebView2 debugging endpoint. Therefore the interactive UI, native file-dialog, and post-reinstall product gates were **not claimed as passed**. The release remains blocked rather than being published with incomplete evidence.
 
 ## Security and signing
 
