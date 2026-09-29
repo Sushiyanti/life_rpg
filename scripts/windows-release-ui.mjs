@@ -92,7 +92,7 @@ log('representative_quest_stage_branch_session');
 await clickNav(page, 'Skills');
 await page.getByRole('heading', { name: 'Skills' }).first().waitFor();
 await fillAndSubmit(page, 'Tree name', 'Windows validation skills', 'Create tree');
-await page.getByText('Windows validation skills', { exact: true }).first().waitFor();
+await page.getByRole('heading', { name: 'Windows validation skills', exact: true }).first().waitFor();
 await fillAndSubmit(page, 'Skill name', 'Release testing', 'Add skill');
 await page.getByText('Release testing', { exact: true }).first().waitFor();
 log('representative_skill_tree_skill');
