@@ -93,53 +93,64 @@ jobs:
           $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
           if (-not $appRecord) { throw "Installed executable not found under $installDir" }
           $app = $appRecord.FullName
-          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9222'
-          if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9222 --enable-automation'
-          $first = Start-Process -FilePath $app -PassThru
-          Start-Sleep -Seconds 12
+          try {
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9222'
+            if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
+            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI'
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $app -Port 9222 -TimeoutSeconds 30
+            $firstRecord = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $app } | Select-Object -First 1
+          if (-not $firstRecord) { throw 'Installed Life RPG process was not found after the CDP diagnostic.' }
+          $first = Get-Process -Id $firstRecord.ProcessId
+          Start-Sleep -Seconds 2
           if ($first.HasExited) { throw "Installed application exited early with code $($first.ExitCode)." }
           if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'First launch did not create the Windows SQLite database.' }
-          "INSTALL_DIR=$installDir" | Add-Content release-environment.txt
-          "DATA_DIR=$dataDir" | Add-Content release-environment.txt
-          "INSTALL_LAUNCH_RESTART=PASS" | Add-Content release-environment.txt
-          npm install --no-save --ignore-scripts playwright-core@1.55.0
-          node scripts/windows-release-ui.mjs
-          if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE 'windows-evidence/04-backup-restore-integrity.png'))) { throw 'UI evidence screenshot was not produced.' }
-          if (-not $first.HasExited) { Stop-Process -Id $first.Id -Force }
-          Start-Sleep -Seconds 2
-          "UI_FIRST_RUN_WORLD_CREATION=PASS" | Add-Content release-environment.txt
-          "UI_RUNTIME_VERSION_1_0_1=PASS" | Add-Content release-environment.txt
-          "UI_KEYBOARD_NAVIGATION=PASS" | Add-Content release-environment.txt
-          "UI_REPRESENTATIVE_WORKFLOWS=PASS" | Add-Content release-environment.txt
-          "UI_BACKUP_RESTORE=PASS" | Add-Content release-environment.txt
-          "UI_MALFORMED_BACKUP_REJECTION=PASS" | Add-Content release-environment.txt
-          "UI_FILESYSTEM_SPACES_UNICODE=PASS" | Add-Content release-environment.txt
-          "UI_ABRUPT_TERMINATION=NOT_TESTED_TRANSACTION_BOUNDARY" | Add-Content release-environment.txt
-          $uninstaller = Get-ChildItem $installDir -Recurse -File -Filter '*uninstall*.exe' | Select-Object -First 1
-          if (-not $uninstaller) { throw 'NSIS uninstaller was not found.' }
-          $remove = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
-          if ($remove.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($remove.ExitCode)." }
-          Start-Sleep -Seconds 3
-          if (Test-Path $app) { throw 'Installed executable remains after uninstall.' }
-          "UNINSTALL=PASS" | Add-Content release-environment.txt
-          $reinstall = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
-          if ($reinstall.ExitCode -ne 0) { throw "Reinstall failed with exit code $($reinstall.ExitCode)." }
-          $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
-          if (-not $appRecord) { throw 'Executable missing after reinstall.' }
-          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9223'
-          if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9223 --enable-automation'
-          $again = Start-Process -FilePath $appRecord.FullName -PassThru
-          Start-Sleep -Seconds 3
-          if ($again.HasExited) { throw "Application did not relaunch after reinstall; exit code $($again.ExitCode)." }
-          $env:WEBVIEW2_DEBUG_PORT = '9223'
-          node scripts/windows-reinstall-check.mjs
-          Stop-Process -Id $again.Id -Force
-          "REINSTALL_LAUNCH_PERSISTENCE=PASS" | Add-Content release-environment.txt
-          "DATA_RETENTION=APPDATA_RETAINED_ACROSS_UNINSTALL_REINSTALL" | Add-Content release-environment.txt
+            "INSTALL_DIR=$installDir" | Add-Content release-environment.txt
+            "DATA_DIR=$dataDir" | Add-Content release-environment.txt
+            "INSTALL_LAUNCH_RESTART=PASS" | Add-Content release-environment.txt
+            npm install --no-save --ignore-scripts playwright-core@1.55.0
+            node scripts/windows-release-ui.mjs
+            if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE 'windows-evidence/04-backup-restore-integrity.png'))) { throw 'UI evidence screenshot was not produced.' }
+            if (-not $first.HasExited) { Stop-Process -Id $first.Id -Force }
+            Start-Sleep -Seconds 2
+            "UI_FIRST_RUN_WORLD_CREATION=PASS" | Add-Content release-environment.txt
+            "UI_RUNTIME_VERSION_1_0_1=PASS" | Add-Content release-environment.txt
+            "UI_KEYBOARD_NAVIGATION=PASS" | Add-Content release-environment.txt
+            "UI_REPRESENTATIVE_WORKFLOWS=PASS" | Add-Content release-environment.txt
+            "UI_BACKUP_RESTORE=PASS" | Add-Content release-environment.txt
+            "UI_MALFORMED_BACKUP_REJECTION=PASS" | Add-Content release-environment.txt
+            "UI_FILESYSTEM_SPACES_UNICODE=PASS" | Add-Content release-environment.txt
+            "UI_ABRUPT_TERMINATION=NOT_TESTED_TRANSACTION_BOUNDARY" | Add-Content release-environment.txt
+            $uninstaller = Get-ChildItem $installDir -Recurse -File -Filter '*uninstall*.exe' | Select-Object -First 1
+            if (-not $uninstaller) { throw 'NSIS uninstaller was not found.' }
+            $remove = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+            if ($remove.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($remove.ExitCode)." }
+            Start-Sleep -Seconds 3
+            if (Test-Path $app) { throw 'Installed executable remains after uninstall.' }
+            "UNINSTALL=PASS" | Add-Content release-environment.txt
+            $reinstall = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+            if ($reinstall.ExitCode -ne 0) { throw "Reinstall failed with exit code $($reinstall.ExitCode)." }
+            $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+            if (-not $appRecord) { throw 'Executable missing after reinstall.' }
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9223'
+            if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
+            $env:WEBVIEW2_DEBUG_PORT = '9223'
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $appRecord.FullName -Port 9223 -TimeoutSeconds 30
+            $againRecord = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $appRecord.FullName } | Select-Object -First 1
+            if (-not $againRecord) { throw 'Installed Life RPG process was not found after reinstall CDP diagnostic.' }
+            $again = Get-Process -Id $againRecord.ProcessId
+            node scripts/windows-reinstall-check.mjs
+            Stop-Process -Id $again.Id -Force
+            "REINSTALL_LAUNCH_PERSISTENCE=PASS" | Add-Content release-environment.txt
+            "DATA_RETENTION=APPDATA_RETAINED_ACROSS_UNINSTALL_REINSTALL" | Add-Content release-environment.txt
+          } finally {
+            Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $appRecord.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($app)) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Write-Host 'WEBVIEW2_DIAGNOSTIC policy_cleanup=PASS'
+          }
 
       - name: Create checksum manifest
         shell: pwsh
@@ -159,4 +170,5 @@ jobs:
             release-environment.txt
             npm-audit.json
             windows-evidence/**
+            scripts/windows-webview2-diagnostic.ps1
           if-no-files-found: error
