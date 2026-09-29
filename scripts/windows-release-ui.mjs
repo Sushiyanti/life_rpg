@@ -21,7 +21,7 @@ function startDialog(mode, path) {
   child.stderr.on('data', value => { output += value; });
   return new Promise((resolve, reject) => child.on('close', code => {
     if (code !== 0) reject(new Error(`Windows ${mode} dialog helper failed: ${output}`));
-    else resolve();
+    else { console.log(`UI_EVIDENCE native_${mode.toLowerCase()}_dialog=${output.trim() || 'PASS'}`); resolve(); }
   }));
 }
 async function waitForDebug() {
@@ -136,7 +136,13 @@ await page.getByRole('button', { name: 'Create verified backup', exact: true }).
 const saveDialog = startDialog('Save', backupPath);
 await page.getByRole('button', { name: 'Create verified backup', exact: true }).click();
 await saveDialog;
-await page.getByText(/Backup created and verified/).waitFor();
+try {
+  await page.getByText(/Backup created and verified/).waitFor();
+} catch {
+  const error = page.getByRole('alert').first();
+  if (await error.count()) throw new Error(`Backup operation failed: ${await error.innerText()}`);
+  throw new Error('Backup operation produced neither success notice nor an error alert.');
+}
 log('backup_create_spaces_unicode_path');
 
 const malformedDialog = startDialog('Open', malformedPath);
