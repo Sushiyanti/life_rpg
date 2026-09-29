@@ -1,0 +1,116 @@
+name: Windows v1.0.1 release validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - release/windows-v1.0.1
+
+permissions:
+  contents: read
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out the corrected release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/windows-v1.0.1
+          fetch-depth: 0
+
+      - name: Record Windows and toolchain versions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          "Windows: $([System.Environment]::OSVersion.VersionString)"
+          "Architecture: $env:PROCESSOR_ARCHITECTURE"
+          "Build: $((Get-CimInstance Win32_OperatingSystem).BuildNumber)"
+          "WebView2: $((Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv)"
+          node --version
+          npm --version
+          rustc --version --verbose
+          cargo --version
+          rustup show active-toolchain
+          npx tauri --version
+
+      - name: Install Rust MSVC target
+        shell: pwsh
+        run: rustup target add x86_64-pc-windows-msvc
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests and typecheck
+        run: |
+          npm test -- --run
+          npm run typecheck
+
+      - name: Run frontend audit
+        shell: pwsh
+        run: |
+          npm audit --json > npm-audit.json
+          if ($LASTEXITCODE -ne 0) { Write-Host 'npm audit reported vulnerabilities; preserving the report for review.' }
+          exit 0
+
+      - name: Run Rust formatting, tests, and checks
+        run: |
+          cargo fmt --all -- --check
+          cargo test --workspace --all-targets
+          cargo check --workspace
+
+      - name: Build the Windows NSIS installer
+        run: npm run build -- --bundles nsis
+
+      - name: Inspect installer and run installed-app smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced.' }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = $installer.Length
+          "INSTALLER=$($installer.Name)" | Out-File release-environment.txt -Encoding utf8
+          "SIZE=$size" | Add-Content release-environment.txt
+          "SHA256=$hash" | Add-Content release-environment.txt
+          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG installed'
+          $dataDir = Join-Path $env:APPDATA 'com.liferpg.desktop'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
+          $app = Join-Path $installDir 'Life RPG.exe'
+          if (-not (Test-Path $app)) { throw "Installed executable not found: $app" }
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI'
+          $first = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 12
+          if ($first.HasExited) { throw "Installed application exited early with code $($first.ExitCode)." }
+          if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'First launch did not create the Windows SQLite database.' }
+          Stop-Process -Id $first.Id -Force
+          Start-Sleep -Seconds 2
+          $second = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 8
+          if ($second.HasExited) { throw "Application did not relaunch successfully; exit code $($second.ExitCode)." }
+          Stop-Process -Id $second.Id -Force
+          "INSTALL_DIR=$installDir" | Add-Content release-environment.txt
+          "DATA_DIR=$dataDir" | Add-Content release-environment.txt
+          "INSTALL_LAUNCH_RESTART=PASS" | Add-Content release-environment.txt
+
+      - name: Create checksum manifest
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Out-File SHA256SUMS -Encoding ascii
+          Get-Content SHA256SUMS
+
+      - name: Upload Windows release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1
+          path: |
+            target/release/bundle/nsis/*.exe
+            SHA256SUMS
+            release-environment.txt
+            npm-audit.json
+          if-no-files-found: error
