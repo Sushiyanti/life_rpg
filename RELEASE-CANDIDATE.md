@@ -1,4 +1,6 @@
-# Life RPG — Release Candidate Decision
+# Life RPG — Phase 13 Release Candidate Decision (Historical)
+
+Historical snapshot at the `0.1.0` Release Candidate. For the final v1.0.0 release scope and current downloads, see the [v1.0.0 release notes](V1.0.0-RELEASE-NOTES.md) and [README](README.md).
 
 - **Decision:** READY FOR 1.0
 - **Validated release scope:** Linux x86_64 on Ubuntu 22.04 (Jammy) or a compatible newer distribution with GTK 3 and WebKitGTK 4.1.
@@ -15,4 +17,4 @@ Both Linux packages were produced in an isolated Jammy userspace. The `.deb` ins
 - The artifacts are labeled `0.1.0`; apply the project’s version bump, signing, and release-channel process when cutting the actual 1.0 release.
 - Existing RustSec informational notices remain (`glib 0.18.5` unsoundness and unmaintained `proc-macro-error 1.0.4`); the audit reported zero vulnerabilities. Backups remain unencrypted and should be treated as sensitive local data.
 
-Full evidence and the SHA-256 values for both packages are in [the Phase 13 report](docs/PHASE-13-REPORT.md). Tested Linux artifacts are in [release/phase-13](release/phase-13/).
+Full evidence and the SHA-256 values for both packages are in [the Phase 13 report](docs/PHASE-13-REPORT.md). The tested Linux artifacts remain available from the [immutable Phase 13 RC commit](https://github.com/Sushiyanti/life_rpg/tree/071a13a0730e8995c46f2e24b94375ca0e41d22d/release/phase-13/).

@@ -6,19 +6,18 @@ stored in SQLite on your own machine.
 
 No cloud. No account. No server. Works with the network cable unplugged.
 
-> **Status: Phase 12 — Release Hardening & Data Safety (current).** Phases 1–11
-> are complete; the database is at schema 17. Phase 12 hardens backup, restore,
-> migration, startup recovery, diagnostics, and packaging without opening a new
-> product-feature phase. Phase 13 is Release Candidate / Real-world Validation.
-> This is **not** a v1.0 declaration and does not imply a release date. See the
-> [Phase 12 report](docs/PHASE-12-REPORT.md), [Phase 11 report](docs/PHASE-11-REPORT.md),
-> [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md), and [Architecture](docs/ARCHITECTURE.md).
+> **Status: v1.0.0 — first stable release.** Release scope is Linux x86_64 on
+> Ubuntu 22.04 (Jammy) or a compatible newer GTK 3/WebKitGTK 4.1 system. See the
+> [v1.0.0 release notes](V1.0.0-RELEASE-NOTES.md), [Phase 13 validation report](docs/PHASE-13-REPORT.md),
+> [Phase 12 report](docs/PHASE-12-REPORT.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
+> and [Architecture](docs/ARCHITECTURE.md).
 
 ---
 
 ## Table of contents
 
 - [Architecture at a glance](#architecture-at-a-glance)
+- [Download v1.0.0](#download-v100)
 - [Why this stack](#why-this-stack)
 - [Repository layout](#repository-layout)
 - [Install dependencies](#install-dependencies)
@@ -27,8 +26,24 @@ No cloud. No account. No server. Works with the network cable unplugged.
 - [Build the application](#build-the-application)
 - [Where your data lives](#where-your-data-lives)
 - [Database approach](#database-approach)
-- [Current roadmap and deferred scope](#current-roadmap-and-deferred-scope)
+- [Release status and deferred scope](#release-status-and-deferred-scope)
 - [Troubleshooting](#troubleshooting)
+
+---
+
+## Download v1.0.0
+
+The first stable release provides Linux x86_64 `.deb` and AppImage packages for
+Ubuntu 22.04 (Jammy) or compatible newer systems with GTK 3 and WebKitGTK 4.1.
+Download the packages and `SHA256SUMS` from the
+[Life RPG v1.0.0 GitHub Release](https://github.com/Sushiyanti/life_rpg/releases/tag/v1.0.0).
+After downloading all three files into one directory, verify the binaries with
+`sha256sum --check SHA256SUMS`.
+
+This release is not validated for Windows, macOS, older Ubuntu releases, or other
+CPU architectures. Backup files are local and unencrypted; treat them as sensitive
+data. The archive checksum detects corruption but does not authenticate who made
+the backup.
 
 ---
 
@@ -322,11 +337,12 @@ Rust tests never touch your real world database: they use in-memory SQLite or a
 npm run build          # production bundle for the configured Linux targets
 ```
 
-Artifacts land in `target/release/bundle/`. The checked-in Tauri bundle targets
+Artifacts land in `target/release/bundle/`. The configured Tauri bundle targets
 are Linux `.deb` and AppImage only; this repository does not configure or claim
-macOS or Windows release packaging:
+macOS or Windows release packaging. Ready-to-install packages are published on
+the [GitHub Releases page](https://github.com/Sushiyanti/life_rpg/releases):
 
-- **Linux** — `deb/Life RPG_0.1.0_amd64.deb` and `appimage/Life RPG_0.1.0_amd64.AppImage`
+- **Linux x86_64** — `.deb` and AppImage packages for v1.0.0.
 
 The bare executable is also at `target/release/life-rpg`, which is handy for a
 smoke test:
@@ -351,8 +367,9 @@ The database sits in Tauri's per-user app data directory, under the identifier
 | OS | Path |
 |---|---|
 | Linux | `~/.local/share/com.liferpg.desktop/life-rpg.sqlite3` |
-| macOS | `~/Library/Application Support/com.liferpg.desktop/life-rpg.sqlite3` |
-| Windows | `%APPDATA%\com.liferpg.desktop\life-rpg.sqlite3` |
+
+Paths and packaging on other operating systems are outside the v1.0.0 supported
+release scope.
 
 The status screen reports a safe location hint rather than printing an absolute
 machine path. The built-in **System health → Backups & recovery** area uses
@@ -474,24 +491,20 @@ append-only and never updated, while the report's `probeRows` is a derived count
 
 ---
 
-## Current roadmap and deferred scope
+## Release status and deferred scope
 
-- **Completed:** Phases 1–11; current SQLite schema is 17.
-- **Current:** Phase 12 — Release Hardening & Data Safety. This phase hardens
-  backup/restore, migration checkpoints, startup failure behavior, integrity
-  diagnostics, native capabilities, and release documentation; it does not add
-  a gameplay subsystem.
-- **Next:** Phase 13 — Release Candidate / Real-world Validation.
+- **Released:** v1.0.0; Phases 1–13 are complete and the SQLite schema is 17.
+- **Supported release scope:** Linux x86_64 on Ubuntu 22.04 (Jammy) or compatible
+  newer GTK 3/WebKitGTK 4.1 systems, as documented in the [release notes](V1.0.0-RELEASE-NOTES.md).
 - **Deferred beyond v1.0:** cloud synchronization, accounts/authentication,
   multiplayer, mobile support, AI, scheduling/background processing, arbitrary
   scripting, universal graph/event-sourcing rewrites, unrestricted page authoring,
   rich text, and any other feature deliberately listed as deferred in the
   [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md).
 
-No release date is set and the project does not claim v1.0. Historical Phase
-reports remain historical; current scope and safety behavior live in the
-[Architecture](docs/ARCHITECTURE.md), [Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md),
-and [Phase 12 report](docs/PHASE-12-REPORT.md).
+Phase 12 and Phase 13 reports remain historical validation records; current
+scope and safety behavior live in the [Architecture](docs/ARCHITECTURE.md),
+[Domain Design Codex](docs/DOMAIN-DESIGN-CODEX.md), and [v1.0.0 release notes](V1.0.0-RELEASE-NOTES.md).
 
 ---
 

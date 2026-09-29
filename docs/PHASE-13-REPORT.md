@@ -75,12 +75,12 @@ The `.deb` and AppImage were built inside the disposable Ubuntu 22.04 Jammy root
 - **AppImage:** launched with `--appimage-extract-and-run` and rendered the first-run window successfully in the same Jammy environment.
 - The installed `.deb` executable had no missing dynamic-library dependencies in the Jammy rootfs; that userspace reports glibc **2.35**. Jammy/compatible newer is therefore the minimum **tested** baseline; older releases and other architectures remain unvalidated.
 
-Artifacts are staged in [`release/phase-13/`](../release/phase-13/):
+The validation packages remain available from the immutable [Phase 13 RC commit](https://github.com/Sushiyanti/life_rpg/tree/071a13a0730e8995c46f2e24b94375ca0e41d22d/release/phase-13/):
 
 | Artifact | Size | SHA-256 |
 |---|---:|---|
-| [Life-RPG_0.1.0_amd64_ubuntu-22.04.deb](../release/phase-13/Life-RPG_0.1.0_amd64_ubuntu-22.04.deb) | 3,133,432 bytes | `e576f17dac7b14ef629a3167979284a6aaf26db83b502c7f46f01e1a25e67677` |
-| [Life-RPG_0.1.0_amd64_ubuntu-22.04.AppImage](../release/phase-13/Life-RPG_0.1.0_amd64_ubuntu-22.04.AppImage) | 81,373,688 bytes | `70ca6feaf522d5a2932ed1618991bfa413dc9256fbe183b9f9162e9427e3e6bf` |
+| [Life-RPG_0.1.0_amd64_ubuntu-22.04.deb](https://raw.githubusercontent.com/Sushiyanti/life_rpg/071a13a0730e8995c46f2e24b94375ca0e41d22d/release/phase-13/Life-RPG_0.1.0_amd64_ubuntu-22.04.deb) | 3,133,432 bytes | `e576f17dac7b14ef629a3167979284a6aaf26db83b502c7f46f01e1a25e67677` |
+| [Life-RPG_0.1.0_amd64_ubuntu-22.04.AppImage](https://raw.githubusercontent.com/Sushiyanti/life_rpg/071a13a0730e8995c46f2e24b94375ca0e41d22d/release/phase-13/Life-RPG_0.1.0_amd64_ubuntu-22.04.AppImage) | 81,373,688 bytes | `70ca6feaf522d5a2932ed1618991bfa413dc9256fbe183b9f9162e9427e3e6bf` |
 
 Screenshots: [`.deb` keyboard-create focus](phase13-evidence/deb-keyboard-create-focus.png), [Workspace opened by keyboard](phase13-evidence/deb-keyboard-workspace.png), and [AppImage first run](phase13-evidence/appimage-first-run.png).
 
