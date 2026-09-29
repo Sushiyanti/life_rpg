@@ -82,8 +82,9 @@ jobs:
           if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
           $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
-          $app = Join-Path $installDir 'Life RPG.exe'
-          if (-not (Test-Path $app)) { throw "Installed executable not found: $app" }
+          $app = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $app) { throw "Installed executable not found under $installDir" }
+          $app = $app.FullName
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI'
           $first = Start-Process -FilePath $app -PassThru
           Start-Sleep -Seconds 12
