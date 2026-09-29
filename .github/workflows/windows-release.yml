@@ -95,7 +95,7 @@ jobs:
           $app = $appRecord.FullName
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9222'
           $first = Start-Process -FilePath $app -PassThru
-          Start-Sleep -Seconds 3
+          Start-Sleep -Seconds 12
           if ($first.HasExited) { throw "Installed application exited early with code $($first.ExitCode)." }
           if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'First launch did not create the Windows SQLite database.' }
           "INSTALL_DIR=$installDir" | Add-Content release-environment.txt
