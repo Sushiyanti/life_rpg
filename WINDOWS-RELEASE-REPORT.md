@@ -8,7 +8,7 @@
 | Correct branch | `release/windows-v1.0.1` |
 | Exact parent/base | `v1.0.0` → `d077bcb4c4f72cbffb884efecbaf1ba28d325e9f` |
 | Ancestry | Verified: the branch was recreated directly from `v1.0.0`; `git merge-base HEAD v1.0.0` was the baseline commit before changes |
-| Final preparation commit | To be recorded after this report is committed |
+| Final preparation commit | `340681572829481218c4e5fed2010910d4978f0b` |
 | Tag | Not created; required product validation is incomplete |
 | GitHub Release | Not created |
 
