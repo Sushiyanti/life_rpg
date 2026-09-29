@@ -92,15 +92,15 @@ log('representative_quest_stage_branch_session');
 await clickNav(page, 'Skills');
 await page.getByRole('heading', { name: 'Skills' }).first().waitFor();
 await fillAndSubmit(page, 'Tree name', 'Windows validation skills', 'Create tree');
-await page.getByText('Windows validation skills', { exact: true }).waitFor();
+await page.getByText('Windows validation skills', { exact: true }).first().waitFor();
 await fillAndSubmit(page, 'Skill name', 'Release testing', 'Add skill');
-await page.getByText('Release testing', { exact: true }).waitFor();
+await page.getByText('Release testing', { exact: true }).first().waitFor();
 log('representative_skill_tree_skill');
 
 await clickNav(page, 'Concepts');
 await page.getByRole('heading', { name: 'Concepts' }).first().waitFor();
 await fillAndSubmit(page, 'Name', 'Windows release concept', 'Create concept');
-await page.getByText('Windows release concept', { exact: true }).waitFor();
+await page.getByText('Windows release concept', { exact: true }).first().waitFor();
 log('representative_concept');
 
 await clickNav(page, 'Content Guidebook');
@@ -109,14 +109,14 @@ await page.getByRole('button', { name: /New content/ }).click();
 await page.getByLabel('Title', { exact: true }).fill('Windows validation note');
 await page.getByLabel('Body', { exact: true }).fill('Created through the installed Windows application.');
 await page.getByRole('button', { name: 'Save content', exact: true }).click();
-await page.getByText('Windows validation note', { exact: true }).waitFor();
+await page.getByText('Windows validation note', { exact: true }).first().waitFor();
 log('representative_content');
 
 await clickNav(page, 'Tags');
 await page.getByRole('heading', { name: 'Tag Manager' }).first().waitFor();
 await page.getByLabel('Name', { exact: true }).last().fill('Windows release tag');
 await page.getByRole('button', { name: 'Create Tag', exact: true }).click();
-await page.getByText('Windows release tag', { exact: true }).waitFor();
+await page.getByText('Windows release tag', { exact: true }).first().waitFor();
 log('representative_tag');
 
 await clickNav(page, 'Player Hub');
