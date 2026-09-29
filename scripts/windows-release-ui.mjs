@@ -72,7 +72,7 @@ await page.getByText('1.0.1', { exact: true }).waitFor();
 log('runtime_version_1_0_1');
 await page.screenshot({ path: resolve(evidenceDir, '02-version-status.png'), fullPage: true });
 
-await clickNav(page, 'Quest log');
+await clickNav(page, 'Quests');
 await page.getByRole('heading', { name: 'Quest log' }).waitFor();
 await fillAndSubmit(page, 'Title', 'Windows release quest', 'Add quest');
 await page.getByText('Windows release quest', { exact: true }).waitFor();
@@ -112,14 +112,14 @@ await page.getByRole('button', { name: 'Save content', exact: true }).click();
 await page.getByText('Windows validation note', { exact: true }).waitFor();
 log('representative_content');
 
-await clickNav(page, 'Tag Manager');
+await clickNav(page, 'Tags');
 await page.getByRole('heading', { name: 'Tag Manager' }).waitFor();
 await page.getByLabel('Name', { exact: true }).last().fill('Windows release tag');
 await page.getByRole('button', { name: 'Create Tag', exact: true }).click();
 await page.getByText('Windows release tag', { exact: true }).waitFor();
 log('representative_tag');
 
-await clickNav(page, 'Player');
+await clickNav(page, 'Player Hub');
 await page.getByRole('heading', { name: 'Player Hub' }).waitFor();
 const customize = page.getByRole('button', { name: 'Customize workspace', exact: true });
 if (await customize.count()) {
