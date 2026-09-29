@@ -93,7 +93,10 @@ jobs:
           $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
           if (-not $appRecord) { throw "Installed executable not found under $installDir" }
           $app = $appRecord.FullName
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9222'
+          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9222'
+          if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9222 --enable-automation'
           $first = Start-Process -FilePath $app -PassThru
           Start-Sleep -Seconds 12
           if ($first.HasExited) { throw "Installed application exited early with code $($first.ExitCode)." }
@@ -125,7 +128,10 @@ jobs:
           if ($reinstall.ExitCode -ne 0) { throw "Reinstall failed with exit code $($reinstall.ExitCode)." }
           $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
           if (-not $appRecord) { throw 'Executable missing after reinstall.' }
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9223'
+          Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9223'
+          if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI --remote-debugging-port=9223 --enable-automation'
           $again = Start-Process -FilePath $appRecord.FullName -PassThru
           Start-Sleep -Seconds 3
           if ($again.HasExited) { throw "Application did not relaunch after reinstall; exit code $($again.ExitCode)." }
