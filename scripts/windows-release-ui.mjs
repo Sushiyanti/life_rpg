@@ -50,7 +50,7 @@ const page = context.pages()[0];
 page.setDefaultTimeout(20000);
 await page.waitForLoadState('domcontentloaded');
 await page.screenshot({ path: resolve(evidenceDir, '01-first-run.png'), fullPage: true });
-await page.getByRole('heading', { name: 'Start your first Player world' }).waitFor();
+await page.getByRole('heading', { name: 'Start your first Player world' }).first().waitFor();
 log('first_run_visible');
 
 const playerName = 'Windows Release Player';
@@ -63,7 +63,7 @@ await playerInput.fill(playerName);
 await page.getByLabel('Starting note', { exact: false }).fill('Windows x64 release validation world');
 await page.keyboard.press('Tab');
 await page.keyboard.press('Enter');
-await page.getByRole('heading', { name: 'Player Hub' }).waitFor();
+await page.getByRole('heading', { name: 'Player Hub' }).first().waitFor();
 log('first_run_world_creation');
 log('keyboard_first_run_submit');
 
@@ -73,7 +73,7 @@ log('runtime_version_1_0_1');
 await page.screenshot({ path: resolve(evidenceDir, '02-version-status.png'), fullPage: true });
 
 await clickNav(page, 'Quests');
-await page.getByRole('heading', { name: 'Quest log' }).waitFor();
+await page.getByRole('heading', { name: 'Quest log' }).first().waitFor();
 await fillAndSubmit(page, 'Title', 'Windows release quest', 'Add quest');
 await page.getByText('Windows release quest', { exact: true }).waitFor();
 const quest = page.getByText('Windows release quest', { exact: true }).locator('..');
@@ -90,7 +90,7 @@ await page.getByText(/Branch session started/).waitFor();
 log('representative_quest_stage_branch_session');
 
 await clickNav(page, 'Skills');
-await page.getByRole('heading', { name: 'Skills' }).waitFor();
+await page.getByRole('heading', { name: 'Skills' }).first().waitFor();
 await fillAndSubmit(page, 'Tree name', 'Windows validation skills', 'Create tree');
 await page.getByText('Windows validation skills', { exact: true }).waitFor();
 await fillAndSubmit(page, 'Skill name', 'Release testing', 'Add skill');
@@ -98,13 +98,13 @@ await page.getByText('Release testing', { exact: true }).waitFor();
 log('representative_skill_tree_skill');
 
 await clickNav(page, 'Concepts');
-await page.getByRole('heading', { name: 'Concepts' }).waitFor();
+await page.getByRole('heading', { name: 'Concepts' }).first().waitFor();
 await fillAndSubmit(page, 'Name', 'Windows release concept', 'Create concept');
 await page.getByText('Windows release concept', { exact: true }).waitFor();
 log('representative_concept');
 
 await clickNav(page, 'Content Guidebook');
-await page.getByRole('heading', { name: 'Content Guidebook' }).waitFor();
+await page.getByRole('heading', { name: 'Content Guidebook' }).first().waitFor();
 await page.getByRole('button', { name: /New content/ }).click();
 await page.getByLabel('Title', { exact: true }).fill('Windows validation note');
 await page.getByLabel('Body', { exact: true }).fill('Created through the installed Windows application.');
@@ -113,14 +113,14 @@ await page.getByText('Windows validation note', { exact: true }).waitFor();
 log('representative_content');
 
 await clickNav(page, 'Tags');
-await page.getByRole('heading', { name: 'Tag Manager' }).waitFor();
+await page.getByRole('heading', { name: 'Tag Manager' }).first().waitFor();
 await page.getByLabel('Name', { exact: true }).last().fill('Windows release tag');
 await page.getByRole('button', { name: 'Create Tag', exact: true }).click();
 await page.getByText('Windows release tag', { exact: true }).waitFor();
 log('representative_tag');
 
 await clickNav(page, 'Player Hub');
-await page.getByRole('heading', { name: 'Player Hub' }).waitFor();
+await page.getByRole('heading', { name: 'Player Hub' }).first().waitFor();
 const customize = page.getByRole('button', { name: 'Customize workspace', exact: true });
 if (await customize.count()) {
   await customize.click();
@@ -148,13 +148,13 @@ log('malformed_backup_rejection');
 const backupDialog = startDialog('Open', backupPath);
 await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true }).click();
 await backupDialog;
-await page.getByRole('heading', { name: 'Verified backup preview' }).waitFor();
+await page.getByRole('heading', { name: 'Verified backup preview' }).first().waitFor();
 await page.getByText('Supported — same schema', { exact: true }).waitFor();
 await page.getByRole('button', { name: 'Review restore consequences', exact: true }).click();
 await page.getByRole('button', { name: 'Confirm restore', exact: true }).click();
-await page.getByRole('heading', { name: 'Reload to use the restored world' }).waitFor();
+await page.getByRole('heading', { name: 'Reload to use the restored world' }).first().waitFor();
 await page.getByRole('button', { name: 'Reload Life RPG', exact: true }).click();
-await page.getByRole('heading', { name: 'Player Hub' }).waitFor();
+await page.getByRole('heading', { name: 'Player Hub' }).first().waitFor();
 await page.getByText('Windows release quest', { exact: true }).waitFor();
 log('backup_restore_relationships_workspace');
 

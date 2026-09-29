@@ -8,7 +8,7 @@ while (Date.now() < deadline) {
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
 const page = browser.contexts()[0].pages()[0];
 page.setDefaultTimeout(20000);
-await page.getByRole('heading', { name: 'Player Hub' }).waitFor();
+await page.getByRole('heading', { name: 'Player Hub' }).first().waitFor();
 await page.getByText('Windows release quest', { exact: true }).waitFor();
 await page.getByRole('button', { name: 'System health', exact: true }).click();
 await page.getByText('1.0.1', { exact: true }).waitFor();
