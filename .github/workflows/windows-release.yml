@@ -9,12 +9,16 @@ on:
 permissions:
   contents: read
 
+env:
+  INSTALLER_ARTIFACT: life-rpg-windows-v1.0.1-installer
+
 jobs:
-  windows-release:
+  build-windows:
+    name: Build Windows installer once
     runs-on: windows-latest
-    timeout-minutes: 75
+    timeout-minutes: 45
     steps:
-      - name: Check out the corrected release branch
+      - name: Check out release branch
         uses: actions/checkout@v4
         with:
           ref: release/windows-v1.0.1
@@ -24,16 +28,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          "Windows: $([System.Environment]::OSVersion.VersionString)"
-          "Architecture: $env:PROCESSOR_ARCHITECTURE"
-          "Build: $((Get-CimInstance Win32_OperatingSystem).BuildNumber)"
-          "WebView2: $((Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv)"
-          node --version
-          npm --version
-          rustc --version --verbose
-          cargo --version
-          rustup show active-toolchain
-          Write-Host 'Tauri CLI will be reported after npm ci.'
+          "Windows: $([System.Environment]::OSVersion.VersionString)" | Out-File release-build-environment.txt -Encoding utf8
+          "Architecture: $env:PROCESSOR_ARCHITECTURE" | Add-Content release-build-environment.txt
+          "Build: $((Get-CimInstance Win32_OperatingSystem).BuildNumber)" | Add-Content release-build-environment.txt
+          "WebView2: $((Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue).pv)" | Add-Content release-build-environment.txt
+          node --version | Add-Content release-build-environment.txt
+          npm --version | Add-Content release-build-environment.txt
+          rustc --version --verbose | Add-Content release-build-environment.txt
+          cargo --version | Add-Content release-build-environment.txt
+          rustup show active-toolchain | Add-Content release-build-environment.txt
 
       - name: Install Rust MSVC target
         shell: pwsh
@@ -63,10 +66,154 @@ jobs:
           cargo test --workspace --all-targets
           cargo check --workspace
 
-      - name: Build the Windows NSIS installer
+      - name: Build Windows x64 NSIS installer once
         run: npm run build -- --bundles nsis
 
-      - name: Install and run the real Windows UI release gates
+      - name: Create installer checksum manifest
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'NSIS installer was not produced.' }
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $($installer.Name)" | Out-File SHA256SUMS -Encoding ascii
+          "INSTALLER=$($installer.Name)" | Out-File release-installer-metadata.txt -Encoding utf8
+          "SIZE_BYTES=$($installer.Length)" | Add-Content release-installer-metadata.txt
+          "SHA256=$hash" | Add-Content release-installer-metadata.txt
+          Get-Content SHA256SUMS
+          Get-Content release-installer-metadata.txt
+
+      - name: Upload reusable installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1-installer
+          if-no-files-found: error
+          path: |
+            target/release/bundle/nsis/*.exe
+            SHA256SUMS
+            release-installer-metadata.txt
+            release-build-environment.txt
+            npm-audit.json
+
+  basic-installed-smoke:
+    name: Basic installed smoke
+    needs: build-windows
+    if: needs.build-windows.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/windows-v1.0.1
+          fetch-depth: 1
+      - name: Download reusable installer
+        uses: actions/download-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1-installer
+          path: installer
+      - name: Install launch close relaunch smoke
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem installer -Recurse -Filter '*.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'Reusable installer artifact is missing.' }
+          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG basic smoke'
+          $dataDir = Join-Path $env:APPDATA 'com.liferpg.desktop'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force }
+          $setup = Start-Process $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $app = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $app) { throw 'Installed executable not found.' }
+          $first = Start-Process $app.FullName -PassThru
+          Start-Sleep -Seconds 3
+          if ($first.HasExited) { throw "Application exited on first launch: $($first.ExitCode)" }
+          $deadline = (Get-Date).AddSeconds(20)
+          while (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3')) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+          if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'SQLite database was not initialized.' }
+          Stop-Process -Id $first.Id -Force
+          Start-Sleep -Seconds 2
+          $second = Start-Process $app.FullName -PassThru
+          Start-Sleep -Seconds 3
+          if ($second.HasExited) { throw "Application exited after relaunch: $($second.ExitCode)" }
+          'BASIC_INSTALLED_SMOKE=PASS' | Out-File basic-smoke-evidence.txt -Encoding utf8
+          Stop-Process -Id $second.Id -Force
+
+      - name: Upload basic smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-basic-smoke-${{ github.run_id }}
+          if-no-files-found: warn
+          path: basic-smoke-evidence.txt
+
+  webview2-diagnostic:
+    name: WebView2 diagnostic
+    needs: build-windows
+    if: needs.build-windows.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/windows-v1.0.1
+          fetch-depth: 1
+      - name: Download reusable installer
+        uses: actions/download-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1-installer
+          path: installer
+      - name: Install and run WebView2 diagnostic only
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem installer -Recurse -Filter '*.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 diagnostic'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          $setup = Start-Process $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $app = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $app) { throw 'Installed executable not found.' }
+          try {
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 diagnostic data'
+            if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $app.FullName -Port 9222 -TimeoutSeconds 30 2>&1 | Tee-Object webview2-diagnostic.log
+            if ($LASTEXITCODE -ne 0) { throw 'CDP diagnostic failed.' }
+          } finally {
+            Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($app.Name)) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $app.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $app.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+          }
+      - name: Upload WebView2 diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-webview2-diagnostic-${{ github.run_id }}
+          if-no-files-found: warn
+          path: webview2-diagnostic.log
+
+  ui-product-validation:
+    name: UI and product validation
+    needs: [build-windows, webview2-diagnostic]
+    if: needs.build-windows.result == 'success' && needs.webview2-diagnostic.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/windows-v1.0.1
+          fetch-depth: 1
+      - name: Download reusable installer
+        uses: actions/download-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1-installer
+          path: installer
+      - name: Install and run bounded real UI harness
         shell: pwsh
         env:
           WEBVIEW2_DEBUG_PORT: 9222
@@ -76,101 +223,109 @@ jobs:
           MALFORMED_PATH: windows-evidence/malformed backup 测试.liferpg-backup
         run: |
           $ErrorActionPreference = 'Stop'
-          $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
-          if (-not $installer) { throw 'NSIS installer was not produced.' }
-          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          $size = $installer.Length
-          "INSTALLER=$($installer.Name)" | Out-File release-environment.txt -Encoding utf8
-          "SIZE=$size" | Add-Content release-environment.txt
-          "SHA256=$hash" | Add-Content release-environment.txt
-          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG installed'
+          $installer = Get-ChildItem installer -Recurse -Filter '*.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG UI validation'
           $dataDir = Join-Path $env:APPDATA 'com.liferpg.desktop'
           if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
           if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force }
           New-Item -ItemType Directory -Force -Path (Join-Path $env:GITHUB_WORKSPACE 'windows-evidence') | Out-Null
-          $install = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
-          if ($install.ExitCode -ne 0) { throw "Installer failed with exit code $($install.ExitCode)." }
-          $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
-          if (-not $appRecord) { throw "Installed executable not found under $installDir" }
-          $app = $appRecord.FullName
+          $setup = Start-Process $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $app = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $app) { throw 'Installed executable not found.' }
           try {
-            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9222'
+            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG UI WebView2 data'
             if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
-            $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--disable-features=msWebOOUI'
-            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $app -Port 9222 -TimeoutSeconds 30
-            $firstRecord = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $app } | Select-Object -First 1
-          if (-not $firstRecord) { throw 'Installed Life RPG process was not found after the CDP diagnostic.' }
-          $first = Get-Process -Id $firstRecord.ProcessId
-          Start-Sleep -Seconds 2
-          if ($first.HasExited) { throw "Installed application exited early with code $($first.ExitCode)." }
-          if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'First launch did not create the Windows SQLite database.' }
-            "INSTALL_DIR=$installDir" | Add-Content release-environment.txt
-            "DATA_DIR=$dataDir" | Add-Content release-environment.txt
-            "INSTALL_LAUNCH_RESTART=PASS" | Add-Content release-environment.txt
+            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $app.FullName -Port 9222 -TimeoutSeconds 30 *> webview2-ui-launch.log
+            if ($LASTEXITCODE -ne 0) { throw 'CDP preflight failed; UI harness was not run.' }
             npm install --no-save --ignore-scripts playwright-core@1.55.0
-            node scripts/windows-release-ui.mjs
-            if (-not (Test-Path (Join-Path $env:GITHUB_WORKSPACE 'windows-evidence/04-backup-restore-integrity.png'))) { throw 'UI evidence screenshot was not produced.' }
-            if (-not $first.HasExited) { Stop-Process -Id $first.Id -Force }
-            Start-Sleep -Seconds 2
-            "UI_FIRST_RUN_WORLD_CREATION=PASS" | Add-Content release-environment.txt
-            "UI_RUNTIME_VERSION_1_0_1=PASS" | Add-Content release-environment.txt
-            "UI_KEYBOARD_NAVIGATION=PASS" | Add-Content release-environment.txt
-            "UI_REPRESENTATIVE_WORKFLOWS=PASS" | Add-Content release-environment.txt
-            "UI_BACKUP_RESTORE=PASS" | Add-Content release-environment.txt
-            "UI_MALFORMED_BACKUP_REJECTION=PASS" | Add-Content release-environment.txt
-            "UI_FILESYSTEM_SPACES_UNICODE=PASS" | Add-Content release-environment.txt
-            "UI_ABRUPT_TERMINATION=NOT_TESTED_TRANSACTION_BOUNDARY" | Add-Content release-environment.txt
-            $uninstaller = Get-ChildItem $installDir -Recurse -File -Filter '*uninstall*.exe' | Select-Object -First 1
-            if (-not $uninstaller) { throw 'NSIS uninstaller was not found.' }
-            $remove = Start-Process -FilePath $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
-            if ($remove.ExitCode -ne 0) { throw "Uninstaller failed with exit code $($remove.ExitCode)." }
-            Start-Sleep -Seconds 3
-            if (Test-Path $app) { throw 'Installed executable remains after uninstall.' }
-            "UNINSTALL=PASS" | Add-Content release-environment.txt
-            $reinstall = Start-Process -FilePath $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
-            if ($reinstall.ExitCode -ne 0) { throw "Reinstall failed with exit code $($reinstall.ExitCode)." }
-            $appRecord = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
-            if (-not $appRecord) { throw 'Executable missing after reinstall.' }
-            Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $env:RUNNER_TEMP 'Life RPG WebView2 9223'
-            if (Test-Path $env:WEBVIEW2_USER_DATA_FOLDER) { Remove-Item $env:WEBVIEW2_USER_DATA_FOLDER -Recurse -Force }
-            $env:WEBVIEW2_DEBUG_PORT = '9223'
-            & pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/windows-webview2-diagnostic.ps1 -AppPath $appRecord.FullName -Port 9223 -TimeoutSeconds 30
-            $againRecord = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $appRecord.FullName } | Select-Object -First 1
-            if (-not $againRecord) { throw 'Installed Life RPG process was not found after reinstall CDP diagnostic.' }
-            $again = Get-Process -Id $againRecord.ProcessId
-            node scripts/windows-reinstall-check.mjs
-            Stop-Process -Id $again.Id -Force
-            "REINSTALL_LAUNCH_PERSISTENCE=PASS" | Add-Content release-environment.txt
-            "DATA_RETENTION=APPDATA_RETAINED_ACROSS_UNINSTALL_REINSTALL" | Add-Content release-environment.txt
+            node scripts/windows-release-ui.mjs *> ui-product-validation.log
+            if ($LASTEXITCODE -ne 0) { throw 'UI/product validation failed.' }
           } finally {
-            Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $appRecord.Name -ErrorAction SilentlyContinue
-            Remove-Item 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $appRecord.Name -ErrorAction SilentlyContinue
-            Remove-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+            Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($app.Name)) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
             Get-Process msedgewebview2 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($app)) -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-            Write-Host 'WEBVIEW2_DIAGNOSTIC policy_cleanup=PASS'
+            Remove-ItemProperty -Path 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $app.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Name $app.Name -ErrorAction SilentlyContinue
+            Remove-Item 'HKLM:\SOFTWARE\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments' -Recurse -Force -ErrorAction SilentlyContinue
           }
-
-      - name: Create checksum manifest
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
-          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $($installer.Name)" | Out-File SHA256SUMS -Encoding ascii
-          Get-Content SHA256SUMS
-
-      - name: Upload Windows release evidence
+      - name: Upload UI/product evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: life-rpg-windows-v1.0.1
+          name: windows-ui-product-validation-${{ github.run_id }}
+          if-no-files-found: warn
           path: |
-            target/release/bundle/nsis/*.exe
-            SHA256SUMS
-            release-environment.txt
-            npm-audit.json
+            ui-product-validation.log
+            webview2-ui-launch.log
             windows-evidence/**
-            scripts/windows-webview2-diagnostic.ps1
-          if-no-files-found: error
+
+  durability-reinstall:
+    name: Durability and reinstall
+    needs: build-windows
+    if: needs.build-windows.result == 'success'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out release branch
+        uses: actions/checkout@v4
+        with:
+          ref: release/windows-v1.0.1
+          fetch-depth: 1
+      - name: Download reusable installer
+        uses: actions/download-artifact@v4
+        with:
+          name: life-rpg-windows-v1.0.1-installer
+          path: installer
+      - name: Run bounded durability and reinstall checks
+        shell: pwsh
+        env:
+          WEBVIEW2_DEBUG_PORT: 9223
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem installer -Recurse -Filter '*.exe' | Select-Object -First 1
+          $installDir = Join-Path $env:RUNNER_TEMP 'Life RPG durability'
+          $dataDir = Join-Path $env:APPDATA 'com.liferpg.desktop'
+          if (Test-Path $installDir) { Remove-Item $installDir -Recurse -Force }
+          if (Test-Path $dataDir) { Remove-Item $dataDir -Recurse -Force }
+          $setup = Start-Process $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          $app = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $app) { throw 'Installed executable not found.' }
+          $first = Start-Process $app.FullName -PassThru
+          Start-Sleep -Seconds 3
+          if ($first.HasExited) { throw 'Initial durability launch exited.' }
+          $deadline = (Get-Date).AddSeconds(20)
+          while (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3')) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+          if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'SQLite database was not initialized.' }
+          Stop-Process -Id $first.Id -Force
+          Start-Sleep -Seconds 2
+          $second = Start-Process $app.FullName -PassThru
+          Start-Sleep -Seconds 3
+          if ($second.HasExited) { throw 'Restart after abrupt termination exited.' }
+          Stop-Process -Id $second.Id -Force
+          $uninstaller = Get-ChildItem $installDir -Recurse -File -Filter '*uninstall*.exe' | Select-Object -First 1
+          if (-not $uninstaller) { throw 'Uninstaller was not found.' }
+          $remove = Start-Process $uninstaller.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($remove.ExitCode -ne 0) { throw "Uninstall failed: $($remove.ExitCode)" }
+          Start-Sleep -Seconds 3
+          if (Test-Path $app.FullName) { throw 'Application executable remains after uninstall.' }
+          $reinstall = Start-Process $installer.FullName -ArgumentList '/S', "/D=$installDir" -Wait -PassThru
+          if ($reinstall.ExitCode -ne 0) { throw "Reinstall failed: $($reinstall.ExitCode)" }
+          $again = Get-ChildItem $installDir -Recurse -File -Filter '*.exe' | Where-Object { $_.Name -notlike '*uninstall*' } | Select-Object -First 1
+          if (-not $again) { throw 'Executable missing after reinstall.' }
+          $launched = Start-Process $again.FullName -PassThru
+          Start-Sleep -Seconds 3
+          if ($launched.HasExited) { throw 'Application exited after reinstall.' }
+          if (-not (Test-Path (Join-Path $dataDir 'life-rpg.sqlite3'))) { throw 'SQLite database was not retained after reinstall.' }
+          'DURABILITY_ABRUPT_RESTART=PASS' | Out-File durability-reinstall-evidence.txt -Encoding utf8
+          'UNINSTALL=PASS' | Add-Content durability-reinstall-evidence.txt
+          'REINSTALL_PERSISTENCE=PASS' | Add-Content durability-reinstall-evidence.txt
+          Stop-Process -Id $launched.Id -Force
+      - name: Upload durability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-durability-reinstall-${{ github.run_id }}
+          if-no-files-found: warn
+          path: durability-reinstall-evidence.txt
