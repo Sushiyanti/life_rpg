@@ -716,8 +716,18 @@ fn parent_dir(path: &Path) -> &Path {
         .unwrap_or_else(|| Path::new("."))
 }
 
+#[cfg(not(windows))]
 fn sync_directory(path: &Path) -> Result<(), BackupError> {
     File::open(path)?.sync_all()?;
+    Ok(())
+}
+
+// Windows does not support opening a directory as a synchronizable file handle
+// in the same way Unix filesystems do. The file itself is flushed and synced
+// before publication; directory-entry syncing is therefore intentionally a
+// no-op on Windows rather than turning a valid backup into a reported failure.
+#[cfg(windows)]
+fn sync_directory(_path: &Path) -> Result<(), BackupError> {
     Ok(())
 }
 
