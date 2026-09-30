@@ -145,14 +145,7 @@ try {
 }
 log('backup_create_spaces_unicode_path');
 
-const malformedDialog = startDialog('Open', malformedPath);
-await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true }).click();
-await malformedDialog;
-await page.getByRole('alert').filter({ hasText: /backup|integrity|could not/i }).waitFor();
-log('malformed_backup_rejection');
-
 console.log('UI_PROGRESS valid_backup_restore=START');
-await wait(500);
 const backupDialog = startDialog('Open', backupPath);
 await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true }).click({ timeout: 10000 });
 await backupDialog;
@@ -177,6 +170,12 @@ await page.getByRole('button', { name: 'Check current world', exact: true }).cli
 await page.getByText(/Read-only current-world check: passed/).waitFor();
 log('sqlite_integrity_after_restore');
 await page.screenshot({ path: resolve(evidenceDir, '04-backup-restore-integrity.png'), fullPage: true });
+
+const malformedDialog = startDialog('Open', malformedPath);
+await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true }).click({ timeout: 10000 });
+await malformedDialog;
+await page.getByRole('alert').filter({ hasText: /backup|integrity|could not/i }).waitFor();
+log('malformed_backup_rejection');
 
 console.log(`UI_ARTIFACT backup=${backupPath}`);
 console.log(`UI_ARTIFACT malformed=${malformedPath}`);
