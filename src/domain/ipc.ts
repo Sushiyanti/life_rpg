@@ -61,6 +61,8 @@ export const COMMANDS = {
   listRuleExecutions: 'list_rule_executions',
   listConcepts: 'list_concepts',
   createConcept: 'create_concept',
+  getConcept: 'get_concept',
+  setConceptActive: 'set_concept_active',
   listConceptProgress: 'list_concept_progress',
   setConceptProgress: 'set_concept_progress',
   listConceptRelationships: 'list_concept_relationships',
@@ -176,6 +178,8 @@ export class CoreClient {
   async listTransactions(playerId:string,limit?:number):Promise<Transaction[]>{return this.invoke<Transaction[]>(COMMANDS.listTransactions,{playerId,limit:limit??null});}
   async listConcepts(playerId:string):Promise<Concept[]>{return this.invoke<Concept[]>(COMMANDS.listConcepts,{playerId});}
   async createConcept(playerId:string,typeCode:string,name:string,description?:string):Promise<Concept>{return this.invoke<Concept>(COMMANDS.createConcept,{playerId,typeCode,name,description:description??null});}
+  async getConcept(id:string):Promise<Concept|null>{return this.invoke<Concept|null>(COMMANDS.getConcept,{id});}
+  async setConceptActive(conceptId:string,active:boolean):Promise<Concept>{return this.invoke<Concept>(COMMANDS.setConceptActive,{conceptId,active});}
   async listConceptProgress(conceptId:string):Promise<ConceptProgressTrack[]>{return this.invoke<ConceptProgressTrack[]>(COMMANDS.listConceptProgress,{conceptId});}
   async setConceptProgress(conceptId:string,trackCode:string,value:number,level?:number):Promise<ConceptProgressTrack>{return this.invoke<ConceptProgressTrack>(COMMANDS.setConceptProgress,{conceptId,trackCode,value,level:level??null,occurredAt:null});}
   async listConceptRelationships(conceptId:string):Promise<ConceptRelationship[]>{return this.invoke<ConceptRelationship[]>(COMMANDS.listConceptRelationships,{conceptId});}

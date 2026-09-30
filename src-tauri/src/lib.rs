@@ -119,6 +119,8 @@ pub fn run() {
             commands::world::list_transactions,
             commands::concepts::create_concept,
             commands::concepts::list_concepts,
+            commands::concepts::get_concept,
+            commands::concepts::set_concept_active,
             commands::concepts::list_concept_progress,
             commands::concepts::set_concept_progress,
             commands::concepts::list_concept_relationships,

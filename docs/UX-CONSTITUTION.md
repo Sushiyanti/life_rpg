@@ -10,7 +10,7 @@
 
 > Normal entity inspection and editing must happen in context.
 
-The reusable `EntitySurfaceProvider` and stack are the single interaction foundation for entity details. Entity-specific renderers provide content; the surface owns overlay, focus, keyboard, responsive presentation, copy, and stack behavior.
+The reusable `EntitySurfaceProvider` and stack are the single interaction foundation for entity details. Entity-specific renderers provide content; the surface owns overlay, focus, keyboard, responsive presentation, copy, and stack behavior. A surface resolves by typed entity identity through the CoreClient; it must not infer identity from array position or open an arbitrary first related record.
 
 ## Route navigation
 
@@ -41,3 +41,5 @@ Those interactions should open a surface above the current page. The underlying 
 - Editing is an explicit mode with Save and Cancel, and saving remains on the same surface.
 - Copy actions provide non-destructive feedback.
 - Domain rules and persistence remain behind the typed Tauri IPC client; React does not access SQLite.
+- Relationships are loaded from persisted typed association/relationship records. A Quest opens the attached Concept selected by its relationship, and a Concept opens the related Concept selected by its relationship.
+- The workspace remains mounted. The page owns page/workspace scrolling; the open surface owns only its constrained body scrolling, with overscroll contained at the surface boundary.

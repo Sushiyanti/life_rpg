@@ -35,6 +35,31 @@ pub fn list_concepts(
 }
 
 #[tauri::command]
+pub fn get_concept(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<ConceptDto>, CommandErrorDto> {
+    state
+        .concepts
+        .get_concept(&id)
+        .map(|item| item.map(Into::into))
+        .map_err(Into::into)
+}
+
+#[tauri::command]
+pub fn set_concept_active(
+    state: State<'_, AppState>,
+    concept_id: String,
+    active: bool,
+) -> Result<ConceptDto, CommandErrorDto> {
+    state
+        .concepts
+        .set_concept_active(&concept_id, active)
+        .map(Into::into)
+        .map_err(Into::into)
+}
+
+#[tauri::command]
 pub fn list_concept_progress(
     state: State<'_, AppState>,
     concept_id: String,
