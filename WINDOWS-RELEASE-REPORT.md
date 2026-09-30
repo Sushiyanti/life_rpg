@@ -8,7 +8,7 @@
 | Correct branch | `release/windows-v1.0.1` |
 | Exact parent/base | `v1.0.0` → `d077bcb4c4f72cbffb884efecbaf1ba28d325e9f` |
 | Ancestry | Verified: the branch was recreated directly from `v1.0.0`; `git merge-base HEAD v1.0.0` was the baseline commit before changes |
-| Final preparation commit | `0c1d5c5da6f6b90a8a3b0ce7ceb4bc9dea1101bc` |
+| Final preparation commit | `175acd39e3610721f9d9e3fb543e91627bb58fc5` |
 | Tag | Not created; required product validation is incomplete |
 | GitHub Release | Not created |
 
@@ -117,6 +117,24 @@ Three fresh runs were attempted after adding a bounded installed-UI harness:
 - [36577982721](https://github.com/Sushiyanti/life_rpg/actions/runs/36577982721): same WebView2 CDP endpoint remained unavailable after isolating the WebView2 process and user-data folder.
 
 The installed application launched and the existing native smoke checks remained successful, but the runner did not expose a controllable WebView2 debugging endpoint. Therefore the interactive UI, native file-dialog, and post-reinstall product gates were **not claimed as passed**. The release remains blocked rather than being published with incomplete evidence.
+
+## Staged validation pipeline
+
+The release workflow was refactored at commit `175acd39e3610721f9d9e3fb543e91627bb58fc5` and run [36716060176](https://github.com/Sushiyanti/life_rpg/actions/runs/36716060176). The installer was built once and reused through the Actions artifact `life-rpg-windows-v1.0.1-installer`.
+
+| Stage | Result | Timeout | Evidence |
+|---|---|---:|---|
+| Build Windows installer once | PASS | 45 min | NSIS installer, checksum, environment artifact |
+| Basic installed smoke | PASS | 15 min | Install, launch, SQLite initialization, close, relaunch |
+| WebView2 diagnostic | PASS | 20 min | WebView2 `153.0.4234.48`, `127.0.0.1:9222/json/version`, CDP PASS |
+| Durability and reinstall | PASS | 25 min | Abrupt restart, SQLite initialization, uninstall, reinstall, persistence |
+| UI and product validation | BLOCKED | 30 min | Installed app reaches real backup flow; valid-backup preview does not render |
+
+The UI evidence shows first-run/world creation, runtime version, representative workflows, keyboard navigation, native save/open dialogs, and Windows spaces/Unicode backup creation passing. The remaining failure occurs after the valid backup dialog closes: the app remains on `Working…` and exposes neither the verified preview nor an error alert. The stage now fails within its bounded timeout and uploads logs/screenshots instead of consuming the whole workflow indefinitely.
+
+## Manual beta feedback
+
+Manual testing of `v1.0.1-beta.1` identified substantial product-readiness concerns beyond packaging: unclear navigation and status presentation, insufficient inline detail/popups, weak notes/concept editing and reuse, missing player level metadata management, limited customization, and hard-coded workflows. These are recorded as product backlog concerns and reinforce the decision not to publish final `v1.0.1` until the core release blockers and an agreed product-quality scope are addressed.
 
 ## Security and signing
 
