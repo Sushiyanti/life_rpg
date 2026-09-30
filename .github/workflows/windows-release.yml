@@ -72,8 +72,8 @@ jobs:
           WEBVIEW2_DEBUG_PORT: 9222
           EVIDENCE_DIR: windows-evidence
           DIALOG_SCRIPT: scripts/windows-dialog.ps1
-          BACKUP_PATH: windows-evidence/Life RPG 测试/backup with spaces.liferpg-backup
-          MALFORMED_PATH: windows-evidence/Life RPG 测试/malformed backup.liferpg-backup
+          BACKUP_PATH: windows-evidence/backup with spaces 测试.liferpg-backup
+          MALFORMED_PATH: windows-evidence/malformed backup 测试.liferpg-backup
         run: |
           $ErrorActionPreference = 'Stop'
           $installer = Get-ChildItem 'target\release\bundle\nsis\*.exe' | Select-Object -First 1
