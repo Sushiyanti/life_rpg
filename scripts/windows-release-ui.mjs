@@ -151,10 +151,12 @@ await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true 
 await backupDialog;
 console.log('UI_PROGRESS valid_backup_dialog=PASS');
 try {
-  await page.getByRole('heading', { name: 'Verified backup preview' }).first().waitFor();
+  await page.locator('#backup-preview-title').waitFor();
 } catch {
   const error = page.getByRole('alert').first();
   if (await error.count()) throw new Error(`Valid backup inspection failed: ${await error.innerText()}`);
+  const body = await page.locator('body').innerText().catch(() => 'unreadable body');
+  console.log(`UI_DEBUG valid_backup_body=${body.slice(-3000)}`);
   throw new Error('Valid backup inspection produced neither preview nor an error alert.');
 }
 await page.getByText('Supported — same schema', { exact: true }).waitFor();
