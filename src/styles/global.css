@@ -31,6 +31,8 @@ body {
    content areas where the user might want to copy a path. */
 body {
   user-select: none;
+  background-attachment: fixed;
+  overflow: hidden;
 }
 
 code,
