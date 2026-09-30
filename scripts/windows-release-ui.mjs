@@ -42,6 +42,16 @@ async function fillAndSubmit(page, label, value, button) {
   await page.getByRole('button', { name: button, exact: true }).click();
   await wait(700);
 }
+async function waitForBackupReady(page) {
+  const action = page.getByRole('button', { name: 'Inspect / restore backup', exact: true });
+  await action.waitFor();
+  const deadline = Date.now() + 10000;
+  while (Date.now() < deadline) {
+    if (await action.isEnabled()) return;
+    await wait(200);
+  }
+  throw new Error('Backup restore button remained disabled after malformed-backup rejection.');
+}
 
 await waitForDebug();
 const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
@@ -151,9 +161,12 @@ await malformedDialog;
 await page.getByRole('alert').filter({ hasText: /backup|integrity|could not/i }).waitFor();
 log('malformed_backup_rejection');
 
+console.log('UI_PROGRESS valid_backup_restore=START');
+await waitForBackupReady(page);
 const backupDialog = startDialog('Open', backupPath);
 await page.getByRole('button', { name: 'Inspect \/ restore backup', exact: true }).click();
 await backupDialog;
+console.log('UI_PROGRESS valid_backup_dialog=PASS');
 await page.getByRole('heading', { name: 'Verified backup preview' }).first().waitFor();
 await page.getByText('Supported — same schema', { exact: true }).waitFor();
 await page.getByRole('button', { name: 'Review restore consequences', exact: true }).click();
