@@ -1,7 +1,7 @@
 {
   "name": "life-rpg",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.1-beta.1",
   "description": "Life RPG — a local-first personal RPG engine (desktop)",
   "type": "module",
   "scripts": {
