@@ -25,11 +25,11 @@ export type SurfaceLoadContext = {
   playerId: string | null;
 };
 
-export type SurfaceLoadResult<T extends SurfaceEntity = SurfaceEntity, Context = unknown> = {
-  entity: T | null;
-  context?: Context;
-  error?: string;
-};
+export type SurfaceLoadResult<T extends SurfaceEntity = SurfaceEntity, Context = undefined> =
+  | (Context extends undefined
+      ? { entity: T; context?: undefined; error?: string }
+      : { entity: T; context: Context; error?: string })
+  | { entity: null; context?: Context; error?: string };
 
 export type SurfaceRenderProps<T extends SurfaceEntity = SurfaceEntity, Context = unknown> = {
   entity: T;
@@ -54,7 +54,7 @@ export type SurfaceDescriptorDefinition<T extends SurfaceEntity, Context> = {
 /** Erased descriptor consumed by generic stack infrastructure. */
 export type SurfaceDescriptor = {
   kind: SurfaceKind;
-  load: (id: string, context: SurfaceLoadContext) => Promise<SurfaceLoadResult>;
+  load: (id: string, context: SurfaceLoadContext) => Promise<SurfaceLoadResult<SurfaceEntity, unknown>>;
   title: (entity: SurfaceEntity) => string;
   copy: (entity: SurfaceEntity) => string;
   render: (props: SurfaceRenderProps) => ReactNode;

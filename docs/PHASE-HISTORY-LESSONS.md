@@ -70,6 +70,10 @@ The first 6.0 implementation proved that a contextual drawer/dialog could open w
 
 An extensible registry can still hide an accidentally entity-specific loader contract. The generic result must carry only an entity plus optional descriptor-owned context, and an unsupported kind must fail explicitly rather than fall back to an unrelated descriptor. An extensibility test is only meaningful when it exercises the actual provider, loader, renderer, and stack behavior—not merely registry insertion.
 
+## 6.0d surface consistency lesson
+
+6.0d fixed a surface consistency bug where domain saves could succeed while the currently open surface still displayed stale loaded data. Future surface editors must rely on the surface infrastructure for post-save entity refresh rather than maintaining independent stale entity copies.
+
 ## Rules for future agents
 
 1. Read the relevant phase diff and report before changing a cross-cutting foundation.

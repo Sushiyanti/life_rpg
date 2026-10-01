@@ -19,22 +19,37 @@ const effectC: Effect = { id: 'effect-c', playerId: player.id, targetKind: 'play
 const questAssociation: ConceptAssociation = { id: 'association-a', playerId: player.id, conceptId: conceptB.id, entityKind: 'quest', entityId: questA.id, associationCode: 'about', isActive: true, metadataJson: '{}', createdAt: '', updatedAt: '' };
 const relation: ConceptRelationship = { id: 'relation-b-c', playerId: player.id, sourceConceptId: conceptB.id, targetConceptId: conceptC.id, relationshipCode: 'related_to', isActive: true, createdAt: '', updatedAt: '' };
 
+let savedPlayer = player;
+let savedConcept = conceptB;
+
 const client = {
-  getPlayer: vi.fn(async (id: string) => id === player.id ? player : null),
+  getPlayer: vi.fn(async (id: string) => id === player.id ? savedPlayer : null),
   getQuest: vi.fn(async (id: string) => [questA, questB].find((quest) => quest.id === id) ?? null),
-  getConcept: vi.fn(async (id: string) => [conceptB, conceptC, conceptWrong].find((concept) => concept.id === id) ?? null),
+  getConcept: vi.fn(async (id: string) => [savedConcept, conceptC, conceptWrong].find((concept) => concept.id === id) ?? null),
   listEffects: vi.fn(async () => [effectC]),
   listConceptAssociations: vi.fn(async (filters: { conceptId?: string; entityKind?: string; entityId?: string }) => filters.entityKind === 'quest' && filters.entityId === questA.id ? [questAssociation] : filters.conceptId === conceptB.id ? [questAssociation] : []),
   listConceptRelationships: vi.fn(async (id: string) => id === conceptB.id ? [relation] : []),
-  setPlayerProgression: vi.fn(async () => player),
-  setConceptActive: vi.fn(async () => conceptB),
+  setPlayerProgression: vi.fn(async (_id: string, level: number, levelName?: string, progressionLabel?: string) => {
+    savedPlayer = { ...savedPlayer, level, levelName: levelName ?? null, progressionLabel: progressionLabel ?? null };
+    return savedPlayer;
+  }),
+  setConceptActive: vi.fn(async (_id: string, isActive: boolean) => {
+    savedConcept = { ...savedConcept, isActive };
+    return savedConcept;
+  }),
 } as unknown as CoreClient;
+
+beforeEach(() => {
+  savedPlayer = player;
+  savedConcept = conceptB;
+});
 
 function Launcher() {
   const { openSurface } = useEntitySurface();
   return <><button onClick={() => openSurface('quest', questA.id, { label: questA.title })}>Open Quest A</button><button onClick={() => openSurface('quest', questB.id, { label: questB.title })}>Open Quest B</button><button onClick={() => openSurface('effect', effectC.id, { label: effectC.name })}>Open Effect C</button></>;
 }
 function OpenConcept() { const { openSurface } = useEntitySurface(); return <button onClick={() => openSurface('concept', conceptB.id, { label: conceptB.name })}>Open Concept B</button>; }
+function OpenPlayer() { const { openSurface } = useEntitySurface(); return <button onClick={() => openSurface('player', player.id, { label: player.name })}>Open Player</button>; }
 function renderSurface() { return render(<EntitySurfaceProvider client={client} player={player} onRefresh={async () => undefined}><Launcher /></EntitySurfaceProvider>); }
 function UnsupportedLauncher() { const { openSurface } = useEntitySurface(); return <button onClick={() => openSurface('skill', 'skill-1', { label: 'Future skill' })}>Open unsupported skill</button>; }
 
@@ -82,10 +97,47 @@ describe('EntitySurface', () => {
     await waitFor(() => expect(client.setConceptActive).toHaveBeenCalledWith(conceptB.id, false)); expect(await screen.findByRole('status')).toHaveTextContent('Concept active state saved');
   });
 
-  it('contains Tab focus, locks body scroll, and closes the entire stack with the close button', async () => {
+  it('reloads and displays the saved Player entity while keeping the surface open', async () => {
+    render(<EntitySurfaceProvider client={client} player={player} onRefresh={async () => undefined}><OpenPlayer /></EntitySurfaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Player' }));
+    expect(await screen.findByRole('heading', { name: 'Rin' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByLabelText('Level'), { target: { value: '7' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText('7')).toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Player details saved.');
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
+  it('reloads and displays the saved Concept state while preserving nested Back context', async () => {
+    render(<EntitySurfaceProvider client={client} player={player} onRefresh={async () => undefined}><Launcher /></EntitySurfaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Open Quest A' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Garden/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    fireEvent.click(screen.getByLabelText('Active in this world'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByText('Inactive')).toBeInTheDocument());
+    expect(screen.getByRole('status')).toHaveTextContent('Concept active state saved');
+    fireEvent.click(screen.getByRole('button', { name: /Back to Prepare the garden/ }));
+    expect(await screen.findByRole('heading', { name: 'Prepare the garden' })).toBeInTheDocument();
+  });
+
+  it('enters the surface focus trap from the heading in both Tab directions', async () => {
     renderSurface(); const trigger = screen.getByRole('button', { name: 'Open Quest A' }); trigger.focus(); fireEvent.click(trigger); await screen.findByRole('heading', { name: 'Prepare the garden' });
-    expect(document.body.style.overflow).toBe('hidden'); const close = screen.getByRole('dialog').querySelector<HTMLButtonElement>('.entity-surface__close')!; close.focus(); fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' }); expect(document.activeElement).toBe(close);
-    fireEvent.click(close); await waitFor(() => expect(screen.queryByTestId('entity-surface-layer')).not.toBeInTheDocument()); expect(document.activeElement).toBe(trigger);
+    expect(document.body.style.overflow).toBe('hidden');
+    const dialog = screen.getByRole('dialog');
+    const heading = screen.getByRole('heading', { name: 'Prepare the garden' });
+    const close = dialog.querySelector<HTMLButtonElement>('.entity-surface__close')!;
+    expect(document.activeElement).toBe(heading);
+    fireEvent.keyDown(dialog, { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    heading.focus();
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).not.toBe(heading);
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(dialog, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('entity-surface-layer')).not.toBeInTheDocument());
+    expect(document.activeElement).toBe(trigger);
   });
 
   it('renders an explicit unsupported state and never falls back to Effect', async () => {

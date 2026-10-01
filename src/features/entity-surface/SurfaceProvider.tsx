@@ -14,6 +14,7 @@ import type { Player } from '../../domain/world';
 import { surfaceRegistry } from './surface-registry';
 import type {
   EntitySurfaceRecord,
+  SurfaceEntity,
   SurfaceLoadResult,
   SurfaceContextValue,
   SurfaceKind,
@@ -25,8 +26,6 @@ type ProviderProps = {
   children: ReactNode;
   client: CoreClient;
   player: Player | null;
-  overview?: unknown;
-  concepts?: unknown;
   onRefresh: () => Promise<void>;
 };
 
@@ -128,45 +127,40 @@ function SurfaceStack({
 
   const descriptor = surfaceRegistry[current.kind];
   const unsupported = !descriptor;
-  const [loaded, setLoaded] = useState<SurfaceLoadResult | null>(null);
+  const [loaded, setLoaded] = useState<SurfaceLoadResult<SurfaceEntity, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(current.mode === 'edit');
   const [copyState, setCopyState] = useState('Copy');
   const [message, setMessage] = useState('');
   const headingRef = useRef<HTMLHeadingElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const loadSequence = useRef(0);
 
-  useEffect(() => {
-    let live = true;
-    setLoading(true);
-    setLoaded(null);
-    setEditing(current.mode === 'edit');
-    setMessage('');
+  const loadCurrentSurface = useCallback(async () => {
+    const request = ++loadSequence.current;
     if (!descriptor) {
       setLoading(false);
-      return () => { live = false; };
+      return;
     }
+    setLoading(true);
+    setLoaded(null);
+    try {
+      const result = await descriptor.load(current.id, { client, playerId: player?.id ?? null });
+      if (request !== loadSequence.current) return;
+      setLoaded(result);
+    } catch {
+      if (request !== loadSequence.current) return;
+      setLoaded({ entity: null, error: 'The record could not be loaded.' });
+    } finally {
+      if (request === loadSequence.current) setLoading(false);
+    }
+  }, [client, current.id, descriptor, player?.id]);
 
-    void descriptor
-      .load(current.id, { client, playerId: player?.id ?? null })
-      .then((result) => {
-        if (!live) return;
-        setLoaded(result);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!live) return;
-        setLoaded({
-          entity: null,
-          error: 'The record could not be loaded.',
-        });
-        setLoading(false);
-      });
-
-    return () => {
-      live = false;
-    };
-  }, [client, current.id, current.kind, current.mode, descriptor, player?.id]);
+  useEffect(() => {
+    setEditing(current.mode === 'edit');
+    setMessage('');
+    void loadCurrentSurface();
+  }, [current.id, current.kind, current.mode, loadCurrentSurface]);
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -195,10 +189,11 @@ function SurfaceStack({
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
     if (!first || !last) return;
-    if (event.shiftKey && document.activeElement === first) {
+    const activeIsInside = dialogRef.current.contains(document.activeElement);
+    if (event.shiftKey && (!activeIsInside || document.activeElement === first || document.activeElement === headingRef.current)) {
       event.preventDefault();
       last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && (!activeIsInside || document.activeElement === last || document.activeElement === headingRef.current)) {
       event.preventDefault();
       first.focus();
     }
@@ -217,6 +212,8 @@ function SurfaceStack({
 
   const onSaved = async (savedMessage: string) => {
     await onRefresh();
+    await loadCurrentSurface();
+    setEditing(false);
     setMessage(savedMessage);
   };
 
