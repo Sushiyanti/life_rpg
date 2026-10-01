@@ -14,6 +14,7 @@ import type { Player } from '../../domain/world';
 import { surfaceRegistry } from './surface-registry';
 import type {
   EntitySurfaceRecord,
+  SurfaceLoadResult,
   SurfaceContextValue,
   SurfaceKind,
   SurfaceMode,
@@ -125,8 +126,9 @@ function SurfaceStack({
   const current = stack[stack.length - 1];
   if (!current) return null;
 
-  const descriptor = surfaceRegistry[current.kind] ?? surfaceRegistry.effect!;
-  const [loaded, setLoaded] = useState<Awaited<ReturnType<typeof descriptor.load>> | null>(null);
+  const descriptor = surfaceRegistry[current.kind];
+  const unsupported = !descriptor;
+  const [loaded, setLoaded] = useState<SurfaceLoadResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(current.mode === 'edit');
   const [copyState, setCopyState] = useState('Copy');
@@ -140,6 +142,10 @@ function SurfaceStack({
     setLoaded(null);
     setEditing(current.mode === 'edit');
     setMessage('');
+    if (!descriptor) {
+      setLoading(false);
+      return () => { live = false; };
+    }
 
     void descriptor
       .load(current.id, { client, playerId: player?.id ?? null })
@@ -152,8 +158,6 @@ function SurfaceStack({
         if (!live) return;
         setLoaded({
           entity: null,
-          attachedConcepts: [],
-          relatedConcepts: [],
           error: 'The record could not be loaded.',
         });
         setLoading(false);
@@ -201,7 +205,7 @@ function SurfaceStack({
   };
 
   const copy = async () => {
-    if (!loaded?.entity) return;
+    if (!descriptor || !loaded?.entity) return;
     try {
       await navigator.clipboard?.writeText(descriptor.copy(loaded.entity));
       setCopyState('Copied');
@@ -221,8 +225,7 @@ function SurfaceStack({
   const rendererProps = currentLoaded?.entity
     ? {
         entity: currentLoaded.entity,
-        attachedConcepts: currentLoaded.attachedConcepts,
-        relatedConcepts: currentLoaded.relatedConcepts,
+        context: currentLoaded.context,
         client,
         editing,
         setEditing,
@@ -257,12 +260,16 @@ function SurfaceStack({
             <h2 id="entity-surface-title" tabIndex={-1} ref={headingRef}>
               {loading
                 ? 'Loading…'
-                : currentLoaded?.entity
-                  ? descriptor.title(currentLoaded.entity)
+                : unsupported
+                  ? 'Surface not available'
+                  : currentLoaded?.entity
+                  ? descriptor!.title(currentLoaded.entity)
                   : current.label ?? `${current.kind} record`}
             </h2>
             <p>
-              {currentLoaded?.entity
+              {unsupported
+                ? `The “${current.kind}” entity type does not yet have a contextual viewer.`
+                : currentLoaded?.entity
                 ? 'Inspect this record without leaving your current workspace.'
                 : currentLoaded?.error ?? 'This record could not be loaded.'}
             </p>
@@ -279,7 +286,7 @@ function SurfaceStack({
         <div className="entity-surface__toolbar">
           <span className="type-pill">{editing ? 'Editing' : 'Details'}</span>
           <div>
-            {descriptor.renderEditor && currentLoaded?.entity && (
+            {descriptor?.renderEditor && currentLoaded?.entity && (
               <button
                 className="button button--small button--cyan"
                 onClick={() => setEditing((value) => !value)}
@@ -296,14 +303,21 @@ function SurfaceStack({
         </div>
 
         <div className="entity-surface__body">
-          {loading || !currentLoaded ? (
+          {unsupported ? (
+            <div className="surface-empty" data-testid="unsupported-surface">
+              <p>This type has no contextual viewer yet.</p>
+              <strong className="selectable">Requested type: {current.kind}</strong>
+              <button className="button button--primary" onClick={closeSurface}>Close</button>
+              {parent && <button className="button button--quiet" onClick={backSurface}>Back</button>}
+            </div>
+          ) : loading || !currentLoaded ? (
             <p className="muted">Resolving the saved record…</p>
           ) : currentLoaded.entity && rendererProps ? (
             <>
               {message && <p className="inline-feedback" role="status">{message}</p>}
-              {editing && descriptor.renderEditor
-                ? descriptor.renderEditor(rendererProps)
-                : descriptor.render(rendererProps)}
+              {editing && descriptor?.renderEditor
+                ? descriptor!.renderEditor(rendererProps)
+                : descriptor!.render(rendererProps)}
             </>
           ) : (
             <div className="surface-empty">

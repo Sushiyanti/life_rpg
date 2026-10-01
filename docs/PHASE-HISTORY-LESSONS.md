@@ -66,6 +66,10 @@ The first 6.0 implementation proved that a contextual drawer/dialog could open w
 
 6.0b corrects those architectural shortcuts. Surface infrastructure now owns stack, overlay, focus, Escape, body locking, and common toolbar behavior. A registry maps kinds to entity-specific loaders, renderers, editors, title functions, and copy formatters. Quest resolution uses filtered persisted association queries; Concept resolution loads only its own relationship targets; Effect resolution uses a player-scoped effect query. Stale records render an explanatory state with Close and, when nested, Back. The history of the project therefore leads to a concrete rule: keep domain ownership in Rust, keep presentation registration in React, and make future entity surfaces additive rather than invasive.
 
+## 6.0c finalization lesson
+
+An extensible registry can still hide an accidentally entity-specific loader contract. The generic result must carry only an entity plus optional descriptor-owned context, and an unsupported kind must fail explicitly rather than fall back to an unrelated descriptor. An extensibility test is only meaningful when it exercises the actual provider, loader, renderer, and stack behavior—not merely registry insertion.
+
 ## Rules for future agents
 
 1. Read the relevant phase diff and report before changing a cross-cutting foundation.

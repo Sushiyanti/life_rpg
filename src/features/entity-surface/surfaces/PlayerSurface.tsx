@@ -3,7 +3,7 @@ import type { Player } from '../../../domain/world';
 import { EntitySection, Field, SurfaceActions } from '../SurfacePrimitives';
 import type { SurfaceRenderProps } from '../surface-types';
 
-export function PlayerSurface({ entity: player, client, editing, setEditing, onSaved }: SurfaceRenderProps<Player>) {
+export function PlayerSurface({ entity: player, client, editing, setEditing, onSaved }: SurfaceRenderProps<Player, undefined>) {
   const [level, setLevel] = useState(String(player.level));
   const [levelName, setLevelName] = useState(player.levelName ?? '');
   const [progressionLabel, setProgressionLabel] = useState(player.progressionLabel ?? '');

@@ -33,6 +33,8 @@ The generic surface infrastructure owns the stack, Back/Close semantics, backdro
 
 The generic infrastructure must not require entity-specific branches for stack, overlay, focus, or lifecycle behavior. A new entity surface belongs in its own descriptor and renderer module. Entity-specific rendering is valid; entity-specific modal mechanics are not.
 
+The generic load result contains only the resolved entity and optional descriptor-owned context. Quest attachment data and Concept relationship data remain in their own loaders and renderers. If a kind has no descriptor, the surface explicitly says that the type has no contextual viewer; it never loads the record through an unrelated entity descriptor.
+
 The boundary remains:
 
 > React + TypeScript → typed Tauri IPC → Rust application/domain → SQLite persistence

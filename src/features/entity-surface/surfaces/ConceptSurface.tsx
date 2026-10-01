@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { Concept } from '../../../domain/world';
 import { EntitySection, Field, RelationButton, SurfaceActions } from '../SurfacePrimitives';
+import type { ConceptSurfaceContext } from '../surface-loaders';
 import type { SurfaceRenderProps } from '../surface-types';
 
-export function ConceptSurface({ entity: concept, relatedConcepts, client, editing, setEditing, onSaved, openSurface }: SurfaceRenderProps<Concept>) {
+export function ConceptSurface({ entity: concept, context, client, editing, setEditing, onSaved, openSurface }: SurfaceRenderProps<Concept, ConceptSurfaceContext>) {
+  const { relatedConcepts } = context;
   const [active, setActive] = useState(concept.isActive);
   useEffect(() => setActive(concept.isActive), [concept]);
 

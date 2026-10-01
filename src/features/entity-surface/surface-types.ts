@@ -1,10 +1,9 @@
 import type { ReactNode } from 'react';
 import type { CoreClient } from '../../domain/ipc';
-import type { Concept, Effect, Player, Quest } from '../../domain/world';
 
-export type SurfaceKind = 'player' | 'quest' | 'concept' | 'effect' | (string & {});
+export type SurfaceKind = string;
 export type SurfaceMode = 'view' | 'edit';
-export type SurfaceEntity = Player | Quest | Concept | Effect;
+export type SurfaceEntity = { id: string };
 
 export type EntitySurfaceRecord = {
   kind: SurfaceKind;
@@ -26,17 +25,15 @@ export type SurfaceLoadContext = {
   playerId: string | null;
 };
 
-export type SurfaceLoadResult = {
-  entity: SurfaceEntity | null;
-  attachedConcepts: Concept[];
-  relatedConcepts: Concept[];
+export type SurfaceLoadResult<T extends SurfaceEntity = SurfaceEntity, Context = unknown> = {
+  entity: T | null;
+  context?: Context;
   error?: string;
 };
 
-export type SurfaceRenderProps<T extends SurfaceEntity> = {
+export type SurfaceRenderProps<T extends SurfaceEntity = SurfaceEntity, Context = unknown> = {
   entity: T;
-  attachedConcepts: Concept[];
-  relatedConcepts: Concept[];
+  context: Context;
   client: CoreClient;
   editing: boolean;
   setEditing: (editing: boolean) => void;
@@ -44,11 +41,44 @@ export type SurfaceRenderProps<T extends SurfaceEntity> = {
   openSurface: SurfaceContextValue['openSurface'];
 };
 
-export type SurfaceDescriptor<T extends SurfaceEntity = SurfaceEntity> = {
+/** The typed definition used at an entity-specific registration boundary. */
+export type SurfaceDescriptorDefinition<T extends SurfaceEntity, Context> = {
   kind: SurfaceKind;
-  load: (id: string, context: SurfaceLoadContext) => Promise<SurfaceLoadResult>;
+  load: (id: string, context: SurfaceLoadContext) => Promise<SurfaceLoadResult<T, Context>>;
   title: (entity: T) => string;
   copy: (entity: T) => string;
-  render: (props: SurfaceRenderProps<T>) => ReactNode;
-  renderEditor?: (props: SurfaceRenderProps<T>) => ReactNode;
+  render: (props: SurfaceRenderProps<T, Context>) => ReactNode;
+  renderEditor?: (props: SurfaceRenderProps<T, Context>) => ReactNode;
 };
+
+/** Erased descriptor consumed by generic stack infrastructure. */
+export type SurfaceDescriptor = {
+  kind: SurfaceKind;
+  load: (id: string, context: SurfaceLoadContext) => Promise<SurfaceLoadResult>;
+  title: (entity: SurfaceEntity) => string;
+  copy: (entity: SurfaceEntity) => string;
+  render: (props: SurfaceRenderProps) => ReactNode;
+  renderEditor?: (props: SurfaceRenderProps) => ReactNode;
+};
+
+/**
+ * Erases a descriptor only at the registry boundary. Entity-specific modules
+ * retain their concrete entity/context types; generic infrastructure does not.
+ */
+export function defineSurface<T extends SurfaceEntity, Context>(
+  definition: SurfaceDescriptorDefinition<T, Context>,
+): SurfaceDescriptor {
+  return {
+    kind: definition.kind,
+    load: async (id, context) => {
+      const result = await definition.load(id, context);
+      return { entity: result.entity, context: result.context, error: result.error };
+    },
+    title: (entity) => definition.title(entity as T),
+    copy: (entity) => definition.copy(entity as T),
+    render: (props) => definition.render({ ...props, entity: props.entity as T, context: props.context as Context }),
+    renderEditor: definition.renderEditor
+      ? (props) => definition.renderEditor!({ ...props, entity: props.entity as T, context: props.context as Context })
+      : undefined,
+  };
+}
