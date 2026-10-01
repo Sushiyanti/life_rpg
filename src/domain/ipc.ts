@@ -34,6 +34,8 @@ export const COMMANDS = {
   ping: 'ping',
   createPlayer: 'create_player',
   getPlayer: 'get_player',
+  getQuest: 'get_quest',
+  listEffects: 'list_effects',
   awardXp: 'award_xp',
   createQuest: 'create_quest',
   startQuest: 'start_quest',
@@ -159,6 +161,8 @@ export class CoreClient {
     return this.invoke<Player>(COMMANDS.createPlayer, { name, description: description ?? null });
   }
   async getPlayer(id: string): Promise<Player | null> { return this.invoke<Player | null>(COMMANDS.getPlayer, { id }); }
+  async getQuest(id: string): Promise<Quest | null> { return this.invoke<Quest | null>(COMMANDS.getQuest, { id }); }
+  async listEffects(playerId:string, activeAt?:string):Promise<Effect[]>{return this.invoke<Effect[]>(COMMANDS.listEffects,{playerId,activeAt:activeAt??null});}
   async awardXp(playerId: string, amount: number, reason?: string, description?: string): Promise<AwardXpOutcome> {
     return this.invoke<AwardXpOutcome>(COMMANDS.awardXp, { playerId, amount, reason: reason ?? null, description: description ?? null });
   }
@@ -209,7 +213,7 @@ export class CoreClient {
   async finishQuestSession(sessionId:string,status:'completed'|'interrupted',result?:string,notes?:string):Promise<QuestSession>{return this.invoke(COMMANDS.finishQuestSession,{sessionId,endedAt:null,status,result:result??null,notes:notes??null});}
   async listAttachedContent(targetKind:string,targetId:string):Promise<ContentAttachment[]>{return this.invoke(COMMANDS.listAttachedContent,{targetKind,targetId});}
   async attachContent(playerId:string,contentId:string,targetKind:string,targetId:string,role:string):Promise<ContentAttachment>{return this.invoke(COMMANDS.attachContent,{playerId,contentId,targetKind,targetId,role});}
-  async listConceptAssociations(conceptId:string):Promise<ConceptAssociation[]>{return this.invoke(COMMANDS.listConceptAssociations,{conceptId,entityKind:null,entityId:null});}
+  async listConceptAssociations(filters:{conceptId?:string;entityKind?:string;entityId?:string}={}):Promise<ConceptAssociation[]>{return this.invoke<ConceptAssociation[]>(COMMANDS.listConceptAssociations,{conceptId:filters.conceptId??null,entityKind:filters.entityKind??null,entityId:filters.entityId??null});}
   async associateConcept(conceptId:string,entityKind:string,entityId:string,role:string):Promise<ConceptAssociation>{return this.invoke(COMMANDS.associateConcept,{conceptId,entityKind,entityId,role});}
   async listProgressSuggestions(conceptId:string,includeResolved=false):Promise<ProgressSuggestion[]>{return this.invoke(COMMANDS.listProgressSuggestions,{conceptId,includeResolved});}
   async acceptProgressSuggestion(playerId:string,suggestionId:string):Promise<ProgressSuggestion>{return this.invoke(COMMANDS.acceptProgressSuggestion,{playerId,suggestionId});}

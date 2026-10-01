@@ -28,7 +28,10 @@ describe('COMMANDS', () => {
     expect(COMMANDS.createSkillTree).toBe('create_skill_tree');
     expect(COMMANDS.capturePlayerSnapshot).toBe('capture_player_snapshot');
     expect(COMMANDS.getWorldOverview).toBe('get_world_overview');
+    expect(COMMANDS.getQuest).toBe('get_quest');
+    expect(COMMANDS.listEffects).toBe('list_effects');
     expect(COMMANDS.listConcepts).toBe('list_concepts');
+    expect(COMMANDS.listConceptAssociations).toBe('list_concept_associations');
     expect(COMMANDS.listConceptRelationshipTypes).toBe('list_concept_relationship_types');
     expect(COMMANDS.relateConcepts).toBe('relate_concepts');
     expect(COMMANDS.searchWorld).toBe('search_world');
@@ -75,6 +78,12 @@ describe('CoreClient', () => {
     const client=new CoreClient(transport);
     await client.saveWorkspacePanel({playerId:'player-1',workspaceId:'workspace-1',panelId:'panel-1',panelType:'quests',title:'Open objectives',variant:'rows',density:'compact',filterStatus:'in_progress',itemLimit:8,sortOrder:0,isPinned:true,isCollapsed:false});
     expect(transport).toHaveBeenCalledWith('save_workspace_panel',expect.objectContaining({playerId:'player-1',workspaceId:'workspace-1',panelType:'quests',filterStatus:'in_progress',itemLimit:8}));
+  });
+  it('passes Quest-specific association filters through the existing association command', async () => {
+    const transport = vi.fn(async () => []) as unknown as InvokeTransport;
+    const client = new CoreClient(transport);
+    await client.listConceptAssociations({entityKind:'quest',entityId:'quest-a'});
+    expect(transport).toHaveBeenCalledWith('list_concept_associations', {conceptId:null,entityKind:'quest',entityId:'quest-a'});
   });
   it('returns null for an in-memory world location', async () => {
     const transport = vi.fn(async () => null) as unknown as InvokeTransport;

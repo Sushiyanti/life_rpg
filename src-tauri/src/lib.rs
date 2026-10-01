@@ -90,6 +90,8 @@ pub fn run() {
             commands::status::ping,
             commands::world::create_player,
             commands::world::get_player,
+            commands::world::get_quest,
+            commands::world::list_effects,
             commands::world::set_player_progression,
             commands::world::set_skill_progression,
             commands::world::award_xp,

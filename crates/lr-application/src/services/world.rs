@@ -83,6 +83,12 @@ where
     pub fn get_player(&self, id: &str) -> Result<Option<Player>, AppError> {
         Ok(self.store.get_player(&EntityId::new(id)?)?)
     }
+    pub fn get_quest(&self, id: &str) -> Result<Option<Quest>, AppError> {
+        Ok(self.store.get_quest(&EntityId::new(id)?)?)
+    }
+    pub fn list_effects(&self, player_id: &str, active_at: Option<&str>) -> Result<Vec<Effect>, AppError> {
+        Ok(self.store.list_effects(&EntityId::new(player_id)?, active_at)?)
+    }
     /// Player level and labels are manually authored; XP is an independent ledger.
     pub fn set_player_progression(
         &self,

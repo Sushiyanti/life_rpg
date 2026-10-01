@@ -24,7 +24,7 @@ export function WorldExplorer({client,player,concepts,overview,onRefresh,showRec
    lifecycleKinds.has(kind)?client.getEntityLifecycle(kind,id).catch(()=>({state:'untracked' as const})):Promise.resolve({state:'untracked' as const}),
    client.listPresentationPreferences(player.id,'explorer').catch(()=>[]),
    revisionKinds.has(kind)?client.listEntityRevisions(kind,id).catch(()=>[]):Promise.resolve([]),
-   kind==='concept'?client.listConceptAssociations(id).catch(()=>[]):Promise.resolve([]),
+   kind==='concept'?client.listConceptAssociations({conceptId:id}).catch(()=>[]):Promise.resolve([]),
    kind==='concept'?client.listConceptRelationships(id).catch(()=>[]):Promise.resolve([]),
    attachKinds.has(kind)?client.listAttachedContent(kind,id).catch(()=>[]):Promise.resolve([]),
    commentsKinds.has(kind)?client.listComments(kind,id).catch(()=>[]):Promise.resolve([]),

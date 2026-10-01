@@ -3,7 +3,7 @@
 use crate::state::AppState;
 use lr_application::{RuleDefinition, DEFAULT_LEDGER_LIMIT};
 use lr_contracts::world::{
-    AwardXpOutcomeDto, CommentDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
+    AwardXpOutcomeDto, CommentDto, EffectDto, NarrativeEntryDto, PlayerDto, PlayerSnapshotDto, PlayerStatDto,
     QuestDto, RuleDto, RuleExecutionDto, SkillDto, SkillSnapshotDto, SkillTreeDto,
     StatDefinitionDto, TransactionDto, WorldOverviewDto,
 };
@@ -77,6 +77,29 @@ pub fn get_player(
         .world
         .get_player(&id)
         .map(|v| v.map(Into::into))
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn get_quest(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<Option<QuestDto>, CommandErrorDto> {
+    state
+        .world
+        .get_quest(&id)
+        .map(|v| v.map(Into::into))
+        .map_err(Into::into)
+}
+#[tauri::command]
+pub fn list_effects(
+    state: State<'_, AppState>,
+    player_id: String,
+    active_at: Option<String>,
+) -> Result<Vec<EffectDto>, CommandErrorDto> {
+    state
+        .world
+        .list_effects(&player_id, active_at.as_deref())
+        .map(|v| v.into_iter().map(Into::into).collect())
         .map_err(Into::into)
 }
 /// Set authored Player progression independently from the XP ledger.
